@@ -65,6 +65,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         param->addListener (this);
 
     samples.onStateChanged = [this] { markStateChanged(); };
+    lights.onSettingsChanged = [this] { markStateChanged(); };
 }
 
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
@@ -258,6 +259,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (kMetaId), nullptr);
     state.removeChild (state.getChildWithName (kMidiMapId), nullptr);
     state.removeChild (state.getChildWithName (tb::SampleManager::padsId), nullptr);
+    state.removeChild (state.getChildWithName (tb::PadLights::lightsId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -274,6 +276,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     }
     state.appendChild (midiMap, nullptr);
     state.appendChild (samples.toValueTree(), nullptr);
+    state.appendChild (lights.toValueTree(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -296,6 +299,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
                                (int) pad.getProperty (kNoteId, -1));
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
+    lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     apvts.replaceState (state);
 }
 

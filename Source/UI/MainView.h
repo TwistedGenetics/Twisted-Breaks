@@ -54,6 +54,7 @@ namespace tb::ui
         uint32_t lastCount = 0;
         float    midiLamp  = 0.0f;
         int      lastNote  = -1, lastVel = 0, selPad = 0, selNote = 36;
+        juce::String message;      // replaces SELECTED PAD while LIGHTS is learning
     };
 
     //==========================================================================
@@ -84,6 +85,9 @@ namespace tb::ui
         void showMixer (bool);
         bool isMixerShown() const noexcept { return mixer.isVisible(); }
 
+        /** LIGHTS menu: controller LEDs (iRig Pads). */
+        void showLightsMenu();
+
     private:
         void updateNavLamps();
         void timerCallback() override;
@@ -103,6 +107,7 @@ namespace tb::ui
         juce::Slider  masterKnob;
         ToggleSwitch  limiterSwitch { "LIMITER", "Master limiter (zero latency, -0.3 dBFS ceiling)" };
         PanicButton   panicButton;
+        PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads to show what's playing", juce::Colour (0xff7dff5a) };
         juce::OwnedArray<SelectorKey> navKeys;
 
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;

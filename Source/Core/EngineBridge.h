@@ -75,6 +75,7 @@ namespace tb
         std::array<std::atomic<uint32_t>, kNumPads> padTriggerCount {};
         std::array<std::atomic<float>, kNumPads>    padPlayhead {};  // 0..1 of sample, < 0 = idle
         std::array<std::atomic<bool>, kNumPads>     padQueued {};    // SWAP hand-off waiting to land
+        std::array<std::atomic<bool>, kNumPads>     padLoaded {};    // pad has a playable sample
 
         std::atomic<int>      lastMidiNote     { -1 };
         std::atomic<int>      lastMidiVelocity { 0 };

@@ -960,6 +960,126 @@ namespace
 
 
     //==========================================================================
+    //  0.5.1: controller pad lights (iRig Pads)
+    //==========================================================================
+    struct RecordingSink final : tb::PadLights::Sink
+    {
+        std::vector<juce::MidiMessage> msgs;
+        void send (const juce::MidiMessage& m) override { msgs.push_back (m); }
+        int last (int cc) const
+        {
+            for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
+                if (it->isController() && it->getControllerNumber() == cc) return it->getControllerValue();
+            return -1;
+        }
+    };
+
+    void testPadLights (const juce::File& tone)
+    {
+        std::cout << "\n== 0.5.1: iRig Pads lights ==" << std::endl;
+        using tb::PadLights;
+        check (PadLights::ccFor (0, true, false) == 94 && PadLights::ccFor (0, false, false) == 95
+                 && PadLights::ccFor (12, true, false) == 70 && PadLights::ccFor (3, false, false) == 101,
+               "iRig Pads LED CCs: pad 1 = 94 / 95, pad 4 = 100 / 101, pad 13 = 70 / 71 (manual)");
+        check (PadLights::ccFor (0, true, true) == 95, "SWAP COLOURS flips red and green");
+
+        Rig r;
+        auto& lights = r.p.getLights();
+        RecordingSink rec;
+        lights.setSinkForTesting (&rec);
+
+        // Plugin pad 1 = note 36 = C1 = iRig default-scene pad 2; plugin pad 3 = D1 = iRig pad 3.
+        check (lights.hardwarePadFor (0) == 1 && lights.hardwarePadFor (2) == 2 && lights.hardwarePadFor (6) == 6,
+               "default scene: each plugin pad lights the iRig pad that plays its note");
+
+        r.load (0, tone);
+        lights.tick (0.0);
+        check (rec.last (97) == 6 && rec.last (96) == 0, "a loaded, idle pad glows dim green");
+        check (rec.msgs.front().getChannel() == 1, "...sent on MIDI channel 1");
+        const auto before = rec.msgs.size();
+        lights.tick (33.0);
+        check (rec.msgs.size() == before, "nothing changes, nothing is sent (no MIDI flood)");
+
+        renderNote (r.p, r.host, 36, 127, 1);
+        lights.tick (66.0);
+        check (rec.last (97) > 100, "while it plays: bright green (" + juce::String (rec.last (97)) + ")");
+        check (rec.last (99) == 0 && rec.last (98) == 0, "...and only that pad lights (empty pad 3 stays off)");
+        for (int b = 0; b < 150; ++b) { juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer m; runBlock (r.p, r.host, buf, m); }
+        lights.tick (100.0);
+        check (rec.last (97) == 6, "...and back to dim when the sound has died away");
+
+        // A queued SWAP flashes red on the incoming pad.
+        r.load (1, tone);
+        for (int p = 0; p < 2; ++p)
+        {
+            setPadParam (r.p, p, tb::params::padMode, (float) tb::params::modeLoop);
+            setPadParam (r.p, p, tb::params::padSwap, 1.0f);
+        }
+        r.settle();
+        {
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer m;
+            m.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            runBlock (r.p, r.host, buf, m);
+            m.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 100);
+            runBlock (r.p, r.host, buf, m);
+        }
+        // Plugin pad 2 = C#1 = iRig pad 5 (CC 86 red / 87 green).
+        lights.tick (4000.0);
+        const int on = rec.last (86);
+        lights.tick (4125.0);
+        const int off = rec.last (86);
+        check (on == 127 && off == 0, "a queued SWAP flashes the incoming pad red");
+        r.p.requestPanic();
+        r.settle();
+
+        // LEARN a custom layout: iRig pad k plays plugin pad 15 - k.
+        lights.startLearn();
+        lights.tick (5000.0);
+        check (rec.last (94) == 127, "LEARN lights the first iRig pad red");
+        for (int k = 0; k < 16; ++k)
+        {
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer m;
+            m.addEvent (juce::MidiMessage::noteOn (1, 36 + 15 - k, (juce::uint8) 100), 0);
+            runBlock (r.p, r.host, buf, m);
+            lights.tick (5100.0 + k * 40.0);
+            if (k == 0) check (rec.last (94) == 0 && rec.last (96) == 127, "...hit it, and the next one lights up");
+        }
+        bool ok = ! lights.isLearning();
+        for (int p = 0; p < 16; ++p) ok &= lights.hardwarePadFor (p) == 15 - p;
+        check (ok, "after 16 hits the layout is learned (any iRig scene works)");
+
+        bool changed = false;
+        lights.onSettingsChanged = [&] { changed = true; };
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (changed, "...and the host is told to save it");
+
+        lights.setSwapColours (true);
+        juce::MemoryBlock blob;
+        r.p.getStateInformation (blob);
+        lights.setSinkForTesting (nullptr);
+        {
+            TwistedBreaksProcessor q;
+            q.setStateInformation (blob.getData(), (int) blob.getSize());
+            check (q.getLights().getSwapColours() && q.getLights().hardwarePadFor (3) == 12,
+                   "learned layout and colour setting are saved with the set");
+        }
+
+        {
+            RecordingSink rec2;
+            {
+                tb::PadLights l2 (r.p.getBridge(), r.p.getEngine());
+                l2.setSinkForTesting (&rec2);
+                l2.tick (0.0);
+            }
+            bool allOff = rec2.msgs.size() >= 32;
+            for (size_t i = rec2.msgs.size() - 32; allOff && i < rec2.msgs.size(); ++i) allOff &= rec2.msgs[i].getControllerValue() == 0;
+            check (allOff, "closing the plugin turns every pad light off");
+        }
+    }
+
+    //==========================================================================
     //  PHASE 5: group buses
     //==========================================================================
     void testGroups (const juce::File& tone)
@@ -1889,6 +2009,7 @@ int main (int argc, char* argv[])
         testSwapGroups();
         testGroups (tone);
         testMixerView();
+        testPadLights (tone);
         testEditorDrivesState();
         testRealtimeSafety();
 

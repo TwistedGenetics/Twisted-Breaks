@@ -22,6 +22,7 @@ namespace tb::ui
         const Rectangle<int> pads        {  36, 172,  540, 418 };
         const Rectangle<int> padEditor   {  36, 606,  540, 128 };
         const Rectangle<int> statusStrip {  36, 740,  540,  38 };
+        const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
 
         const Rectangle<int> transPanel  { 612, 132,  572, 150 };
         const Rectangle<int> transport   { 626, 166,  544, 108 };
@@ -144,6 +145,13 @@ namespace tb::ui
         if (count != lastCount) { lastCount = count; midiLamp = 1.0f; changed = true; }
         else if (midiLamp > 0.0f) { midiLamp = jmax (0.0f, midiLamp - 0.12f); changed = true; }
 
+        // LIGHTS learn prompt.
+        auto& lights = processor.getLights();
+        const String msg = lights.isLearning()
+                             ? "HIT THE RED PAD  (" + String (lights.getLearnStep() + 1) + " / 16)"
+                             : String();
+        if (msg != message) { message = msg; changed = true; }
+
         if (note != lastNote || vel != lastVel || selectedPad != selPad || sNote != selNote)
         {
             lastNote = note; lastVel = vel; selPad = selectedPad; selNote = sNote;
@@ -157,6 +165,7 @@ namespace tb::ui
         auto b = getLocalBounds().toFloat();
         paint::recess (g, b, 4.0f);
         b.reduce (12.0f, 2.0f);
+        b.removeFromRight (112.0f);     // LIGHTS key sits here
 
         // MIDI activity lamp.
         paint::lamp (g, { b.getX() + 12.0f, b.getCentreY() }, 9.0f, c::green, c::greenDim, midiLamp);
@@ -176,8 +185,11 @@ namespace tb::ui
 
         readout (b.removeFromLeft (b.getWidth() * 0.5f), "LAST MIDI NOTE IN",
                  lastNote < 0 ? String ("--- waiting ---") : noteName (lastNote) + "  v" + String (lastVel));
-        readout (b, "SELECTED PAD",
-                 "PAD " + String (selPad + 1).paddedLeft ('0', 2) + "  <-  " + noteName (selNote));
+        if (message.isNotEmpty())
+            readout (b, "LIGHTS LEARN", message);
+        else
+            readout (b, "SELECTED PAD",
+                     "PAD " + String (selPad + 1).paddedLeft ('0', 2) + "  <-  " + noteName (selNote));
     }
 
     //==========================================================================
@@ -218,6 +230,8 @@ namespace tb::ui
         limiterAttachment = std::make_unique<ButtonAttachment> (p.getParameters(), params::masterLimiter, limiterSwitch);
 
         addAndMakeVisible (panicButton);
+        addAndMakeVisible (lightsKey);
+        lightsKey.onClick = [this] { showLightsMenu(); };
         panicButton.onClick = [this] { processor.requestPanic(); panicButton.flash(); };
 
         struct NavDef { const char* latin; int phase; };
@@ -275,6 +289,7 @@ namespace tb::ui
         masterKnob.setBounds (layout::masterKnob);
         limiterSwitch.setBounds (layout::limiter);
         panicButton.setBounds (layout::panic);
+        lightsKey.setBounds (layout::lightsKey);
 
         auto rail = layout::navRail;
         const int keyW = rail.getWidth() / juce::jmax (1, navKeys.size());
@@ -302,6 +317,40 @@ namespace tb::ui
         meter.refresh();
         status.refresh (padGrid.getSelectedPad());
         panicButton.tick();
+
+        auto& lights = processor.getLights();
+        lightsKey.setToggleState (lights.isConnected(), dontSendNotification);
+        lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected()));
+        lightsKey.tick();
+    }
+
+    void MainView::showLightsMenu()
+    {
+        auto& lights = processor.getLights();
+        const auto current = lights.getDevice();
+        const auto devices = PadLights::availableDevices();
+
+        PopupMenu m;
+        m.addSectionHeader ("PAD LIGHTS - light your controller's pads");
+        m.addItem ("Off", true, current.isEmpty(), [&lights] { lights.setDevice ({}); });
+        for (const auto& d : devices)
+            m.addItem (d, true, d == current, [&lights, d] { lights.setDevice (d); });
+        if (current.isNotEmpty() && ! devices.contains (current))
+            m.addItem (current + "  (not connected)", false, true, nullptr);
+        if (devices.isEmpty())
+            m.addItem ("No MIDI outputs found - plug in the iRig Pads", false, false, nullptr);
+
+        m.addSeparator();
+        const bool on = lights.isConnected();
+        if (lights.isLearning())
+            m.addItem ("Stop learning", [&lights] { lights.stopLearn(); });
+        else
+            m.addItem ("Learn pad layout (for a custom scene)...", on, false, [&lights] { lights.startLearn(); });
+        m.addItem ("Forget learned layout", lights.hasLearnedLayout(), false, [&lights] { lights.forgetLearnedLayout(); });
+        m.addItem ("Test lights", on, false, [&lights] { lights.runTest(); });
+        m.addItem ("Swap red / green", true, lights.getSwapColours(), [&lights] { lights.setSwapColours (! lights.getSwapColours()); });
+
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
     }
 
     void MainView::showMixer (bool show)

@@ -27,7 +27,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** |
 | 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** |
 | 4.1 | SWAP groups: hand off between breaks at slice points | **done** — 175/175 automated checks |
-| 5 | Four group buses + mixer | **done** — 195/195 automated checks |
+| 5 | Four group buses + mixer | **done** |
+| 5.1 | iRig Pads lights: controller pads show what's playing | **done** — 211/211 automated checks |
 | 6 | 16 performance FX per group | next |
 | 7–8 | Sequencer, snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
@@ -86,6 +87,12 @@ Sections that aren't built yet are visibly marked offline on the panel
   four channel strips: **fader**, LED meter, **PAN**, **M**ute, **S**olo and
   FX **BYPASS** (FX arrive in Phase 6). Click a strip's name plate to send
   the selected pad there. All automatable (`grp_a_level` ... `grp_d_bypass`).
+* **LIGHTS** (bottom-left, next to SELECTED PAD): pick your **iRig Pads** and
+  its pads light up: green while a pad plays (brightness follows the sound),
+  dim green for loaded pads, flashing red while a SWAP is queued. Works out
+  of the box on the iRig's default scene; **Learn pad layout** handles any
+  other scene (hit each pad as it lights red). **Test lights** and **Swap
+  red / green** in the same menu. Saved with the set.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

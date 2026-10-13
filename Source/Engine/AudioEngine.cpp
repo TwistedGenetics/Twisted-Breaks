@@ -649,6 +649,7 @@ namespace tb
                 queued = queued || (ps.active && (ps.pad == p || (ps.pad < 0 && swapPlaying[(size_t) g] == p)));
             }
             bridge.padQueued[(size_t) p].store (queued, std::memory_order_relaxed);
+            bridge.padLoaded[(size_t) p].store (padSample[(size_t) p] != nullptr, std::memory_order_relaxed);
         }
 
         // ---- Scope tap: decimated mono sum of the master output

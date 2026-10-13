@@ -49,6 +49,25 @@ Live stopped; saved with the set.
 
 ---
 
+## A3. Controller pad lights (iRig Pads)
+
+**Status: built in 0.5.1.**
+
+Prompt:
+
+> Light the pads of my iRig Pads to show the currently playing pad.
+
+As built: `Core/PadLights`. iRig Pads lights each pad from a pair of CCs
+on channel 1 (red / green, 0-127). The plugin sends them straight to the
+chosen MIDI output from a 30 Hz timer thread (not the audio thread, not
+Ableton's routing): green following the pad's level while it plays, dim
+green when loaded, flashing red for a queued SWAP. Hardware pads are
+matched to plugin pads by note (default scene) or by LEARN. Only changes
+are sent, plus a refresh every 4 s; replugging is picked up; all lights
+go off when the plugin closes.
+
+---
+
 ## A2. Break bank swap — change the break under all 16 pads
 
 **Status: planned for Phase 8** (shares the quantised switching of

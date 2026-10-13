@@ -11,6 +11,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/Parameters.cpp
     ${TB_SRC}/Core/TransportSync.cpp
     ${TB_SRC}/Core/SampleManager.cpp
+    ${TB_SRC}/Core/PadLights.cpp
 
     # Engine: everything that runs inside processBlock()
     ${TB_SRC}/Engine/AudioEngine.cpp

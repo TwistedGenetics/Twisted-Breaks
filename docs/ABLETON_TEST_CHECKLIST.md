@@ -58,6 +58,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Click a strip's name plate: the selected pad moves to that group
 - [ ] ✅ Save, close, reopen: routing and mixer settings come back
 
+## iRig Pads lights (0.5.1)
+- [ ] ✅ LIGHTS -> pick iRig Pads: the key's lamp goes green; pads with samples glow dim green
+- [ ] ✅ Test lights: all pads red, then green, then both. If red and green are the wrong way round, Swap red / green
+- [ ] ✅ Play: the pad you hit (and pads triggered from Live's clips) light green while they sound
+- [ ] ✅ SWAP: the queued pad flashes red until it takes over
+- [ ] ✅ If the wrong pads light: Learn pad layout, hit each pad as it lights red
+- [ ] ✅ Unplug / replug the iRig: lights come back within a few seconds. Close the set: all lights off
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)

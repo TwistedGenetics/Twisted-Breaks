@@ -6,6 +6,7 @@
 #include "Core/TransportSync.h"
 #include "Engine/AudioEngine.h"
 #include "Core/SampleManager.h"
+#include "Core/PadLights.h"
 
 /*
     TwistedBreaksProcessor
@@ -59,6 +60,7 @@ public:
     tb::EngineBridge& getBridge() noexcept { return bridge; }
     tb::AudioEngine&  getEngine() noexcept { return engine; }
     tb::SampleManager& getSamples() noexcept { return samples; }
+    tb::PadLights&     getLights() noexcept  { return lights; }
 
     /** UI pad press: queued lock-free to the audio thread. */
     void triggerPadFromUi (int pad, float velocity, bool noteOn);
@@ -90,6 +92,7 @@ private:
     tb::TransportSync                   transport;
     tb::AudioEngine                     engine { bridge };
     tb::SampleManager                   samples { engine };   // after engine: destroyed first
+    tb::PadLights                       lights { bridge, engine };   // controller LEDs (iRig Pads)
 
     // Cached raw parameter pointers: atomic loads only in processBlock().
     std::atomic<float>* masterGainParam    = nullptr;
