@@ -49,6 +49,11 @@ namespace tb::ui
         }
     }
 
+    void PadComponent::setGroup (int g)
+    {
+        if (g != group) { group = g; repaint(); }
+    }
+
     void PadComponent::setLabels (const String& upper, const String& name, int midiNote, const String& newTag,
                                   bool isWarning, bool sampleLoaded)
     {
@@ -188,8 +193,15 @@ namespace tb::ui
 
         g.setColour (ink);
         g.setFont (industrialFont (22.0f));
-        g.drawText (String (index + 1).paddedLeft ('0', 2), t.removeFromTop (22.0f),
-                    Justification::centredLeft, false);
+        {
+            auto row = t.removeFromTop (22.0f);
+            g.drawText (String (index + 1).paddedLeft ('0', 2), row, Justification::centredLeft, false);
+
+            // Output group, engraved beside the number: "GRP B".
+            g.setFont (industrialFont (12.0f));
+            g.drawText ("GRP " + String::charToString ((juce_wchar) ('A' + group)),
+                        row.withTrimmedRight (18.0f), Justification::centredRight, false);
+        }
 
         g.setColour (warning ? (lit > 0.25f ? Colour (0xff7a0c02) : c::red.withAlpha (0.9f)) : ink);
         g.setFont (industrialFont (11.0f, false));

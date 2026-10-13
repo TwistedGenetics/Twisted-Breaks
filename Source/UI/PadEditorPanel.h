@@ -4,6 +4,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
 #include "UI/Controls.h"
+#include "Core/EngineBridge.h"
 
 class TwistedBreaksProcessor;
 
@@ -16,7 +17,7 @@ namespace tb::ui
 
             [PAD 07] [SOUND] [PLAY] [SLICE] [SWAP] [ readout ] [LOAD] [CLEAR]
 
-            SOUND:  GAIN  PAN  PITCH  START  END  REVERSE
+            SOUND:  GAIN  PAN  PITCH  START  END  REVERSE  GROUP (A-D)
             PLAY:   MODE  SYNC  RATE  CHOKE  VEL  MUTE/SOLO  NOTE (+ LEARN)
             SLICE:  AUTO / EQUAL  SENS  COUNT  SLICE  RESET / UNSLICE  SPREAD / FIT
             SWAP:   GROUP  AT  (+ how it works)
@@ -81,6 +82,12 @@ namespace tb::ui
         PushKey        unsliceKey { "UNSLICE", "Remove all slice markers from this pad" };
         PushKey        spreadKey { "SPREAD",  "Put each slice on its own pad, starting here (pads in SLICE mode, ready to play from your controller)" };
         PushKey        fitKey    { "FIT",     "Zoom the screen out to the whole sample" };
+
+        // ---- SOUND page: output group
+        std::array<PushKey, kNumGroups> groupKeys { PushKey { "A", "Send this pad to group bus A" }, PushKey { "B", "Send this pad to group bus B" },
+                                                    PushKey { "C", "Send this pad to group bus C" }, PushKey { "D", "Send this pad to group bus D" } };
+        std::unique_ptr<juce::ParameterAttachment> groupAttachment;
+        void showGroup (int g);
 
         // ---- SWAP page
         RotarySelector swapSel   { { "OFF", "1", "2", "3", "4" } };

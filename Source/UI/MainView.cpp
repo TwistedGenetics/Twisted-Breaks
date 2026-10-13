@@ -189,6 +189,7 @@ namespace tb::ui
           transportDisplay (p.getBridge().transport),
           waveform (p),
           padEditor (p),
+          mixer (p),
           meter (p.getBridge()),
           status (p)
     {
@@ -198,6 +199,7 @@ namespace tb::ui
         addAndMakeVisible (transportDisplay);
         addAndMakeVisible (waveform);
         addAndMakeVisible (padEditor);
+        addChildComponent (mixer);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -226,15 +228,16 @@ namespace tb::ui
         for (const auto& n : nav)
             addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, n.phase)));
 
-        // PADS and SLICER pick the pad editor's SOUND and SLICE pages; the
-        // screen shows slice markers while the SLICE page is open.
-        navKeys[0]->onClick = [this] { padEditor.setPage (PadEditorPanel::Page::sound); };
-        navKeys[1]->onClick = [this] { padEditor.setPage (PadEditorPanel::Page::slice); };
+        // PADS and SLICER pick the pad editor's SOUND and SLICE pages (with the
+        // CRT on screen; it shows slice markers while the SLICE page is open).
+        // MIXER swaps the CRT for the group mixer.
+        navKeys[0]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::sound); };
+        navKeys[1]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::slice); };
+        navKeys[4]->onClick = [this] { showMixer (! mixer.isVisible()); };
         padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
         {
             waveform.setSliceView (page == PadEditorPanel::Page::slice || page == PadEditorPanel::Page::swap);
-            navKeys[0]->setToggleState (page != PadEditorPanel::Page::slice, dontSendNotification);
-            navKeys[1]->setToggleState (page == PadEditorPanel::Page::slice, dontSendNotification);
+            updateNavLamps();
         };
         padEditor.onFitView = [this] { waveform.fitView(); };
         navKeys[0]->setToggleState (true, dontSendNotification);
@@ -243,6 +246,7 @@ namespace tb::ui
         {
             waveform.setPad (pad);
             padEditor.setPad (pad);
+            mixer.setSelectedPad (pad);
             status.refresh (pad);
         };
 
@@ -264,6 +268,7 @@ namespace tb::ui
         status.setBounds (layout::statusStrip);
         transportDisplay.setBounds (layout::transport);
         waveform.setBounds (layout::scope);
+        mixer.setBounds (layout::scope);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
@@ -283,7 +288,8 @@ namespace tb::ui
     {
         padGrid.refresh();
         transportDisplay.refresh();
-        waveform.refresh();
+        if (mixer.isVisible()) mixer.refresh();
+        else                   waveform.refresh();
         padEditor.refresh();
 
         // MIDI-learn / note edits change saved state: tell the host.
@@ -296,6 +302,22 @@ namespace tb::ui
         meter.refresh();
         status.refresh (padGrid.getSelectedPad());
         panicButton.tick();
+    }
+
+    void MainView::showMixer (bool show)
+    {
+        mixer.setVisible (show);
+        waveform.setVisible (! show);
+        updateNavLamps();
+    }
+
+    void MainView::updateNavLamps()
+    {
+        const bool mix   = mixer.isVisible();
+        const bool slice = padEditor.getPage() == PadEditorPanel::Page::slice;
+        navKeys[0]->setToggleState (! mix && ! slice, dontSendNotification);
+        navKeys[1]->setToggleState (! mix && slice,   dontSendNotification);
+        navKeys[4]->setToggleState (mix,              dontSendNotification);
     }
 
     void MainView::paint (Graphics& g)

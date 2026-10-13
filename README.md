@@ -27,8 +27,9 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** |
 | 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** |
 | 4.1 | SWAP groups: hand off between breaks at slice points | **done** — 175/175 automated checks |
-| 5 | Four group buses + mixer | next |
-| 6–8 | FX, sequencer, snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
+| 5 | Four group buses + mixer | **done** — 195/195 automated checks |
+| 6 | 16 performance FX per group | next |
+| 7–8 | Sequencer, snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -44,8 +45,8 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 259 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
-  `pad16_swapq`).
+* 295 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_group`, `grp_a_level` ... `grp_d_bypass`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
@@ -80,6 +81,11 @@ Sections that aren't built yet are visibly marked offline on the panel
   playing break's **next slice marker** (or next 1/16, beat or bar: **AT**),
   carrying on from the same point in its own break and starting right on
   its own hit. The waiting pad flashes. Hit the playing pad again to stop.
+* **Group buses A-D**: every pad goes to a group (**GROUP** keys on the
+  SOUND page; tiles show "GRP B"). The **MIXER** key swaps the screen for
+  four channel strips: **fader**, LED meter, **PAN**, **M**ute, **S**olo and
+  FX **BYPASS** (FX arrive in Phase 6). Click a strip's name plate to send
+  the selected pad there. All automatable (`grp_a_level` ... `grp_d_bypass`).
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

@@ -321,9 +321,11 @@ namespace
         for (int pad = 0; pad < tb::kNumPads; ++pad)
             for (auto* n : { tb::params::padSwap, tb::params::padSwapAt })
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
-        check (allPadParams, "256 per-pad parameters exist (pad01_gain .. pad16_swapq)");
+        for (int pad = 0; pad < tb::kNumPads; ++pad)
+            allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, tb::params::padGroup)) != nullptr;
+        check (allPadParams, "272 per-pad parameters exist (pad01_gain .. pad16_group)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 259, "259 automatable parameters in total (3 master + 16 x 16 pads)");
+        check (p.getParameters().processor.getParameters().size() == 295, "295 automatable parameters in total (3 master + 17 x 16 pads + 5 x 4 groups)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -958,6 +960,204 @@ namespace
 
 
     //==========================================================================
+    //  PHASE 5: group buses
+    //==========================================================================
+    void testGroups (const juce::File& tone)
+    {
+        std::cout << "\n== Phase 5: group buses A-D ==" << std::endl;
+        using namespace tb::params;
+        TwistedBreaksProcessor probe;
+        bool all = true;
+        for (int g = 0; g < tb::kNumGroups; ++g)
+            for (auto* n : { grpLevel, grpPan, grpMute, grpSolo, grpBypass })
+                all &= probe.getParameters().getParameter (groupId (g, n)) != nullptr;
+        check (all && groupId (2, grpLevel) == "grp_c_level", "4 groups x level / pan / mute / solo / FX bypass, stable IDs (grp_c_level)");
+        check (juce::roundToInt (probe.getParameters().getRawParameterValue (padId (9, padGroup))->load()) == 0,
+               "pads start in group A (older sets sound the same)");
+
+        Rig r;
+        r.load (0, tone);
+        r.load (1, tone);
+        setPadParam (r.p, 1, padGroup, 1.0f);              // pad 2 -> group B
+        r.settle();
+
+        auto grp = [&] (int g, const char* n, float v) { setParam (r.p, groupId (g, n), v); };
+        auto& br = r.p.getBridge();
+        for (auto& gp : br.groupPeak) gp.exchange (0.0f);
+
+        const auto ref = renderNote (r.p, r.host, 37, 127, 2);
+        check (br.groupPeak[1].exchange (0.0f) > 0.1f && br.groupPeak[0].exchange (0.0f) == 0.0f,
+               "pad 2 routed to group B: B's meter moves, A's doesn't");
+
+        grp (1, grpLevel, -6.0f);
+        r.settle();
+        auto out = renderNote (r.p, r.host, 37, 127, 2);
+        const float ratio = out.getSample (0, 700) / ref.getSample (0, 700);
+        check (std::abs (ratio - juce::Decibels::decibelsToGain (-6.0f)) < 1.0e-4f,
+               "group B LEVEL -6 dB scales pad 2 by exactly -6 dB (x" + juce::String (ratio, 5) + ")");
+
+        r.settle();
+        out = renderNote (r.p, r.host, 36, 127, 2);
+        check (std::abs (out.getSample (0, 700) - ref.getSample (0, 700)) < 1.0e-6f, "...while pad 1 (group A) is untouched ("
+                 + juce::String (out.getSample (0, 700), 6) + " vs " + juce::String (ref.getSample (0, 700), 6) + ")");
+
+        grp (1, grpLevel, 0.0f);
+        grp (1, grpPan, 1.0f);
+        r.settle();
+        out = renderNote (r.p, r.host, 37, 127, 2);
+        check (isSilent (out.getMagnitude (0, 0, out.getNumSamples())) && out.getMagnitude (1, 0, out.getNumSamples()) > 0.1f,
+               "group PAN hard right: group B only on the right");
+        grp (1, grpPan, 0.0f);
+
+        grp (0, grpMute, 1.0f);
+        r.settle();
+        out = renderNote (r.p, r.host, 36, 127, 2);
+        r.settle();
+        auto out2 = renderNote (r.p, r.host, 37, 127, 2);
+        check (isSilent (peakOf (out)) && peakOf (out2) > 0.1f, "group MUTE silences group A only");
+        grp (0, grpMute, 0.0f);
+
+        grp (1, grpSolo, 1.0f);
+        r.settle();
+        out = renderNote (r.p, r.host, 36, 127, 2);
+        r.settle();
+        out2 = renderNote (r.p, r.host, 37, 127, 2);
+        check (isSilent (peakOf (out)) && peakOf (out2) > 0.1f, "group SOLO on B silences group A");
+        grp (1, grpSolo, 0.0f);
+
+        // Re-routing a pad: it now follows its new group's fader.
+        grp (1, grpLevel, -12.0f);
+        setPadParam (r.p, 0, padGroup, 1.0f);
+        r.settle();
+        out = renderNote (r.p, r.host, 36, 127, 2);
+        check (std::abs (out.getSample (0, 700) / ref.getSample (0, 700) - juce::Decibels::decibelsToGain (-12.0f)) < 1.0e-4f,
+               "moving pad 1 to group B: it follows B's level");
+        setPadParam (r.p, 0, padGroup, 0.0f);
+        grp (1, grpLevel, 0.0f);
+        r.settle();
+
+        // Muting a group while a loop plays: a 20 ms glide, no click.
+        setPadParam (r.p, 0, padMode, (float) modeLoop);
+        setPadParam (r.p, 0, padSync, 0.0f);
+        r.settle();
+        {
+            juce::AudioBuffer<float> all (2, 12 * kBlock), buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            for (int b = 0; b < 12; ++b)
+            {
+                if (b == 4) grp (0, grpMute, 1.0f);
+                runBlock (r.p, r.host, buf, midi);
+                for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            }
+            const float natural = maxStepIn (all, 0, 100, 4 * kBlock);
+            check (maxStepIn (all, 0, 4 * kBlock - 2, 6 * kBlock) <= natural * 1.05f && isSilent (all.getMagnitude (0, 7 * kBlock, 5 * kBlock)),
+                   "muting a group mid-loop fades it out (no click) and it goes silent");
+        }
+        grp (0, grpMute, 0.0f);
+        setPadParam (r.p, 0, padMode, (float) modeOneShot);
+        r.settle();
+
+        // A host block bigger than announced still plays through the buses correctly.
+        {
+            const auto blocks = renderNote (r.p, r.host, 36, 127, 6);
+            r.settle();
+            juce::AudioBuffer<float> big (2, 6 * kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            runBlock (r.p, r.host, big, midi);
+            float diff = 0.0f;
+            for (int i = 0; i < big.getNumSamples(); ++i) diff = juce::jmax (diff, std::abs (big.getSample (0, i) - blocks.getSample (0, i)));
+            check (diff < 1.0e-6f, "a 3072-sample host block (prepared for 512) renders identically (diff " + juce::String (diff, 8) + ")");
+        }
+
+        // State.
+        grp (2, grpLevel, -9.0f); grp (2, grpPan, -0.4f); grp (3, grpMute, 1.0f); grp (1, grpBypass, 1.0f);
+        setPadParam (r.p, 7, padGroup, 3.0f);
+        juce::MemoryBlock blob;
+        r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        auto raw = [&] (const juce::String& id) { return q.getParameters().getRawParameterValue (id)->load(); };
+        check (std::abs (raw (groupId (2, grpLevel)) + 9.0f) < 0.01f && std::abs (raw (groupId (2, grpPan)) + 0.4f) < 0.01f
+                 && raw (groupId (3, grpMute)) > 0.5f && raw (groupId (1, grpBypass)) > 0.5f
+                 && juce::roundToInt (raw (padId (7, padGroup))) == 3,
+               "group levels, pans, mutes, bypass and pad routing are saved with the set");
+    }
+
+    void testMixerView()
+    {
+        std::cout << "\n== Phase 5: MIXER view ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+        tb::ui::MainView* view = nullptr;
+        tb::ui::MixerPanel* mixer = nullptr;
+        tb::ui::WaveformEditor* crt = nullptr;
+        juce::Button* mixerKey = nullptr;
+        juce::Button* groupKeyD = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* m = dynamic_cast<tb::ui::MixerPanel*> (&c)) mixer = m;
+            if (auto* w = dynamic_cast<tb::ui::WaveformEditor*> (&c)) crt = w;
+            if (auto* sk = dynamic_cast<tb::ui::SelectorKey*> (&c)) if (sk->getName() == "MIXER") mixerKey = sk;
+            if (auto* b = dynamic_cast<juce::Button*> (&c)) if (b->getTooltip() == "Send this pad to group bus D") groupKeyD = b;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (view && mixer && crt && mixerKey && groupKeyD, "found the MIXER key, mixer, CRT and GROUP keys");
+        if (! (view && mixer && crt && mixerKey && groupKeyD)) return;
+
+        check (mixerKey->isEnabled(), "MIXER key is online");
+        mixerKey->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (mixer->isVisible() && ! crt->isVisible() && mixerKey->getToggleState(), "MIXER shows the four strips in place of the CRT");
+
+        // Drag group B's fader down with the mouse.
+        juce::Slider* faderB = nullptr;
+        for (auto* c : mixer->getChildren())
+            if (auto* sl = dynamic_cast<juce::Slider*> (c)) if (sl->getTooltip().startsWith ("GROUP B level")) faderB = sl;
+        check (faderB != nullptr, "found group B's fader");
+        if (faderB != nullptr)
+        {
+            auto src = juce::Desktop::getInstance().getMainMouseSource();
+            const auto t0 = juce::Time::getCurrentTime();
+            const auto start = faderB->getLocalBounds().getCentre().toFloat();
+            auto ev = [&] (juce::Point<float> pos, int ms, bool down)
+            {
+                return juce::MouseEvent (src, pos, down ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(),
+                                         1.0f, 0, 0, 0, 0, faderB, faderB, t0 + juce::RelativeTime::milliseconds (ms), start, t0, 1, false);
+            };
+            faderB->mouseDown (ev (start, 0, true));
+            for (int i = 1; i <= 5; ++i) faderB->mouseDrag (ev (start.translated (0.0f, 8.0f * (float) i), i * 10, true));
+            faderB->mouseUp (ev (start.translated (0.0f, 40.0f), 70, false));
+            const float lvl = r.p.getParameters().getRawParameterValue (tb::params::groupId (1, tb::params::grpLevel))->load();
+            check (lvl < -3.0f, "dragging group B's fader down lowers grp_b_level (" + juce::String (lvl, 1) + " dB)");
+        }
+
+        // Click GROUP C's header: the selected pad (1) is routed to C.
+        {
+            const auto hb = mixer->headerBounds (2).getCentre().toFloat();
+            auto src = juce::Desktop::getInstance().getMainMouseSource();
+            const auto t0 = juce::Time::getCurrentTime();
+            juce::MouseEvent e (src, hb, juce::ModifierKeys(), 1.0f, 0, 0, 0, 0, mixer, mixer, t0, hb, t0, 1, false);
+            mixer->mouseUp (e);
+            check (juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padGroup))->load()) == 2,
+                   "clicking GROUP C's plate routes the selected pad to group C");
+        }
+
+        groupKeyD->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padGroup))->load()) == 3
+                 && groupKeyD->getToggleState(), "SOUND page GROUP key D routes the pad to group D");
+
+        view->showMixer (false);
+        check (! mixer->isVisible() && crt->isVisible(), "PADS / SLICER bring the CRT back");
+    }
+
+    //==========================================================================
     //  0.4.1: SWAP groups
     //==========================================================================
     struct TimedEvent { int at; juce::MidiMessage msg; };
@@ -1569,6 +1769,20 @@ namespace
         const bool playPage  = out.getFileName().contains ("play");
         const bool slicePage = out.getFileName().contains ("slice");
         const bool swapPage  = out.getFileName().contains ("swap");
+        const bool mixerView = out.getFileName().contains ("mixer");
+        if (mixerView)
+        {
+            // Kick + snare in A, hats in B, stab in C; a mix with a muted D.
+            const int groupOf[] = { 0, 0, 0, 1, 1, 2, 2, 3 };
+            for (int pad = 0; pad < 8; ++pad) setPadParam (p, pad, tb::params::padGroup, (float) groupOf[pad]);
+            setParam (p, tb::params::groupId (1, tb::params::grpLevel), -6.0f);
+            setParam (p, tb::params::groupId (1, tb::params::grpPan), 0.35f);
+            setParam (p, tb::params::groupId (2, tb::params::grpLevel), -14.0f);
+            setParam (p, tb::params::groupId (2, tb::params::grpPan), -0.5f);
+            setParam (p, tb::params::groupId (3, tb::params::grpMute), 1.0f);
+            setParam (p, tb::params::groupId (2, tb::params::grpBypass), 1.0f);
+            setParam (p, tb::params::groupId (0, tb::params::grpSolo), 0.0f);
+        }
         if (swapPage)
         {
             p.getSamples().autoSlice (0);
@@ -1592,6 +1806,15 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (mixerView)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showMixer (true);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+        }
         if (playPage || slicePage || swapPage)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -1664,6 +1887,8 @@ int main (int argc, char* argv[])
         testSlicing (toneAudio, tone);
         testSliceEditingOnScreen (tone);
         testSwapGroups();
+        testGroups (tone);
+        testMixerView();
         testEditorDrivesState();
         testRealtimeSafety();
 

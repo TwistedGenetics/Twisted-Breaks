@@ -31,6 +31,7 @@ namespace tb::params
     inline constexpr int kV3 = 3;   // parameters introduced in 0.3.x
     inline constexpr int kV4 = 4;   // parameters introduced in 0.4.x
     inline constexpr int kV5 = 5;   // parameters introduced in 0.4.1 (SWAP groups)
+    inline constexpr int kV6 = 6;   // parameters introduced in 0.5.x (group buses)
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
@@ -64,6 +65,19 @@ namespace tb::params
     inline constexpr const char* padSwap    = "swap";      // choice: Off / 1..4
     inline constexpr const char* padSwapAt  = "swapq";     // choice: Slice / 1/16 / Beat / Bar
 
+    // ---- Per pad (Phase 5) ---------------------------------------------------
+    inline constexpr const char* padGroup   = "group";     // choice: A / B / C / D
+
+    // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
+    inline constexpr const char* grpLevel   = "level";     // dB
+    inline constexpr const char* grpPan     = "pan";       // -1 .. +1
+    inline constexpr const char* grpMute    = "mute";      // bool
+    inline constexpr const char* grpSolo    = "solo";      // bool
+    inline constexpr const char* grpBypass  = "bypass";    // bool: skip the group's FX chain
+
+    inline constexpr float grpLevelMinDb = -60.0f;
+    inline constexpr float grpLevelMaxDb =   6.0f;
+
     enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2 };
     enum SwapAt  { swapAtSlice = 0, swapAtSixteenth = 1, swapAtBeat = 2, swapAtBar = 3 };
     inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
@@ -76,6 +90,12 @@ namespace tb::params
     inline juce::String padId (int pad, const char* name)
     {
         return "pad" + juce::String (pad + 1).paddedLeft ('0', 2) + "_" + name;
+    }
+
+    /** "grp_a_level" etc. group is 0-based (0 = A). */
+    inline juce::String groupId (int group, const char* name)
+    {
+        return juce::String ("grp_") + juce::String::charToString ((juce::juce_wchar) ('a' + group)) + "_" + name;
     }
 
     /** Builds the full parameter layout for the AudioProcessorValueTreeState. */

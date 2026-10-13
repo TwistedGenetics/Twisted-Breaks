@@ -114,8 +114,19 @@ private:
         std::atomic<float>* slice = nullptr;
         std::atomic<float>* swap = nullptr;
         std::atomic<float>* swapAt = nullptr;
+        std::atomic<float>* group = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
+
+    struct GroupParamPointers
+    {
+        std::atomic<float>* level = nullptr;
+        std::atomic<float>* pan = nullptr;
+        std::atomic<float>* mute = nullptr;
+        std::atomic<float>* solo = nullptr;
+        std::atomic<float>* bypass = nullptr;
+    };
+    std::array<GroupParamPointers, tb::kNumGroups> groupParams {};
 
     // Parameter listener: a finished UI gesture means the saved state changed.
     void parameterValueChanged (int, float) override {}

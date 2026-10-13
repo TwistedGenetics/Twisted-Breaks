@@ -43,9 +43,22 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.slice   = apvts.getRawParameterValue (padId (pad, padSlice));
         pp.swap    = apvts.getRawParameterValue (padId (pad, padSwap));
         pp.swapAt  = apvts.getRawParameterValue (padId (pad, padSwapAt));
+        pp.group   = apvts.getRawParameterValue (padId (pad, padGroup));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
-                 && pp.swap && pp.swapAt);
+                 && pp.swap && pp.swapAt && pp.group);
+    }
+
+    for (int g = 0; g < tb::kNumGroups; ++g)
+    {
+        using namespace tb::params;
+        auto& gp = groupParams[(size_t) g];
+        gp.level  = apvts.getRawParameterValue (groupId (g, grpLevel));
+        gp.pan    = apvts.getRawParameterValue (groupId (g, grpPan));
+        gp.mute   = apvts.getRawParameterValue (groupId (g, grpMute));
+        gp.solo   = apvts.getRawParameterValue (groupId (g, grpSolo));
+        gp.bypass = apvts.getRawParameterValue (groupId (g, grpBypass));
+        jassert (gp.level && gp.pan && gp.mute && gp.solo && gp.bypass);
     }
 
     for (auto* param : AudioProcessor::getParameters())
@@ -189,6 +202,18 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         dst.slice   = juce::roundToInt (src.slice->load (relaxed));
         dst.swap    = juce::roundToInt (src.swap->load (relaxed));
         dst.swapAt  = juce::roundToInt (src.swapAt->load (relaxed));
+        dst.group   = juce::jlimit (0, tb::kNumGroups - 1, juce::roundToInt (src.group->load (relaxed)));
+    }
+
+    for (int g = 0; g < tb::kNumGroups; ++g)
+    {
+        const auto& src = groupParams[(size_t) g];
+        auto& dst = p.groups[(size_t) g];
+        dst.levelDb = cleanValue (src.level->load (relaxed), 1.0e-3f);
+        dst.pan     = cleanPan (src.pan->load (relaxed));
+        dst.mute    = src.mute->load (relaxed) > 0.5f;
+        dst.solo    = src.solo->load (relaxed) > 0.5f;
+        dst.bypass  = src.bypass->load (relaxed) > 0.5f;
     }
 
     engine.process (buffer, midi, ts, p);

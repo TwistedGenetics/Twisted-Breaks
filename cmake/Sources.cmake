@@ -18,6 +18,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Engine/SampleLoader.cpp
     ${TB_SRC}/Engine/TransientDetector.cpp
     ${TB_SRC}/Engine/MasterSection.cpp
+    ${TB_SRC}/Engine/GroupBus.cpp
 
     # UI: the reactor control-room skin
     ${TB_SRC}/UI/ReactorLookAndFeel.cpp
@@ -30,5 +31,6 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/PadEditorPanel.cpp
     ${TB_SRC}/UI/Controls.cpp
     ${TB_SRC}/UI/FXGrid.cpp
+    ${TB_SRC}/UI/MixerPanel.cpp
     ${TB_SRC}/UI/MainView.cpp
 )

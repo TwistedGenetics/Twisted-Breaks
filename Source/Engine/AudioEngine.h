@@ -10,6 +10,7 @@
 #include "Engine/SampleBuffer.h"
 #include "Engine/SliceTable.h"
 #include "Engine/MasterSection.h"
+#include "Engine/GroupBus.h"
 
 namespace tb
 {
@@ -19,10 +20,10 @@ namespace tb
         Owns all real-time DSP. PluginProcessor::processBlock() is a thin
         wrapper that snapshots parameters and calls AudioEngine::process().
 
-        Signal flow (Phase 2):
-            MIDI / UI pad events -> per-pad PadVoices -> master -> output
-        Signal flow (from Phase 5):
-            voices -> GroupBus A..D -> FXChain per group -> master -> output
+        Signal flow (Phase 5):
+            MIDI / UI pad events -> per-pad PadVoices
+                -> GroupBus A..D (by each pad's GROUP) -> [FX chain, Phase 6]
+                -> group level / pan / mute / solo -> master -> output
 
         Real-time rules enforced here:
           * every buffer is allocated in prepare(), never in process()
@@ -81,6 +82,16 @@ namespace tb
             int   slice   = 1;       // 1..16, SLICE mode
             int   swap    = 0;       // 0 = off, 1..4: SWAP group
             int   swapAt  = 0;       // params::SwapAt: when a hand-off lands
+            int   group   = 0;       // 0..3 = A..D
+        };
+
+        struct GroupParams
+        {
+            float levelDb = 0.0f;
+            float pan     = 0.0f;
+            bool  mute    = false;
+            bool  solo    = false;
+            bool  bypass  = false;
         };
 
         struct BlockParams
@@ -89,6 +100,7 @@ namespace tb
             bool  limiterEnabled = true;
             bool  panicParam     = false;
             std::array<PadParams, kNumPads> pads {};
+            std::array<GroupParams, kNumGroups> groups {};
         };
 
         void process (juce::AudioBuffer<float>& buffer,
@@ -153,6 +165,7 @@ namespace tb
         void releasePad (int pad) noexcept;
         void handleMidi (const juce::MidiMessage& m) noexcept;
         void renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
+        void renderSpan (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
         void applyPadCommands() noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
 
@@ -173,6 +186,9 @@ namespace tb
         std::array<int,  kNumPads>  padChoke {};
         std::array<float, kNumPads> padVelSens {};
         std::array<int,  kNumPads>  padSwap {};       // 0 = off, 1..4
+        std::array<int,  kNumPads>  padGroup {};      // 0..3 = A..D
+        std::array<GroupBus, kNumGroups> groups;
+        std::array<float, kNumGroups> groupPeak {};   // per-block, for the mixer meters
         std::array<int,  kNumPads>  padSwapAt {};
         std::array<int,  kSwapGroups + 1> swapPlaying {};   // [1..4]: pad, or -1
         std::array<PendingSwap, kSwapGroups + 1> pendingSwap {};

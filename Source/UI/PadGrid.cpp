@@ -63,6 +63,7 @@ namespace tb::ui
             const bool soloed = raw (params::padSolo) > 0.5f;
             pad.setMuteSolo (muted, soloed, muted || (anySolo && ! soloed));
             pad.setQueued (bridge.padQueued[(size_t) i].load (std::memory_order_relaxed));
+            pad.setGroup (juce::roundToInt (raw (params::padGroup)));
 
             // Footer tag: playback mode, choke and SWAP group, e.g. "LOOP C2 SW1".
             const int mode  = juce::roundToInt (raw (params::padMode));

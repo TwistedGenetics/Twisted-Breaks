@@ -20,7 +20,7 @@ namespace tb::ui
         };
 
         constexpr int kHeaderH = 28;
-        constexpr int kKnobW   = 86;
+        constexpr int kKnobW   = 76;
         constexpr int kCtlTop  = 52;     // top of controls (captions sit above)
 
         // PLAY page columns: x, width, caption
@@ -58,6 +58,15 @@ namespace tb::ui
             addChildComponent (knobs[(size_t) i]);
         }
         addChildComponent (reverseSwitch);
+
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            addChildComponent (groupKeys[(size_t) g]);
+            groupKeys[(size_t) g].onClick = [this, g]
+            {
+                if (groupAttachment != nullptr) groupAttachment->setValueAsCompleteGesture ((float) g);
+            };
+        }
 
         styleKnob (velKnob, 62);
         velKnob.setTooltip ("Velocity sensitivity: 0% = every hit at full level, 100% = level follows how hard you play");
@@ -137,6 +146,13 @@ namespace tb::ui
         reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
+        groupAttachment.reset();
+    }
+
+    void PadEditorPanel::showGroup (int g)
+    {
+        for (int k = 0; k < kNumGroups; ++k)
+            groupKeys[(size_t) k].setToggleState (k == g, dontSendNotification);
     }
 
     std::vector<Component*> PadEditorPanel::sliceControls()
@@ -169,6 +185,7 @@ namespace tb::ui
 
         for (auto& k : knobs) k.setVisible (sound);
         reverseSwitch.setVisible (sound);
+        for (auto& k : groupKeys) k.setVisible (sound);
         for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
                                                                     &velKnob, &muteKey, &soloKey, &noteSel })
             comp->setVisible (play);
@@ -212,6 +229,13 @@ namespace tb::ui
         swapAtSel.attach (apvts.getParameter (id (params::padSwapAt)));
 
         noteSel.setNote (processor.getEngine().getPadNote (pad));
+
+        groupAttachment.reset();
+        if (auto* prm = apvts.getParameter (id (params::padGroup)))
+        {
+            groupAttachment = std::make_unique<ParameterAttachment> (*prm, [this] (float v) { showGroup (roundToInt (v)); });
+            groupAttachment->sendInitialUpdate();
+        }
     }
 
     void PadEditorPanel::chooseFile()
@@ -306,7 +330,14 @@ namespace tb::ui
 
         for (int i = 0; i < kNumKnobs; ++i)
             knobs[(size_t) i].setBounds (knobCell (i).reduced (4, 0));
-        reverseSwitch.setBounds (kNumKnobs * kKnobW + 12, kCtlTop - 10, 66, getHeight() - kCtlTop + 10);
+        reverseSwitch.setBounds (kNumKnobs * kKnobW + 8, kCtlTop - 10, 66, getHeight() - kCtlTop + 10);
+        {
+            // GROUP: A B / C D keys in the last column.
+            const int x0 = kNumKnobs * kKnobW + 82, kw = (w - x0) / 2;
+            const int y0 = kCtlTop - 4, kh = (getHeight() - y0) / 2;
+            for (int k = 0; k < kNumGroups; ++k)
+                groupKeys[(size_t) k].setBounds (x0 + (k % 2) * kw, y0 + (k / 2) * kh, kw - 3, kh - 3);
+        }
 
         const int h = getHeight() - kCtlTop;
         auto col = [&] (int i) { return Rectangle<int> (kPlayCols[i].x, kCtlTop, kPlayCols[i].w, h); };
@@ -362,6 +393,9 @@ namespace tb::ui
             for (int i = 0; i < kNumKnobs; ++i)
                 g.drawText (kKnobs[i].caption, knobCell (i).withY (kCtlTop - 16).withHeight (14).toFloat(),
                             Justification::centred, false);
+            const float gx = (float) (kNumKnobs * kKnobW + 82);
+            g.drawText ("GROUP", Rectangle<float> (gx, (float) kCtlTop - 20.0f, (float) getWidth() - gx, 14.0f),
+                        Justification::centred, false);
         }
         else if (page == Page::slice)
         {

@@ -236,6 +236,24 @@ Hand-off between breaks at slice points (spec addition A1 in
   within a 1/32 note. `PadVoice` keeps the difference as `phaseOffset`, so
   `syncTo` holds it there instead of snapping back onto the grid.
 
+## 6c. Group buses (Phase 5, implemented)
+
+* Every pad has a GROUP parameter (`pad01_group`, A–D, default A so older
+  sets sound the same). Its voices render into that group's `GroupBus`
+  input, not straight into the master.
+* `AudioEngine::renderSpan` does voices → bus inputs → `GroupBus::mixInto`
+  (FX hook, then level / pan) → master, in pieces no longer than the bus
+  capacity. So the buses work at any host block size and at the sample-
+  accurate splits made for MIDI and SWAP hand-offs, without allocating.
+* Each bus: `grp_a_level` (dB, −60 = off … +6), `grp_a_pan` (balance),
+  `grp_a_mute`, `grp_a_solo` (solo between groups), `grp_a_bypass` (skips the
+  Phase 6 FX chain). Gains glide over 20 ms; a bus nothing played into this
+  span costs only the glide bookkeeping.
+* Post-fader peaks go to `EngineBridge::groupPeak` for the mixer's LED bars.
+* UI: the MIXER key swaps the CRT for `MixerPanel` (four strips: header plate
+  that routes the selected pad when clicked, fader, LED bar, PAN, M, S,
+  BYPASS). The SOUND page has A / B / C / D keys; tiles show "GRP B".
+
 ## 7. The 16 performance effects (Phase 6)
 
 Each `GroupBus` owns one `FXChain` holding all 16 effect instances in fixed
@@ -330,7 +348,7 @@ Ableton stores in the `.als` file:
 | **3 ✅** | Per-pad mode (one-shot / loop), tempo-synced loops phase-locked to PPQ, rates, choke groups, mute / solo, velocity sensitivity, MIDI learn | 126/126 automated checks incl. sync locked to the grid over 6 s, re-lock after jumps / tempo changes, seam crossfade, click-free choke |
 | **4 ✅** | `TransientDetector` (two-band spectral flux), `SliceTable`, slice editing on the CRT, equal / transient slicing, SLICE mode, SPREAD to pads with shared audio | 158/158 checks: every kick and snare of a test break found, slices ≤ 2.5 ms before the attack, no false slices on a tone, slice playback, edits, SPREAD memory sharing, state |
 | **4.1 ✅** | SWAP groups: latched pads hand off to each other at the next slice point (or 1/16 / beat / bar), continuing from the same point in the incoming break | 175/175 checks: lands within 2 samples of the marker, incoming starts on its own marker, stays on the grid, AT BAR, cancel, stop, transport stopped, state |
-| 5 | Four `GroupBus`es, mixer view, routing | Group mute/solo/pan correct |
+| **5 ✅** | Four `GroupBus`es (level / pan / mute / solo / FX-bypass hook), per-pad GROUP routing, MIXER view, group meters | 195/195 checks: exact -6 / -12 dB scaling, pan, mute, solo, re-routing, click-free mute glide, oversize host blocks render identically, MIXER fader / header / GROUP keys drive the parameters, state |
 | 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |
 | 7 | 32-step sequencer, live record with quantise | Sequencer sample-accurate vs. Live's metronome after loop wraps |
 | 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |

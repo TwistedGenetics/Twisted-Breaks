@@ -112,6 +112,11 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padSwapAt), kV5 }, prefix + "Swap At",
                 StringArray { "Slice", "1/16", "Beat", "Bar" }, swapAtSlice));
+
+            // ---- Phase 5: output group ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padGroup), kV6 }, prefix + "Group",
+                StringArray { "A", "B", "C", "D" }, 0));
         }
     }
 
@@ -145,6 +150,31 @@ namespace tb::params
 
         for (int p = 0; p < kNumPads; ++p)
             addPadParameters (layout, p);
+
+        // ---- Phase 5: group buses A..D ----
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            const String name = "Group " + String::charToString ((juce_wchar) ('A' + g)) + " ";
+
+            NormalisableRange<float> lvl (grpLevelMinDb, grpLevelMaxDb, 0.01f);
+            lvl.setSkewForCentre (-12.0f);
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { groupId (g, grpLevel), kV6 }, name + "Level", lvl, 0.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int) { return dbText (v, grpLevelMinDb); })
+                    .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue(); })));
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { groupId (g, grpPan), kV6 }, name + "Pan",
+                NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int) { return panText (v); })
+                    .withValueFromStringFunction (panFromText)));
+
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpMute),   kV6 }, name + "Mute", false));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpSolo),   kV6 }, name + "Solo", false));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpBypass), kV6 }, name + "FX Bypass", false));
+        }
 
         return layout;
     }

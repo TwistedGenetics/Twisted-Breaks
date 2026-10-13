@@ -43,6 +43,9 @@ namespace tb::ui
         /** A SWAP hand-off onto (or a stop of) this pad is waiting to land: the bezel flashes. */
         void setQueued (bool);
 
+        /** Output group 0..3, shown as A..D on the tile. */
+        void setGroup (int);
+
         bool isInterestedInFileDrag (const juce::StringArray&) override;
         void fileDragEnter (const juce::StringArray&, int, int) override;
         void fileDragExit (const juce::StringArray&) override;
@@ -70,6 +73,7 @@ namespace tb::ui
         juce::String tag;            // e.g. "LOOP C2"
         bool muted = false, soloed = false, silenced = false;
         bool queued = false, queuedFlash = false;
+        int  group = 0;
 
         juce::Image overlay;     // bezel, screws, grime, cracks — baked on resize
 

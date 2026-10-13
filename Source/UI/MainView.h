@@ -6,6 +6,7 @@
 #include "UI/TransportDisplay.h"
 #include "UI/WaveformEditor.h"
 #include "UI/PadEditorPanel.h"
+#include "UI/MixerPanel.h"
 #include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
@@ -28,7 +29,7 @@ namespace tb::ui
     };
 
     /** Highest development phase that is built (nav keys up to this are live). */
-    inline constexpr int kCurrentPhase = 4;
+    inline constexpr int kCurrentPhase = 5;
 
     /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button
@@ -79,7 +80,12 @@ namespace tb::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
+        /** MIXER view on / off (the mixer takes the CRT's place). */
+        void showMixer (bool);
+        bool isMixerShown() const noexcept { return mixer.isVisible(); }
+
     private:
+        void updateNavLamps();
         void timerCallback() override;
         void rebuildBackground();
 
@@ -89,6 +95,7 @@ namespace tb::ui
         TransportDisplay transportDisplay;
         WaveformEditor   waveform;
         PadEditorPanel   padEditor;
+        MixerPanel       mixer;
         NeedleMeter      meter;
         FXGrid           fxGrid;
         StatusStrip      status;

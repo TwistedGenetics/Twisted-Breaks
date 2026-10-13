@@ -50,6 +50,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Hit the playing pad again: stops at its next slice. PANIC stops everything
 - [ ] ✅ Save, close, reopen: groups and AT settings come back
 
+## Group buses & mixer (Phase 5)
+- [ ] ✅ Kick + snare pads to GROUP A, hats to B (SOUND page A-D keys): tiles show GRP A / GRP B
+- [ ] ✅ MIXER key: four strips; the LED bars move for the groups that are playing
+- [ ] ✅ Group B fader down / PAN / M / S: only the hats change; muting mid-break doesn't click
+- [ ] ✅ Automate `Group B Level` in Live: fader follows, no zipper noise
+- [ ] ✅ Click a strip's name plate: the selected pad moves to that group
+- [ ] ✅ Save, close, reopen: routing and mixer settings come back
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)

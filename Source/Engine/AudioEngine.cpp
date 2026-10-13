@@ -33,6 +33,8 @@ namespace tb
                 v.prepare (sampleRate);
 
         master.prepare (sampleRate, maxBlockSize);
+        for (auto& g : groups)
+            g.prepare (sampleRate, juce::jmax (512, maxBlockSize));
 
         // Scope shows roughly the same time window at any sample rate.
         scopeDecimation = juce::jmax (1, (int) std::round (sampleRate / 5512.5));
@@ -53,6 +55,8 @@ namespace tb
         padPeak.fill (0.0f);
         padFlash.fill (false);
         master.reset();
+        for (auto& g : groups) g.reset();
+        groupPeak.fill (0.0f);
         scopeCounter = 0;
     }
 
@@ -132,6 +136,15 @@ namespace tb
         bool anySolo = false;
         for (const auto& pp : bp.pads) anySolo = anySolo || pp.solo;
 
+        // Group buses: level, pan, mute / solo (solo is between groups).
+        bool anyGroupSolo = false;
+        for (const auto& gp : bp.groups) anyGroupSolo = anyGroupSolo || gp.solo;
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            const auto& gp = bp.groups[(size_t) g];
+            groups[(size_t) g].setParams (gp.levelDb, gp.pan, ! gp.mute && (! anyGroupSolo || gp.solo), gp.bypass);
+        }
+
         for (int p = 0; p < kNumPads; ++p)
         {
             const auto& pp = bp.pads[(size_t) p];
@@ -140,6 +153,7 @@ namespace tb
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
             padSwap[(size_t) p]    = juce::jlimit (0, kSwapGroups, pp.swap);
             padSwapAt[(size_t) p]  = juce::jlimit (0, 3, pp.swapAt);
+            padGroup[(size_t) p]   = juce::jlimit (0, kNumGroups - 1, pp.group);
 
             auto& s = padSettings[(size_t) p];
             const auto* buf = padSample[(size_t) p].get();
@@ -198,9 +212,7 @@ namespace tb
             const bool audible = ! pp.mute && (! anySolo || pp.solo);
             const float g = (! audible || pp.gainDb <= params::padGainMinDb + 0.01f)
                               ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
-            const float pan = juce::jlimit (-1.0f, 1.0f, pp.pan);
-            s.gainLeft  = g * (pan > 0.0f ? 1.0f - pan : 1.0f);
-            s.gainRight = g * (pan < 0.0f ? 1.0f + pan : 1.0f);
+            GroupBus::panGains (g, pp.pan, s.gainLeft, s.gainRight);
 
             for (auto& v : voices[(size_t) p])
                 if (v.isActive() && v.getBuffer() == buf)
@@ -496,10 +508,7 @@ namespace tb
 
             if (span > 0)
             {
-                for (int p = 0; p < kNumPads; ++p)
-                    for (auto& v : voices[(size_t) p])
-                        if (v.isActive())
-                            padPeak[(size_t) p] = juce::jmax (padPeak[(size_t) p], v.renderAdding (buffer, start, span));
+                renderSpan (buffer, start, span);
 
                 for (int g = 1; g <= kSwapGroups; ++g)
                     if (pendingSwap[(size_t) g].active)
@@ -514,6 +523,37 @@ namespace tb
         }
     }
 
+    void AudioEngine::renderSpan (juce::AudioBuffer<float>& buffer, int start, int num) noexcept
+    {
+        // Voices -> their group's bus -> (FX) -> level / pan -> master buffer.
+        // Spans longer than a bus can hold are done in pieces.
+        while (num > 0)
+        {
+            const int n = juce::jmin (num, groups[0].getCapacity());
+
+            std::array<juce::AudioBuffer<float>*, kNumGroups> inputs {};
+            for (int g = 0; g < kNumGroups; ++g)
+                inputs[(size_t) g] = &groups[(size_t) g].beginSpan (n);
+
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                const int g = padGroup[(size_t) p];
+                for (auto& v : voices[(size_t) p])
+                    if (v.isActive())
+                    {
+                        groups[(size_t) g].markUsed();
+                        padPeak[(size_t) p] = juce::jmax (padPeak[(size_t) p], v.renderAdding (*inputs[(size_t) g], 0, n));
+                    }
+            }
+
+            for (int g = 0; g < kNumGroups; ++g)
+                groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g], groups[(size_t) g].mixInto (buffer, start, n));
+
+            start += n;
+            num   -= n;
+        }
+    }
+
     //==========================================================================
     void AudioEngine::process (juce::AudioBuffer<float>& buffer,
                                const juce::MidiBuffer& midi,
@@ -524,6 +564,7 @@ namespace tb
         buffer.clear();
         padPeak.fill (0.0f);
         padFlash.fill (false);
+        groupPeak.fill (0.0f);
 
         // ---- New / cleared samples from the loader, then this block's pad settings.
         transportNow  = &transport;
@@ -578,6 +619,8 @@ namespace tb
             while (v > prev && ! a.compare_exchange_weak (prev, v, std::memory_order_relaxed)) {}
         };
         storeMax (bridge.peakLeft,  result.peakLeft);
+        for (int g = 0; g < kNumGroups; ++g)
+            storeMax (bridge.groupPeak[(size_t) g], groupPeak[(size_t) g]);
         storeMax (bridge.peakRight, result.peakRight);
         bridge.limiterReductionDb.store (result.maxReductionDb, std::memory_order_relaxed);
         if (result.clipped) bridge.clipCount.fetch_add (1, std::memory_order_relaxed);
