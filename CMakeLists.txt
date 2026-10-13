@@ -123,3 +123,20 @@ if(TB_BUILD_TESTS)
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     juce_generate_juce_header(TwistedBreaksTests)
 endif()
+
+# -----------------------------------------------------------------------------
+#  Host round-trip test: loads the BUILT VST3 through JUCE's VST3 hosting, the
+#  same boundary Ableton uses (state save/restore, host parameter changes).
+# -----------------------------------------------------------------------------
+if(TB_BUILD_TESTS)
+    juce_add_console_app(TwistedBreaksHostTest PRODUCT_NAME "TwistedBreaksHostTest")
+    target_sources(TwistedBreaksHostTest PRIVATE Tests/HostTest.cpp)
+    target_compile_definitions(TwistedBreaksHostTest PRIVATE
+        ${TB_JUCE_DEFINES} JUCE_PLUGINHOST_VST3=1 JUCE_MODAL_LOOPS_PERMITTED=1
+        $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>)
+    target_link_libraries(TwistedBreaksHostTest PRIVATE
+        juce::juce_audio_utils juce::juce_audio_processors
+        juce::juce_recommended_config_flags)
+    juce_generate_juce_header(TwistedBreaksHostTest)
+    add_dependencies(TwistedBreaksHostTest TwistedBreaks_VST3)
+endif()

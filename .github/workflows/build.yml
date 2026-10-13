@@ -46,6 +46,24 @@ jobs:
           auval -a | grep -i twisted || true
           auval -strict -v aumu Twbk Twgn
 
+      - name: Host round trip (AU + VST3, as Ableton does it)
+        run: |
+          set +e
+          for target in "build/TwistedBreaks_artefacts/Release/VST3/TwistedBreaks.vst3" "TwistedBreaks.component"; do
+            ./build/TwistedBreaksHostTest_artefacts/Release/TwistedBreaksHostTest "$target" > host.log 2>&1
+            code=$?
+            cat host.log
+            # Surface every line as an annotation so results are readable via the API.
+            while IFS= read -r line; do
+              case "$line" in
+                *"[FAIL]"*) echo "::error title=HostTest $target::$line" ;;
+                *) [ -n "$line" ] && echo "::notice title=HostTest $target::$line" ;;
+              esac
+            done < host.log
+            [ $code -ne 0 ] && failed=1
+          done
+          exit ${failed:-0}
+
       - name: Validate VST3 (pluginval)
         run: |
           curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
