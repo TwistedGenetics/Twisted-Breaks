@@ -18,7 +18,7 @@ namespace tb::ui
             [PAD 07] [SOUND] [PLAY] [SLICE] [SWAP] [ readout ] [LOAD] [CLEAR]
 
             SOUND:  GAIN  PAN  PITCH  START  END  REVERSE  GROUP (A-D)
-            PLAY:   MODE  SYNC  RATE  CHOKE  VEL  MUTE/SOLO  NOTE (+ LEARN)
+            PLAY:   MODE  SYNC  RATE  CHOKE  VEL  FIXED  MUTE/SOLO  NOTE (+ LEARN)
             SLICE:  AUTO / EQUAL  SENS  COUNT  SLICE  RESET / UNSLICE  SPREAD / FIT
             SWAP:   GROUP  AT  (+ how it works)
 
@@ -68,6 +68,7 @@ namespace tb::ui
         RotarySelector rateSel  { { "1/4", "1/2", "1x", "2x" } };
         RotarySelector chokeSel { { "OFF", "1", "2", "3", "4" } };
         juce::Slider   velKnob;
+        PushKey        fixVelKey { "FIX", "FIXED VELOCITY: every hit plays at full level, however hard you play", juce::Colour (0xffffa928) };
         PushKey        muteKey { "M", "Mute this pad", juce::Colour (0xffff3a1c) };
         PushKey        soloKey { "S", "Solo this pad (other pads go quiet)", juce::Colour (0xff7dff5a) };
         NoteSelector   noteSel;
@@ -105,7 +106,7 @@ namespace tb::ui
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
         std::array<std::unique_ptr<SliderAttachment>, kNumKnobs> knobAttachments;
         std::unique_ptr<SliderAttachment> velAttachment, sliceAttachment;
-        std::unique_ptr<ButtonAttachment> reverseAttachment, syncAttachment, muteAttachment, soloAttachment;
+        std::unique_ptr<ButtonAttachment> reverseAttachment, syncAttachment, muteAttachment, soloAttachment, fixVelAttachment;
 
         std::unique_ptr<juce::FileChooser> chooser;
 

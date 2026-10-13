@@ -118,6 +118,7 @@ private:
         std::atomic<float>* swap = nullptr;
         std::atomic<float>* swapAt = nullptr;
         std::atomic<float>* group = nullptr;
+        std::atomic<float>* fixVel = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

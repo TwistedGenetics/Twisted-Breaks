@@ -68,6 +68,76 @@ go off when the plugin closes.
 
 ---
 
+## A4. Fixed velocity per pad
+
+**Status: built in 0.5.2.**
+
+Prompt:
+
+> I would like a fixed velocity button for each pad.
+
+As built: per-pad `pad01_fixvel` (automatable), the **FIX** key on the PLAY
+page next to VEL. On: every hit (MIDI, mouse, and later the sequencer)
+plays at full level regardless of velocity, like an MPC's FULL LEVEL; VEL
+dims while it's on.
+
+---
+
+## A5. Slice sequencer per pad — rearrange a break's slices
+
+**Status: planned for Phase 7** (shares the sequencer's clock, transport
+sync and live-record code; the main 32-step sequencer still triggers pads).
+
+Prompt:
+
+> Give every pad its own sequencer for when it holds a sliced break, so I
+> can rearrange the slices into a different order and have the pad play
+> that order (see SLOOP for the M-VAVE FM-1 for ideas).
+
+What to build:
+
+* **Per-pad slice sequence**, on the pad editor's new **SEQ** page and the
+  CRT: a row of 16 steps (32 with a second page), length 1–32, each step a
+  1/16 (rate 1/8, 1/16, 1/32, 1/16T selectable). By default step N plays
+  slice N, so an untouched sequence plays the break as recorded.
+* **Each step** chooses:
+  * which **slice** (1–16), or **REST**, or **TIE** (let the previous slice
+    keep playing),
+  * **REV** (reverse that slice), **PITCH** (±12 st), **VELOCITY** (or the
+    pad's FIXED VEL), **LENGTH** (cut short: 1/4 … full),
+  * **RATCHET** ×1/×2/×3/×4 (retrigger inside the step: rolls and stutters),
+  * **CHANCE** (probability 0–100 %),
+  * **MICRO-TIMING** ±½ step in 1/64-step increments (SLOOP-style), so
+    rearranged hits keep the original groove,
+  * plus a pattern-wide **SWING**.
+* **Edit by playing**: hold the pad's SEQ and tap the pads of a SPREAD
+  break to write slices into steps, or click a step then a slice on the CRT.
+  Drag across steps to copy a slice. Undo / redo within the editor.
+* **One-press variations** (the jungle bit):
+  * **SHUFFLE** (random reorder, keeping kicks on downbeats when the
+    slices came from AUTO SLICE),
+  * **RANDOM** within the current slices,
+  * **REVERSE ORDER**, **HALF** (repeat the first half), **ROTATE** ±1 step,
+  * **FILL** (ratchets / rolls on the last beat, momentary while held),
+  * **RESET** to 1, 2, 3 … (the original break),
+  * 8 **pattern slots** per pad, switchable on the next bar.
+* **Playback**: the pad becomes a "sequenced slice" pad: triggering it
+  starts its sequence (latched, synced to Live's bar grid like a LOOP);
+  works with SWAP groups (hand-off lands on a step), choke, groups / FX,
+  and the break bank (A2) so the same pattern can play another break.
+* **Real-time safety**: steps are plain fixed-size data handed to the
+  audio thread like slice tables; sample-accurate step timing from PPQ.
+* **State**: every sequence, slot and setting saved with the set; the
+  sequence position never drifts from Live's grid (tested over minutes,
+  with loop-brace jumps and tempo changes).
+
+Exit tests (automated): identity sequence plays the break sample-exactly;
+rearranged steps start each slice exactly on its step; REST / TIE / REV /
+RATCHET / CHANCE (seeded) / micro-timing / swing timing measured to the
+sample; slot switch lands on the bar; state round trip; zero allocations.
+
+---
+
 ## A2. Break bank swap — change the break under all 16 pads
 
 **Status: planned for Phase 8** (shares the quantised switching of

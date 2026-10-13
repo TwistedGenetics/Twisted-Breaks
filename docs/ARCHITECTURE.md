@@ -350,6 +350,6 @@ Ableton stores in the `.als` file:
 | **4.1 ✅** | SWAP groups: latched pads hand off to each other at the next slice point (or 1/16 / beat / bar), continuing from the same point in the incoming break | 175/175 checks: lands within 2 samples of the marker, incoming starts on its own marker, stays on the grid, AT BAR, cancel, stop, transport stopped, state |
 | **5 ✅** | Four `GroupBus`es (level / pan / mute / solo / FX-bypass hook), per-pad GROUP routing, MIXER view, group meters | 195/195 checks: exact -6 / -12 dB scaling, pan, mute, solo, re-routing, click-free mute glide, oversize host blocks render identically, MIXER fader / header / GROUP keys drive the parameters, state |
 | 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |
-| 7 | 32-step sequencer, live record with quantise | Sequencer sample-accurate vs. Live's metronome after loop wraps |
+| 7 | 32-step sequencer, live record with quantise; **per-pad slice sequencer** (spec addition A5) | Sequencer sample-accurate vs. Live's metronome after loop wraps |
 | 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |

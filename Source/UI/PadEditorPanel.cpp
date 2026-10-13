@@ -26,12 +26,13 @@ namespace tb::ui
         // PLAY page columns: x, width, caption
         struct Col { int x, w; const char* caption; };
         const Col kPlayCols[] = {
-            {   0, 92, "MODE"  },
-            {  94, 58, "SYNC"  },
-            { 154, 92, "RATE"  },
-            { 248, 92, "CHOKE" },
-            { 342, 70, "VEL"   },
-            { 414, 40, ""      },     // mute / solo keys
+            {   0, 84, "MODE"  },
+            {  86, 52, "SYNC"  },
+            { 140, 84, "RATE"  },
+            { 226, 84, "CHOKE" },
+            { 312, 62, "VEL"   },
+            { 376, 38, ""      },     // FIXED velocity key
+            { 416, 38, ""      },     // mute / solo keys
             { 458, 82, "NOTE"  },
         };
 
@@ -74,10 +75,11 @@ namespace tb::ui
         rateSel.setTooltip ("Loop speed: 1/4, 1/2, 1x or 2x");
         chokeSel.setTooltip ("Choke group: hitting a pad stops the other pads in the same group");
         muteKey.setClickingTogglesState (true);
+        fixVelKey.setClickingTogglesState (true);
         soloKey.setClickingTogglesState (true);
 
         for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
-                                                                    &velKnob, &muteKey, &soloKey, &noteSel })
+                                                                    &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel })
             addChildComponent (comp);
 
         noteSel.onNoteChanged = [this] (int n)
@@ -143,7 +145,7 @@ namespace tb::ui
         // Attachments must go before the controls they point at.
         for (auto& a : knobAttachments) a.reset();
         velAttachment.reset(); sliceAttachment.reset();
-        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
+        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
         groupAttachment.reset();
@@ -187,7 +189,7 @@ namespace tb::ui
         reverseSwitch.setVisible (sound);
         for (auto& k : groupKeys) k.setVisible (sound);
         for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
-                                                                    &velKnob, &muteKey, &soloKey, &noteSel })
+                                                                    &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel })
             comp->setVisible (play);
         for (Component* comp : sliceControls())
             comp->setVisible (slice);
@@ -216,7 +218,8 @@ namespace tb::ui
         sliceAttachment = std::make_unique<SliderAttachment> (apvts, id (params::padSlice), sliceKnob);
         sliceKnob.setDoubleClickReturnValue (true, 1.0);
 
-        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
+        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
+        fixVelAttachment  = std::make_unique<ButtonAttachment> (apvts, id (params::padFixVel),  fixVelKey);
         reverseAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padReverse), reverseSwitch);
         syncAttachment    = std::make_unique<ButtonAttachment> (apvts, id (params::padSync),    syncSwitch);
         muteAttachment    = std::make_unique<ButtonAttachment> (apvts, id (params::padMute),    muteKey);
@@ -289,6 +292,9 @@ namespace tb::ui
         noteSel.setLearning (engine.getNoteLearnPad() == pad);
         noteSel.tick();
 
+        // VEL does nothing while FIXED is on.
+        velKnob.setAlpha (fixVelKey.getToggleState() ? 0.4f : 1.0f);
+
         // Rate only matters for loops; dim it otherwise.
         const bool loop = modeSel.getIndex() == params::modeLoop;
         rateSel.setAlpha (loop ? 1.0f : 0.45f);
@@ -346,10 +352,11 @@ namespace tb::ui
         rateSel.setBounds   (col (2).withTrimmedTop (-6));
         chokeSel.setBounds  (col (3).withTrimmedTop (-6));
         velKnob.setBounds   (col (4));
-        auto ms = col (5).withTrimmedTop (-14);
+        fixVelKey.setBounds (col (5).withTrimmedTop (-14).reduced (0, 2));
+        auto ms = col (6).withTrimmedTop (-14);
         muteKey.setBounds (ms.removeFromTop (ms.getHeight() / 2).reduced (0, 2));
         soloKey.setBounds (ms.reduced (0, 2));
-        noteSel.setBounds (col (6).withTrimmedTop (2).withTrimmedBottom (6));
+        noteSel.setBounds (col (7).withTrimmedTop (2).withTrimmedBottom (6));
     }
 
     void PadEditorPanel::paint (Graphics& g)

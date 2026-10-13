@@ -151,6 +151,7 @@ namespace tb
             padMode[(size_t) p]    = pp.mode;
             padChoke[(size_t) p]   = pp.choke;
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
+            padFixVel[(size_t) p]  = pp.fixVel;
             padSwap[(size_t) p]    = juce::jlimit (0, kSwapGroups, pp.swap);
             padSwapAt[(size_t) p]  = juce::jlimit (0, 3, pp.swapAt);
             padGroup[(size_t) p]   = juce::jlimit (0, kNumGroups - 1, pp.group);
@@ -239,7 +240,8 @@ namespace tb
         chokeOthers (pad, padChoke[(size_t) pad]);
 
         // Velocity sensitivity: 0 = every hit at full level, 1 = level follows velocity.
-        const float sens  = padVelSens[(size_t) pad];
+        // FIXED VEL: always full level, whatever the sensitivity.
+        const float sens  = padFixVel[(size_t) pad] ? 0.0f : padVelSens[(size_t) pad];
         const float level = 1.0f - sens + sens * velocity;
 
         // ---- SWAP group: queue a hand-off instead of starting now.

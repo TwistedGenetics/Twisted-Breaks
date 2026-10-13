@@ -28,9 +28,10 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** |
 | 4.1 | SWAP groups: hand off between breaks at slice points | **done** — 175/175 automated checks |
 | 5 | Four group buses + mixer | **done** |
-| 5.1 | iRig Pads lights: controller pads show what's playing | **done** — 211/211 automated checks |
+| 5.1 | iRig Pads lights: controller pads show what's playing | **done** |
+| 5.2 | FIXED velocity key per pad | **done** — 216/216 automated checks |
 | 6 | 16 performance FX per group | next |
-| 7–8 | Sequencer, snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
+| 7–8 | Sequencer (+ per-pad slice sequencer), snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -46,8 +47,8 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 295 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
-  `pad16_group`, `grp_a_level` ... `grp_d_bypass`).
+* 311 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_fixvel`, `grp_a_level` ... `grp_d_bypass`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
@@ -61,6 +62,8 @@ Sections that aren't built yet are visibly marked offline on the panel
   * **RATE**: 1/4, 1/2, 1x, 2x loop speed.
   * **CHOKE** 1-4: a hit stops the other pads in the same group (3 ms fade).
   * **VEL**: velocity sensitivity, 0% (always full) to 100%.
+  * **FIX**: fixed velocity, every hit at full level (automatable
+    `pad01_fixvel`).
   * **M / S**: mute and solo.
   * **NOTE**: drag or scroll to change the pad's MIDI note, or LEARN and
     play a note on your controller.

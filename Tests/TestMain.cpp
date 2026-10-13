@@ -322,10 +322,11 @@ namespace
             for (auto* n : { tb::params::padSwap, tb::params::padSwapAt })
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
         for (int pad = 0; pad < tb::kNumPads; ++pad)
-            allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, tb::params::padGroup)) != nullptr;
-        check (allPadParams, "272 per-pad parameters exist (pad01_gain .. pad16_group)");
+            for (auto* n : { tb::params::padGroup, tb::params::padFixVel })
+                allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
+        check (allPadParams, "288 per-pad parameters exist (pad01_gain .. pad16_fixvel)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 295, "295 automatable parameters in total (3 master + 17 x 16 pads + 5 x 4 groups)");
+        check (p.getParameters().processor.getParameters().size() == 311, "311 automatable parameters in total (3 master + 18 x 16 pads + 5 x 4 groups)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -958,6 +959,50 @@ namespace
                  && q.getEngine().getPadNote (5) == 70, "mode, choke and learned notes are saved with the set");
     }
 
+
+    void testFixedVelocity (const juce::File& tone)
+    {
+        std::cout << "\n== 0.5.2: fixed velocity ==" << std::endl;
+        Rig r;
+        r.load (0, tone);
+        r.settle();
+        const auto hard = renderNote (r.p, r.host, 36, 127, 1);
+        r.settle();
+        auto soft = renderNote (r.p, r.host, 36, 20, 1);
+        check (peakOf (soft) < peakOf (hard) * 0.3f, "normally a soft hit is quieter");
+        r.settle();
+
+        setPadParam (r.p, 0, tb::params::padFixVel, 1.0f);
+        r.settle();
+        soft = renderNote (r.p, r.host, 36, 20, 1);
+        float diff = 0.0f;
+        for (int i = 0; i < kBlock; ++i) diff = juce::jmax (diff, std::abs (soft.getSample (0, i) - hard.getSample (0, i)));
+        check (diff < 1.0e-6f, "FIXED VEL on: a soft hit plays at exactly full level");
+        r.settle();
+        r.p.triggerPadFromUi (0, 0.1f, true);
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        runBlock (r.p, r.host, buf, midi);
+        check (std::abs (peakOf (buf) - peakOf (hard)) < 1.0e-5f, "...also for mouse clicks low on the pad");
+        r.settle();
+
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::Button* fix = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (&c)) if (b->getTooltip().startsWith ("FIXED VELOCITY")) fix = b;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (fix != nullptr && fix->getToggleState(), "the PLAY page FIX key shows it's on");
+        if (fix != nullptr)
+        {
+            fix->triggerClick();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+            check (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padFixVel))->load() < 0.5f,
+                   "clicking FIX turns fixed velocity off (automatable: pad01_fixvel)");
+        }
+    }
 
     //==========================================================================
     //  0.5.1: controller pad lights (iRig Pads)
@@ -2010,6 +2055,7 @@ int main (int argc, char* argv[])
         testGroups (tone);
         testMixerView();
         testPadLights (tone);
+        testFixedVelocity (tone);
         testEditorDrivesState();
         testRealtimeSafety();
 

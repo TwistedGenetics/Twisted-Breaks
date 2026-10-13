@@ -32,6 +32,7 @@ namespace tb::params
     inline constexpr int kV4 = 4;   // parameters introduced in 0.4.x
     inline constexpr int kV5 = 5;   // parameters introduced in 0.4.1 (SWAP groups)
     inline constexpr int kV6 = 6;   // parameters introduced in 0.5.x (group buses)
+    inline constexpr int kV7 = 7;   // parameters introduced in 0.5.2 (fixed velocity)
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
@@ -67,6 +68,9 @@ namespace tb::params
 
     // ---- Per pad (Phase 5) ---------------------------------------------------
     inline constexpr const char* padGroup   = "group";     // choice: A / B / C / D
+
+    // ---- Per pad (0.5.2) -------------------------------------------------------
+    inline constexpr const char* padFixVel  = "fixvel";    // bool: every hit at full level
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB

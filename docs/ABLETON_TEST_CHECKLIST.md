@@ -33,6 +33,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Put open + closed hat pads in CHOKE 1: the closed hat cuts the open one cleanly
 - [ ] ✅ M / S keys mute / solo pads (tiles darken, red / green lamps)
 - [ ] ✅ VEL 0%: soft and hard hits are equally loud
+- [ ] ✅ FIX key on a pad: soft hits from the controller play at full level; off again: velocity works
 - [ ] ✅ NOTE: LEARN then hit a pad on your controller: that note now plays the selected pad; save / reopen keeps it
 
 ## Slicing (Phase 4)

@@ -117,6 +117,10 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padGroup), kV6 }, prefix + "Group",
                 StringArray { "A", "B", "C", "D" }, 0));
+
+            // ---- 0.5.2: fixed velocity (MPC "full level") ----
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padFixVel), kV7 }, prefix + "Fixed Velocity", false));
         }
     }
 

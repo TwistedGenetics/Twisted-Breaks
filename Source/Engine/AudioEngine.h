@@ -83,6 +83,7 @@ namespace tb
             int   swap    = 0;       // 0 = off, 1..4: SWAP group
             int   swapAt  = 0;       // params::SwapAt: when a hand-off lands
             int   group   = 0;       // 0..3 = A..D
+            bool  fixVel  = false;   // every hit at full level
         };
 
         struct GroupParams
@@ -185,6 +186,7 @@ namespace tb
         std::array<int,  kNumPads>  padMode {};       // this block's mode per pad
         std::array<int,  kNumPads>  padChoke {};
         std::array<float, kNumPads> padVelSens {};
+        std::array<bool,  kNumPads> padFixVel {};
         std::array<int,  kNumPads>  padSwap {};       // 0 = off, 1..4
         std::array<int,  kNumPads>  padGroup {};      // 0..3 = A..D
         std::array<GroupBus, kNumGroups> groups;
