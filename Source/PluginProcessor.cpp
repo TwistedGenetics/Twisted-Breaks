@@ -23,6 +23,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     masterLimiterParam = apvts.getRawParameterValue (tb::params::masterLimiter);
     masterPanicParam   = apvts.getRawParameterValue (tb::params::masterPanic);
     jassert (masterGainParam && masterLimiterParam && masterPanicParam);
+    seqRunParam    = apvts.getRawParameterValue (tb::params::seqRun);
+    seqLengthParam = apvts.getRawParameterValue (tb::params::seqLength);
+    seqResParam    = apvts.getRawParameterValue (tb::params::seqRes);
+    seqQuantParam  = apvts.getRawParameterValue (tb::params::seqQuant);
+    jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
 
     for (int pad = 0; pad < tb::kNumPads; ++pad)
     {
@@ -188,6 +193,10 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     p.masterGainDb   = masterGainParam->load (std::memory_order_relaxed);
     p.limiterEnabled = masterLimiterParam->load (std::memory_order_relaxed) > 0.5f;
     p.panicParam     = masterPanicParam->load (std::memory_order_relaxed) > 0.5f;
+    p.seqRun         = seqRunParam->load (std::memory_order_relaxed) > 0.5f;
+    p.seqLength      = juce::roundToInt (seqLengthParam->load (std::memory_order_relaxed));
+    p.seqRes         = juce::roundToInt (seqResParam->load (std::memory_order_relaxed));
+    p.seqQuant       = juce::roundToInt (seqQuantParam->load (std::memory_order_relaxed));
 
     constexpr auto relaxed = std::memory_order_relaxed;
     for (size_t pad = 0; pad < (size_t) tb::kNumPads; ++pad)
@@ -281,6 +290,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (tb::SampleManager::padsId), nullptr);
     state.removeChild (state.getChildWithName (tb::PadLights::lightsId), nullptr);
     state.removeChild (state.getChildWithName ("FX"), nullptr);
+    state.removeChild (state.getChildWithName (tb::SequencerData::seqId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -298,6 +308,8 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (midiMap, nullptr);
     state.appendChild (samples.toValueTree(), nullptr);
     state.appendChild (lights.toValueTree(), nullptr);
+
+    state.appendChild (bridge.seq.toValueTree(), nullptr);
 
     juce::ValueTree fxState ("FX");
     fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
@@ -326,6 +338,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
+    bridge.seq.fromValueTree (state.getChildWithName (tb::SequencerData::seqId));
     if (auto fxState = state.getChildWithName ("FX"); fxState.isValid())
     {
         engine.setFxLockedMask ((uint32_t) (juce::int64) fxState.getProperty ("lockedMask", (juce::int64) tb::fx::kDefaultLockedMask));

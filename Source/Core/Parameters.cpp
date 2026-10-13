@@ -181,6 +181,14 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpBypass), kV6 }, name + "FX Bypass", false));
         }
 
+        // ---- Phase 7: sequencer ----
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqRun, kV9 }, "Sequencer Run", true));
+        layout.add (std::make_unique<AudioParameterInt>  (ParameterID { seqLength, kV9 }, "Sequencer Length", 1, 32, 16));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqRes, kV9 }, "Sequencer Step",
+                                                            StringArray { "1/8", "1/16", "1/32" }, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
+                                                            StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
+
         // ---- Phase 6: performance FX, per group: on / off + settings ----
         for (int g = 0; g < kNumGroups; ++g)
         {

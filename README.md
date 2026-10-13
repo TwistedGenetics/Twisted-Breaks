@@ -31,7 +31,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 5.1 | iRig Pads lights: controller pads show what's playing | **done** |
 | 5.2 | FIXED velocity key per pad | **done** — 216/216 automated checks |
 | 6 | 16 performance FX per group | **done** — 267/267 automated checks |
-| 7 | 32-step sequencer (+ per-pad slice sequencer) | next |
+| 7 | 32-step sequencer + live recording | **done** — 296/296 automated checks |
+| 7.1 | Per-pad slice sequencer | next |
 | 8 | Snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
@@ -48,7 +49,7 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 511 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+* 515 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
   `pad16_fixvel`, `grp_a_level` ... `grp_d_bypass`, `grp_a_lpf` ...
   `grp_d_reverse_size`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
@@ -108,6 +109,14 @@ Sections that aren't built yet are visibly marked offline on the panel
   click a key to edit without switching it): its settings, LOCKED /
   MOMENTARY, ALL OFF. MIDI notes **C3-D#4** play FX 1-16 of the selected
   group; everything is automatable. PANIC stops tails and switches FX off.
+* **SEQUENCER** (top rail): a 32-step lane for every pad. Click a cell for a
+  step, drag up / down on it for velocity, click it again to clear it.
+  **LEN** 1-32, **STEP** 1/8 / 1/16 / 1/32, **RUN**: all automatable. It
+  follows Live's transport exactly (sample-accurate, restarts and loop-brace
+  jumps land on the right step). **ARM** a pad (click its lane number to
+  select it) and hits from the mouse or MIDI are recorded while Live plays,
+  quantised to **REC Q** (1/4, 1/8, 1/16, 1/32; finer than the step size
+  is kept as micro-timing). Patterns are saved with the set.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

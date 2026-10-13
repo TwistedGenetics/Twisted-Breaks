@@ -297,6 +297,34 @@ namespace
         }
     };
 
+    struct TimedEvent { int at; juce::MidiMessage msg; };
+
+    /** Renders `total` samples from the current host position, injecting events at absolute sample positions. */
+    juce::AudioBuffer<float> renderTimeline (Rig& r, int total, const std::vector<TimedEvent>& events,
+                                             std::vector<bool>* queued0 = nullptr)
+    {
+        const int blocks = (total + kBlock - 1) / kBlock;
+        juce::AudioBuffer<float> out (2, blocks * kBlock), buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (const auto& e : events)
+                if (e.at >= b * kBlock && e.at < (b + 1) * kBlock)
+                    midi.addEvent (e.msg, e.at - b * kBlock);
+            runBlock (r.p, r.host, buf, midi);
+            for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            if (queued0 != nullptr) queued0->push_back (r.p.getBridge().padQueued[0].load());
+        }
+        return out;
+    }
+
+    int firstSoundIn (const juce::AudioBuffer<float>& b, int ch, int from, int to)
+    {
+        for (int i = juce::jmax (0, from); i < juce::jmin (to, b.getNumSamples()); ++i)
+            if (std::abs (b.getSample (ch, i)) > 1.0e-7f) return i;
+        return -1;
+    }
+
     //==========================================================================
     //  PHASE 1
     //==========================================================================
@@ -335,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 511, "511 automatable parameters in total (3 master + 18 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 515, "515 automatable parameters in total (3 master + 4 sequencer + 18 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -1442,6 +1470,265 @@ namespace
         check (peakOf (buf) <= 1.0f && ! std::isnan (buf.getSample (0, 100)), "...and the output stays sane (no NaN, limiter holds)");
     }
 
+    //==========================================================================
+    //  PHASE 7: 32-step sequencer + live recording
+    //==========================================================================
+    /** Sample positions where sound starts after silence (block sample = 50 samples of 0.5). */
+    std::vector<int> onsets (const juce::AudioBuffer<float>& b, int ch = 0)
+    {
+        std::vector<int> o;
+        int quiet = 1000;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const bool loud = std::abs (b.getSample (ch, i)) > 1.0e-4f;
+            if (loud && quiet >= 200) o.push_back (i);
+            quiet = loud ? 0 : quiet + 1;
+        }
+        return o;
+    }
+
+    juce::String listOf (const std::vector<int>& v)
+    {
+        juce::StringArray a;
+        for (int x : v) a.add (juce::String (x));
+        return a.joinIntoString (" ");
+    }
+
+    struct SeqRig
+    {
+        Rig r;
+        tb::SequencerData& seq;
+        SeqRig() : seq (r.p.getBridge().seq)
+        {
+            juce::AudioBuffer<float> blip (1, 4000);
+            blip.clear();
+            for (int i = 0; i < 50; ++i) blip.setSample (0, i, 0.5f);
+            r.load (0, writeAudio ("seq_blip", blip, 48000.0, Fmt::wavFloat));
+            r.load (1, writeAudio ("seq_blip2", blip, 48000.0, Fmt::wavFloat));
+            r.host.bpm = 120.0;                               // 1/16 = 6000 samples
+            setPadParam (r.p, 1, tb::params::padPan, 1.0f);   // pad 2 on the right only
+            setPadParam (r.p, 0, tb::params::padPan, -1.0f);  // pad 1 on the left only
+            r.settle();
+        }
+        void step (int pad, int s, int vel = 127, int micro = 0)
+        {
+            tb::SeqStep st; st.on = true; st.velocity = vel; st.micro = micro;
+            seq.set (pad, s, st);
+        }
+        juce::AudioBuffer<float> run (int samples, const std::vector<TimedEvent>& events = {}, bool playing = true)
+        {
+            r.host.ppq = 0.0;
+            r.host.playing = playing;
+            auto out = renderTimeline (r, samples, events);
+            r.host.playing = false;
+            r.p.requestPanic();
+            r.settle();
+            return out;
+        }
+    };
+
+    void testSequencer()
+    {
+        std::cout << "\n== Phase 7: 32-step sequencer ==" << std::endl;
+        {
+            tb::SeqStep st; st.on = true; st.velocity = 77; st.micro = -64; st.probability = 55; st.ratchet = 3; st.pitch = -12;
+            check (tb::SeqStep::unpack (st.pack()) == st, "a step packs into 32 bits and back (velocity, micro-timing, future fields)");
+        }
+
+        SeqRig x;
+        x.step (0, 0); x.step (0, 4); x.step (0, 8); x.step (0, 12);
+        auto out = x.run (100000);
+        auto o = onsets (out);
+        check (o == std::vector<int> { 0, 24000, 48000, 72000, 96000 }, "steps 1, 5, 9, 13 at 120 BPM fire at exactly 0 / 24000 / 48000 / 72000 samples, and loop after 16 steps ("
+                                                                           + listOf (o) + ")");
+        check (onsets (out, 1).empty(), "...only pad 1's lane plays");
+
+        x.seq.clearAll();
+        x.step (0, 1, 127); x.step (0, 2, 64);
+        out = x.run (20000);
+        o = onsets (out);
+        const float ratio = out.getSample (0, 12010) / out.getSample (0, 6010);
+        check (o == std::vector<int> { 6000, 12000 } && std::abs (ratio - 64.0f / 127.0f) < 1.0e-4f,
+               "step 2 lands mid-block at sample 6000, and step velocity 64 plays at 64/127 (x" + juce::String (ratio, 4) + ")");
+
+        x.seq.clearAll();
+        x.step (0, 0);
+        setParam (x.r.p, tb::params::seqLength, 3.0f);
+        o = onsets (x.run (40000));
+        check (o == std::vector<int> { 0, 18000, 36000 }, "LENGTH 3: the pattern repeats every 3 steps (" + listOf (o) + ")");
+        setParam (x.r.p, tb::params::seqLength, 16.0f);
+
+        x.seq.clearAll();
+        x.step (0, 1);
+        setParam (x.r.p, tb::params::seqRes, 0.0f);       // 1/8
+        o = onsets (x.run (20000));
+        check (o == std::vector<int> { 12000 }, "STEP 1/8: step 2 is an 1/8 in (sample 12000)");
+        setParam (x.r.p, tb::params::seqRes, 1.0f);
+
+        x.seq.clearAll();
+        x.step (0, 2, 127, -64);
+        o = onsets (x.run (20000));
+        check (o == std::vector<int> { 9000 }, "micro-timing: a step pulled half a step early plays at 9000, not 12000 (" + listOf (o) + ")");
+
+        x.seq.clearAll();
+        x.step (0, 0); x.step (0, 4);
+        check (onsets (x.run (30000, {}, false)).empty(), "Live stopped: the sequencer is silent");
+        setParam (x.r.p, tb::params::seqRun, 0.0f);
+        check (onsets (x.run (30000)).empty(), "RUN off: the pattern doesn't play");
+        setParam (x.r.p, tb::params::seqRun, 1.0f);
+
+        // Relocate / loop-brace jump back to bar 1 mid-pattern: step 1 plays again at the jump.
+        {
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            juce::AudioBuffer<float> all (2, 80 * kBlock), buf (2, kBlock);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 80; ++b)
+            {
+                if (b == 30) x.r.host.ppq = 0.0;              // jump back at sample 15360
+                runBlock (x.r.p, x.r.host, buf, midi);
+                for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            }
+            x.r.host.playing = false;
+            o = onsets (all);
+            const bool ok = o.size() >= 2 && o[0] == 0 && std::find (o.begin(), o.end(), 30 * kBlock) != o.end()
+                         && std::find (o.begin(), o.end(), 30 * kBlock + 24000) != o.end();
+            check (ok, "a jump back to bar 1 (loop brace / relocate) restarts the pattern on the spot (" + listOf (o) + ")");
+            x.r.p.requestPanic(); x.r.settle();
+        }
+
+        // Transport restart: stop, back to 1, play: step 1 fires right at the start again.
+        o = onsets (x.run (10000));
+        check (! o.empty() && o[0] == 0, "stop and play again from bar 1: the first step fires at sample 0");
+    }
+
+    void testLiveRecord()
+    {
+        std::cout << "\n== Phase 7: live recording ==" << std::endl;
+        SeqRig x;
+        auto on = [] (int note, int vel = 100) { return juce::MidiMessage::noteOn (1, note, (juce::uint8) vel); };
+
+        // Not armed: nothing recorded.
+        x.run (20000, { { 7000, on (36) } });
+        check (! x.seq.laneHasSteps (0), "an un-armed pad isn't recorded");
+
+        x.seq.setArmed (0, true);
+        x.run (20000, { { 7000, on (36) } }, false);
+        check (! x.seq.laneHasSteps (0), "nothing is recorded while Live is stopped");
+
+        // Hit just after step 2 (7000): quantised back onto step 2, plays from the next pass.
+        auto out = x.run (110000, { { 7000, on (36, 90) } });
+        const auto st = x.seq.get (0, 1);
+        check (st.on && st.micro == 0 && st.velocity == 90, "armed: a hit at 7000 is recorded on step 2 (1/16), velocity 90");
+        auto o = onsets (out);
+        check (o == std::vector<int> { 7000, 96000 + 6000 }, "...you hear the hit, then the sequencer plays it in time next pass (" + listOf (o) + ")");
+
+        // Hit early (10000): quantised forward to step 3 (12000): no double hit this pass.
+        x.seq.clearLane (0);
+        out = x.run (110000, { { 10000, on (36) } });
+        o = onsets (out);
+        check (x.seq.get (0, 2).on && o == std::vector<int> { 10000, 96000 + 12000 },
+               "a hit early for step 3 records step 3 without a double hit straight after (" + listOf (o) + ")");
+
+        // 1/32 quantise on the 1/16 grid: kept as micro-timing.
+        x.seq.clearLane (0);
+        setParam (x.r.p, tb::params::seqQuant, 3.0f);
+        out = x.run (110000, { { 9100, on (36) } });
+        const auto st32 = x.seq.get (0, 2);
+        o = onsets (out);
+        check (st32.on && st32.micro == -64 && std::find (o.begin(), o.end(), 96000 + 9000) != o.end(),
+               "REC Q 1/32: a hit at 9100 plays back at 9000 (step 3 pulled half a step early) (" + listOf (o) + ")");
+        setParam (x.r.p, tb::params::seqQuant, 2.0f);
+
+        // Quantise 1/4: snapped to the beat.
+        x.seq.clearLane (0);
+        setParam (x.r.p, tb::params::seqQuant, 0.0f);
+        x.run (30000, { { 20000, on (36) } });
+        check (x.seq.get (0, 4).on && ! x.seq.get (0, 3).on, "REC Q 1/4: a hit at 20000 lands on the beat (step 5)");
+        setParam (x.r.p, tb::params::seqQuant, 2.0f);
+
+        // Mouse presses record too.
+        x.seq.clearLane (0);
+        x.r.host.ppq = 0.0; x.r.host.playing = true;
+        {
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 35; ++b) runBlock (x.r.p, x.r.host, buf, midi);    // to ~17920
+            x.r.p.triggerPadFromUi (0, 0.8f, true);
+            runBlock (x.r.p, x.r.host, buf, midi);
+        }
+        x.r.host.playing = false;
+        check (x.seq.get (0, 3).on, "mouse presses on an armed pad are recorded too (17920 -> step 4)");
+
+        x.seq.setArmed (0, false);
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        bool same = true;
+        for (int s = 0; s < 32; ++s) same &= q.getBridge().seq.get (0, s) == x.seq.get (0, s);
+        check (same && q.getBridge().seq.laneHasSteps (0), "the pattern is saved with the set");
+    }
+
+    void testSequencerView()
+    {
+        std::cout << "\n== Phase 7: SEQUENCER view ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::MainView* view = nullptr; tb::ui::SequencerPanel* panel = nullptr; juce::Button* seqKey = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* sp = dynamic_cast<tb::ui::SequencerPanel*> (&c)) panel = sp;
+            if (auto* sk = dynamic_cast<tb::ui::SelectorKey*> (&c)) if (sk->getName() == "SEQUENCER") seqKey = sk;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (view && panel && seqKey, "found the SEQUENCER key and view");
+        if (! (view && panel && seqKey)) return;
+        check (seqKey->isEnabled(), "SEQUENCER key is online");
+        seqKey->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (panel->isVisible() && view->getView() == tb::ui::MainView::View::sequencer, "it shows the 16 x 32 grid in place of the CRT");
+
+        auto& seq = r.p.getBridge().seq;
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Point<float> pos, juce::Point<float> down, bool pressed)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            return juce::MouseEvent (src, pos, pressed ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(),
+                                     1.0f, 0, 0, 0, 0, panel, panel, t, down, t, 1, false);
+        };
+        const auto c = panel->cellBounds (2, 5).getCentre();
+        panel->mouseDown (ev (c, c, true)); panel->mouseUp (ev (c, c, false));
+        check (seq.get (2, 5).on, "clicking a cell switches the step on");
+        panel->mouseDown (ev (c, c, true));
+        panel->mouseDrag (ev (c.translated (0.0f, -20.0f), c, true));
+        panel->mouseUp (ev (c.translated (0.0f, -20.0f), c, false));
+        check (seq.get (2, 5).on && seq.get (2, 5).velocity == 120, "dragging up on a step raises its velocity (100 -> " + juce::String (seq.get (2, 5).velocity) + ")");
+        panel->mouseDown (ev (c, c, true)); panel->mouseUp (ev (c, c, false));
+        check (! seq.get (2, 5).on, "clicking a lit step switches it off");
+
+        const auto lbl = panel->laneLabelBounds (6).getCentre();
+        panel->mouseDown (ev (lbl, lbl, true)); panel->mouseUp (ev (lbl, lbl, false));
+        juce::Button* arm = nullptr; juce::Button* clear = nullptr;
+        for (auto* ch : panel->getChildren())
+            if (auto* b = dynamic_cast<juce::Button*> (ch))
+            {
+                if (b->getName().startsWith ("ARM")) arm = b;
+                if (b->getName() == "CLEAR") clear = b;
+            }
+        check (arm != nullptr && arm->getButtonText() == "ARM PAD 07", "clicking lane 07 selects pad 7 (ARM follows)");
+        if (arm == nullptr || clear == nullptr) return;
+        arm->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (seq.isArmed (6), "ARM arms pad 7 for recording");
+        seq.set (6, 0, tb::SeqStep { true });
+        clear->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (! seq.laneHasSteps (6), "CLEAR empties pad 7's lane");
+    }
+
     void testFixedVelocity (const juce::File& tone)
     {
         std::cout << "\n== 0.5.2: fixed velocity ==" << std::endl;
@@ -1807,34 +2094,6 @@ namespace
     //==========================================================================
     //  0.4.1: SWAP groups
     //==========================================================================
-    struct TimedEvent { int at; juce::MidiMessage msg; };
-
-    /** Renders `total` samples from the current host position, injecting events at absolute sample positions. */
-    juce::AudioBuffer<float> renderTimeline (Rig& r, int total, const std::vector<TimedEvent>& events,
-                                             std::vector<bool>* queued0 = nullptr)
-    {
-        const int blocks = (total + kBlock - 1) / kBlock;
-        juce::AudioBuffer<float> out (2, blocks * kBlock), buf (2, kBlock);
-        juce::MidiBuffer midi;
-        for (int b = 0; b < blocks; ++b)
-        {
-            for (const auto& e : events)
-                if (e.at >= b * kBlock && e.at < (b + 1) * kBlock)
-                    midi.addEvent (e.msg, e.at - b * kBlock);
-            runBlock (r.p, r.host, buf, midi);
-            for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
-            if (queued0 != nullptr) queued0->push_back (r.p.getBridge().padQueued[0].load());
-        }
-        return out;
-    }
-
-    int firstSoundIn (const juce::AudioBuffer<float>& b, int ch, int from, int to)
-    {
-        for (int i = juce::jmax (0, from); i < juce::jmin (to, b.getNumSamples()); ++i)
-            if (std::abs (b.getSample (ch, i)) > 1.0e-7f) return i;
-        return -1;
-    }
-
     void testSwapGroups()
     {
         std::cout << "\n== 0.4.1: SWAP groups (hand-off between breaks at slice points) ==" << std::endl;
@@ -2418,6 +2677,23 @@ namespace
         const bool swapPage  = out.getFileName().contains ("swap");
         const bool mixerView = out.getFileName().contains ("mixer");
         const bool fxView    = out.getFileName().contains ("fx");
+        const bool seqView   = out.getFileName().contains ("seq");
+        if (seqView)
+        {
+            auto& seq = p.getBridge().seq;
+            auto put = [&] (int pad, const char* pattern, int vel)
+            {
+                for (int i = 0; pattern[i] != 0 && i < 32; ++i)
+                    if (pattern[i] != '.') { tb::SeqStep st; st.on = true; st.velocity = pattern[i] == 'x' ? vel : vel / 2; seq.set (pad, i, st); }
+            };
+            put (1, "x.........x.....x.x.......x.....", 120);
+            put (2, "....x.......x..o....x.......x..o", 115);
+            put (3, "x.x.x.oxx.x.x.x.x.x.x.oxx.x.x.ox", 90);
+            put (5, "..............x...............x.", 100);
+            { tb::SeqStep st; st.on = true; st.velocity = 80; st.micro = -64; seq.set (4, 7, st); }
+            setParam (p, tb::params::seqLength, 32.0f);
+            seq.setArmed (3, true);
+        }
         if (fxView)
         {
             setParam (p, tb::fx::paramId (0, tb::fx::lpf), 1.0f);
@@ -2462,6 +2738,16 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (seqView)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::sequencer);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+            host.playing = true;
+        }
         if (fxView)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -2562,6 +2848,9 @@ int main (int argc, char* argv[])
         testFxSpace();
         testFxUi();
         testFxCpu();
+        testSequencer();
+        testLiveRecord();
+        testSequencerView();
         testEditorDrivesState();
         testRealtimeSafety();
 

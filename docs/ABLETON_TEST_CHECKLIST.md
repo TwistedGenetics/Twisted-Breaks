@@ -77,6 +77,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Change a key to MOMENTARY / LOCKED in the FX editor; save, reopen: modes, group and FX settings come back
 - [ ] ✅ Record FX automation in Live (arm automation, click keys): plays back
 
+## Sequencer (Phase 7)
+- [ ] ✅ SEQUENCER key: program a kick / snare / hat pattern by clicking cells; drag up / down on steps for velocity
+- [ ] ✅ Play in Live: it plays in time with the metronome; stop / start / loop-brace / jump around: always on the right step
+- [ ] ✅ LEN 12 against Live's 4/4: polymetric loop; STEP 1/8 and 1/32 change the speed
+- [ ] ✅ Select a pad (click its lane number), ARM, play the pad from the iRig while Live runs: the hits appear in its lane, quantised to REC Q, and play back next time round (no doubled hits)
+- [ ] ✅ REC Q 1/32: off-grid hits play back where you played them
+- [ ] ✅ Save, close, reopen: the pattern comes back; automate `Sequencer Run` to drop the pattern in and out
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)
@@ -104,7 +112,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ **Transport start/stop**: start from bar 1, from mid-bar, and with the loop brace on — step lamps resync instantly after each loop wrap
 - [ ] ✅ Stopping transport doesn't cut ringing pads (tails decay naturally)
 - [ ] Phase 3: **loop sync** — synced loop stays locked to the grid for 64 bars, re-aligns after loop-brace wraps
-- [ ] Phase 7: **sequencer sync** — sequenced pad vs Drum Rack on the same steps: no flam when soloing both; still tight after relocating and after tempo changes
+- [ ] ✅ Phase 7: **sequencer sync** — sequenced pad vs Drum Rack on the same steps: no flam when soloing both; still tight after relocating and after tempo changes
 
 ## Project save / reload
 - [ ] ✅ Set Master Level −7.5 dB, limiter OFF, save, close Live, reopen: both restored

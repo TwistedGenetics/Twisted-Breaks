@@ -105,6 +105,11 @@ namespace tb
             bool  panicParam     = false;
             std::array<PadParams, kNumPads> pads {};
             std::array<GroupParams, kNumGroups> groups {};
+
+            bool  seqRun    = true;
+            int   seqLength = 16;
+            int   seqRes    = 1;     // index into params::seqResPpq
+            int   seqQuant  = 2;     // index into params::seqQuantPpq
         };
 
         void process (juce::AudioBuffer<float>& buffer,
@@ -181,6 +186,11 @@ namespace tb
         void renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
         void renderSpan (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
         bool handleFxNote (int note, bool on) noexcept;
+
+        // ---- Sequencer
+        struct SeqEvent { int offset; int pad; float velocity; };
+        void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
+        void recordHit (int pad, float velocity, int sampleOffset) noexcept;
         void applyPadCommands() noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
 
@@ -212,6 +222,14 @@ namespace tb
         std::array<uint32_t, kNumGroups> fxParamMask {};
         std::array<std::array<std::array<float, 3>, 16>, kNumGroups> fxParams {};
         std::atomic<int>      fxTargetGroup { 0 };
+
+        static constexpr int kMaxSeqEvents = 1024;
+        std::array<SeqEvent, kMaxSeqEvents> seqEvents {};
+        int seqEventCount = 0;
+        std::array<int64_t, kNumPads> seqSkipOnce {};    // absolute step just live-recorded: don't double it this pass
+        int    seqLengthNow = 16;
+        double seqStepPpq = 0.25, seqQuantPpq = 0.25;
+        bool   seqRecording = false;                     // transport running: hits may be recorded
         std::atomic<uint32_t> fxLocked { fx::kDefaultLockedMask };
         std::array<int,  kNumPads>  padSwapAt {};
         std::array<int,  kSwapGroups + 1> swapPlaying {};   // [1..4]: pad, or -1

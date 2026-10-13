@@ -107,6 +107,10 @@ private:
     std::atomic<float>* masterGainParam    = nullptr;
     std::atomic<float>* masterLimiterParam = nullptr;
     std::atomic<float>* masterPanicParam   = nullptr;
+    std::atomic<float>* seqRunParam = nullptr;
+    std::atomic<float>* seqLengthParam = nullptr;
+    std::atomic<float>* seqResParam = nullptr;
+    std::atomic<float>* seqQuantParam = nullptr;
 
     struct PadParamPointers
     {

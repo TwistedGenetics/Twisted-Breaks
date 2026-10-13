@@ -203,6 +203,7 @@ namespace tb::ui
           padEditor (p),
           mixer (p),
           fxEditor (p),
+          sequencer (p),
           meter (p.getBridge()),
           fxGrid (p),
           status (p)
@@ -215,6 +216,7 @@ namespace tb::ui
         addAndMakeVisible (padEditor);
         addChildComponent (mixer);
         addChildComponent (fxEditor);
+        addChildComponent (sequencer);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -252,7 +254,9 @@ namespace tb::ui
         // MIXER swaps the CRT for the group mixer.
         navKeys[0]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::sound); };
         navKeys[1]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::slice); };
+        navKeys[2]->onClick = [this] { showView (view == View::sequencer ? View::crt : View::sequencer); };
         navKeys[3]->onClick = [this] { showView (view == View::fx ? View::crt : View::fx); };
+        sequencer.onSelectPad = [this] (int pad) { padGrid.setSelectedPad (pad); };
         navKeys[4]->onClick = [this] { showView (view == View::mixer ? View::crt : View::mixer); };
         fxGrid.onSelectionChanged = [this] (int g, int f) { fxEditor.setTarget (g, f); };
         fxEditor.setTarget (fxGrid.getGroup(), fxGrid.getSelected());
@@ -269,10 +273,12 @@ namespace tb::ui
             waveform.setPad (pad);
             padEditor.setPad (pad);
             mixer.setSelectedPad (pad);
+            sequencer.setSelectedPad (pad);
             status.refresh (pad);
         };
 
         shownNoteMapVersion = p.getEngine().getNoteMapVersion();
+        shownSeqVersion     = p.getBridge().seq.getVersion();
 
         // Size last: resized() lays out the children created above.
         setSize (kWidth, kHeight);
@@ -292,6 +298,7 @@ namespace tb::ui
         waveform.setBounds (layout::scope);
         mixer.setBounds (layout::scope);
         fxEditor.setBounds (layout::scope);
+        sequencer.setBounds (layout::scope);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
@@ -316,10 +323,19 @@ namespace tb::ui
         {
             case View::mixer: mixer.refresh(); break;
             case View::fx:    fxEditor.refresh(); break;
+            case View::sequencer: sequencer.refresh(); break;
             case View::crt:   waveform.refresh(); break;
         }
         fxGrid.refresh();
         padEditor.refresh();
+
+        // Live-recorded steps change saved state too (UI edits mark it themselves).
+        const auto sv = processor.getBridge().seq.getVersion();
+        if (sv != shownSeqVersion)
+        {
+            shownSeqVersion = sv;
+            processor.markStateChanged();
+        }
 
         // MIDI-learn / note edits change saved state: tell the host.
         const auto nmv = processor.getEngine().getNoteMapVersion();
@@ -373,6 +389,7 @@ namespace tb::ui
         waveform.setVisible (v == View::crt);
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
+        sequencer.setVisible (v == View::sequencer);
         updateNavLamps();
     }
 
@@ -382,6 +399,7 @@ namespace tb::ui
         const bool slice = padEditor.getPage() == PadEditorPanel::Page::slice;
         navKeys[0]->setToggleState (crt && ! slice,     dontSendNotification);
         navKeys[1]->setToggleState (crt && slice,       dontSendNotification);
+        navKeys[2]->setToggleState (view == View::sequencer, dontSendNotification);
         navKeys[3]->setToggleState (view == View::fx,   dontSendNotification);
         navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
     }

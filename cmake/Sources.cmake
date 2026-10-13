@@ -35,5 +35,6 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/FXGrid.cpp
     ${TB_SRC}/UI/MixerPanel.cpp
     ${TB_SRC}/UI/FxEditorPanel.cpp
+    ${TB_SRC}/UI/SequencerPanel.cpp
     ${TB_SRC}/UI/MainView.cpp
 )

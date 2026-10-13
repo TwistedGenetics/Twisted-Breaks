@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include "Core/TransportSync.h"
+#include "Core/SequencerData.h"
 
 namespace tb
 {
@@ -76,6 +77,10 @@ namespace tb
         std::array<std::atomic<float>, kNumPads>    padPlayhead {};  // 0..1 of sample, < 0 = idle
         std::array<std::atomic<bool>, kNumPads>     padQueued {};    // SWAP hand-off waiting to land
         std::array<std::atomic<bool>, kNumPads>     padLoaded {};    // pad has a playable sample
+
+        // ---- Sequencer (shared: UI edits, audio plays + records) ----------------
+        SequencerData    seq;
+        std::atomic<int> seqStep { -1 };            // step under the playhead, -1 = stopped
 
         std::atomic<int>      lastMidiNote     { -1 };
         std::atomic<int>      lastMidiVelocity { 0 };

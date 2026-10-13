@@ -34,6 +34,15 @@ namespace tb::params
     inline constexpr int kV6 = 6;   // parameters introduced in 0.5.x (group buses)
     inline constexpr int kV7 = 7;   // parameters introduced in 0.5.2 (fixed velocity)
     inline constexpr int kV8 = 8;   // parameters introduced in 0.6.x (performance FX)
+    inline constexpr int kV9 = 9;   // parameters introduced in 0.7.x (sequencer)
+
+    // ---- Sequencer (Phase 7) ---------------------------------------------------
+    inline constexpr const char* seqRun    = "seq_run";      // bool: pattern plays with Live's transport
+    inline constexpr const char* seqLength = "seq_length";   // int 1..32 steps
+    inline constexpr const char* seqRes    = "seq_res";      // choice: 1/8, 1/16, 1/32 per step
+    inline constexpr const char* seqQuant  = "seq_quant";    // choice: live-record quantise 1/4, 1/8, 1/16, 1/32
+    inline constexpr double seqResPpq[]   = { 0.5, 0.25, 0.125 };
+    inline constexpr double seqQuantPpq[] = { 1.0, 0.5, 0.25, 0.125 };
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB

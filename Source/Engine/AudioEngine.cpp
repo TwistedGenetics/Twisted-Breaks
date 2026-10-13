@@ -2,6 +2,7 @@
 #include "Core/Parameters.h"
 #include "Core/FxDefs.h"
 #include <cmath>
+#include <limits>
 
 namespace tb
 {
@@ -51,6 +52,7 @@ namespace tb
                 v.kill();
 
         currentVoice.fill (0);
+        seqSkipOnce.fill (std::numeric_limits<int64_t>::min());
         swapPlaying.fill (-1);
         pendingSwap.fill ({});
         padPeak.fill (0.0f);
@@ -502,7 +504,7 @@ namespace tb
             if (learning >= 0) setPadNote (learning, m.getNoteNumber());
 
             const int pad = padForNote (m.getNoteNumber());
-            if (pad >= 0) triggerPad (pad, m.getFloatVelocity(), currentOffset);
+            if (pad >= 0) { recordHit (pad, m.getFloatVelocity(), currentOffset); triggerPad (pad, m.getFloatVelocity(), currentOffset); }
             else          handleFxNote (m.getNoteNumber(), true);
         }
         else if (m.isNoteOff())
@@ -515,6 +517,81 @@ namespace tb
         {
             panic();
         }
+    }
+
+    //==========================================================================
+    //  Sequencer
+    //==========================================================================
+    void AudioEngine::collectSequencerEvents (const TransportState& t, const BlockParams& bp, int numSamples) noexcept
+    {
+        seqEventCount = 0;
+        seqLengthNow  = juce::jlimit (1, SequencerData::kSteps, bp.seqLength);
+        seqStepPpq    = params::seqResPpq[juce::jlimit (0, 2, bp.seqRes)];
+        seqQuantPpq   = params::seqQuantPpq[juce::jlimit (0, 3, bp.seqQuant)];
+        seqRecording  = t.isPlaying && t.ppqPerSample > 0.0;
+
+        if (! seqRecording)
+        {
+            bridge.seqStep.store (-1, std::memory_order_relaxed);
+            return;
+        }
+
+        // Steps are on Live's absolute grid (step k starts at k * stepPpq), so a
+        // restart, a loop-brace wrap or a relocate lands on the right step.
+        const double p0 = t.ppqAtBlockStart;
+        const double p1 = p0 + numSamples * t.ppqPerSample;
+        const auto mod = [this] (int64_t k) { const int64_t L = seqLengthNow; return (int) (((k % L) + L) % L); };
+        bridge.seqStep.store (mod ((int64_t) std::floor (p0 / seqStepPpq + 1.0e-9)), std::memory_order_relaxed);
+
+        if (! bp.seqRun) return;
+
+        auto& data = bridge.seq;
+        const int64_t kFirst = (int64_t) std::floor (p0 / seqStepPpq) - 1;     // micro-timing can pull a step earlier
+        const int64_t kLast  = (int64_t) std::ceil  (p1 / seqStepPpq) + 1;
+
+        for (int64_t k = kFirst; k <= kLast; ++k)
+        {
+            const int s = mod (k);
+            for (int pad = 0; pad < kNumPads; ++pad)
+            {
+                const auto st = data.get (pad, s);
+                if (! st.on || k == seqSkipOnce[(size_t) pad]) continue;
+
+                const double when = ((double) k + st.micro / 128.0) * seqStepPpq;
+                if (when < p0 - 1.0e-9 || when >= p1 - 1.0e-9) continue;
+
+                if (seqEventCount >= kMaxSeqEvents) break;
+                const int offset = juce::jlimit (0, numSamples - 1, (int) std::lround ((when - p0) / t.ppqPerSample));
+                // Insert sorted by offset (a handful of events per block).
+                int i = seqEventCount++;
+                while (i > 0 && seqEvents[(size_t) i - 1].offset > offset) { seqEvents[(size_t) i] = seqEvents[(size_t) i - 1]; --i; }
+                seqEvents[(size_t) i] = { offset, pad, (float) st.velocity / 127.0f };
+            }
+        }
+    }
+
+    void AudioEngine::recordHit (int pad, float velocity, int sampleOffset) noexcept
+    {
+        if (! seqRecording || transportNow == nullptr || ! bridge.seq.isArmed (pad)) return;
+
+        // Quantise to the record grid, then express it on the step grid; anything
+        // finer than a step (1/32 on a 1/16 grid) is kept as micro-timing.
+        const double ppq = transportNow->ppqAt (sampleOffset);
+        const double q   = std::round (ppq / seqQuantPpq) * seqQuantPpq;
+        const double x   = q / seqStepPpq;
+        const int64_t k  = (int64_t) std::llround (x);
+        const int micro  = juce::jlimit (-64, 63, (int) std::lround ((x - (double) k) * 128.0));
+
+        SeqStep st;
+        st.on = true;
+        st.velocity = juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f));
+        st.micro = micro;
+        const int64_t L = seqLengthNow;
+        bridge.seq.set (pad, (int) (((k % L) + L) % L), st);
+
+        // That step may still be ahead in this pass (hit a little early):
+        // you've just played it, so the sequencer mustn't play it again now.
+        seqSkipOnce[(size_t) pad] = k;
     }
 
     bool AudioEngine::handleFxNote (int note, bool on) noexcept
@@ -644,24 +721,41 @@ namespace tb
         if (bridge.panicRequested.exchange (false) || panicEdge)
             panic();
 
+        // ---- Sequencer steps due in this block (sample positions, sorted).
+        collectSequencerEvents (transport, params, numSamples);
+
         // ---- Mouse pad presses from the UI land at the start of the block.
         PadUiEvent ev;
         while (bridge.padEvents.pop (ev))
         {
-            if (ev.noteOn) triggerPad (ev.pad, ev.velocity, 0);
+            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
             else           releasePad (ev.pad);
         }
 
-        // ---- Sample-accurate MIDI: render up to each event, then apply it.
-        int pos = 0;
+        // ---- Sample-accurate MIDI and sequencer steps, in time order: render
+        //      up to each event, then apply it (steps first on a tie).
+        int pos = 0, si = 0;
+        auto playStepsUpTo = [&] (int limit)
+        {
+            while (si < seqEventCount && seqEvents[(size_t) si].offset <= limit)
+            {
+                const auto& e = seqEvents[(size_t) si++];
+                renderVoices (buffer, pos, e.offset - pos);
+                pos = e.offset;
+                currentOffset = e.offset;
+                triggerPad (e.pad, e.velocity, e.offset);
+            }
+        };
         for (const auto meta : midi)
         {
             const int eventPos = juce::jlimit (0, numSamples, meta.samplePosition);
+            playStepsUpTo (eventPos);
             renderVoices (buffer, pos, eventPos - pos);
             pos = eventPos;
             currentOffset = eventPos;
             handleMidi (meta.getMessage());
         }
+        playStepsUpTo (numSamples - 1);
         renderVoices (buffer, pos, numSamples - pos);
 
         transportNow = nullptr;

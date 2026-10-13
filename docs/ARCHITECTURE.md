@@ -254,6 +254,25 @@ Hand-off between breaks at slice points (spec addition A1 in
   that routes the selected pad when clicked, fader, LED bar, PAN, M, S,
   BYPASS). The SOUND page has A / B / C / D keys; tiles show "GRP B".
 
+## 6d. Sequencer (Phase 7, implemented)
+
+* `Core/SequencerData`: 16 lanes x 32 steps, each step ONE packed 32-bit
+  atomic (on, velocity, micro-timing in 1/128 step, and probability /
+  ratchet / pitch fields reserved for later), shared by UI, audio and state
+  code with no locks or queues. Arm flags live there too.
+* Steps sit on Live's absolute grid: step k starts at k x STEP ppq, played
+  as `k mod LEN`, so starts, stops, relocates and loop-brace wraps need no
+  special handling. Each block, `collectSequencerEvents` lists the steps due
+  (including micro-timed ones up to half a step early), sorted by sample;
+  `process` merges them with the MIDI events, so everything triggers at its
+  exact sample.
+* Live record: an armed pad's MIDI / mouse hit, while Live plays, is
+  quantised to REC Q, written to the nearest step plus micro-timing, and
+  that absolute step is skipped once so a hit made just early isn't doubled.
+* UI: `SequencerPanel` in the screen area (16 x 32 grid, velocity drag,
+  playhead, LEN / STEP / REC Q readouts, RUN, ARM, CLEAR). Recorded steps
+  bump the data version; the UI marks the host state dirty.
+
 ## 7. The 16 performance effects (Phase 6, implemented)
 
 As built (`Engine/FXChain`, `Core/FxDefs`, `UI/FXGrid`, `UI/FxEditorPanel`):
@@ -381,6 +400,7 @@ Ableton stores in the `.als` file:
 | **4.1 ✅** | SWAP groups: latched pads hand off to each other at the next slice point (or 1/16 / beat / bar), continuing from the same point in the incoming break | 175/175 checks: lands within 2 samples of the marker, incoming starts on its own marker, stays on the grid, AT BAR, cancel, stop, transport stopped, state |
 | **5 ✅** | Four `GroupBus`es (level / pan / mute / solo / FX-bypass hook), per-pad GROUP routing, MIXER view, group meters | 195/195 checks: exact -6 / -12 dB scaling, pan, mute, solo, re-routing, click-free mute glide, oversize host blocks render identically, MIXER fader / header / GROUP keys drive the parameters, state |
 | **6 ✅** | 16 performance FX per group, LOCKED/MOMENTARY, MIDI notes + automation, FX editor view | 267/267 checks: each effect measured (filter slopes, crush levels, S&H runs, clip, roll-off, sample-exact stutter / repeat / reverse / delay timing, gate on the grid, pitch dive, comb pitch), click-free engage, throws, group independence, bypass, MIDI latch / momentary, mouse keys, state, ~4 % CPU with all 64 on |
-| 7 | 32-step sequencer, live record with quantise; **per-pad slice sequencer** (spec addition A5) | Sequencer sample-accurate vs. Live's metronome after loop wraps |
+| **7 ✅** | 32-step sequencer (16 lanes, velocity, length, step size, RUN), live record with quantise | 296/296 checks: steps sample-exact mid-block, length / step size, micro-timing, stopped / RUN off silent, jumps and restarts land on the right step, recording at 1/4–1/32 (finer kept as micro-timing) without double hits, mouse + MIDI, state, grid editing |
+| 7.1 | **Per-pad slice sequencer** (spec addition A5) | Rearranged slices land on their steps to the sample |
 | 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |
