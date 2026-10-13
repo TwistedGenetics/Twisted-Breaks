@@ -30,8 +30,9 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 5 | Four group buses + mixer | **done** |
 | 5.1 | iRig Pads lights: controller pads show what's playing | **done** |
 | 5.2 | FIXED velocity key per pad | **done** — 216/216 automated checks |
-| 6 | 16 performance FX per group | next |
-| 7–8 | Sequencer (+ per-pad slice sequencer), snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
+| 6 | 16 performance FX per group | **done** — 267/267 automated checks |
+| 7 | 32-step sequencer (+ per-pad slice sequencer) | next |
+| 8 | Snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -47,8 +48,9 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 311 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
-  `pad16_fixvel`, `grp_a_level` ... `grp_d_bypass`).
+* 511 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_fixvel`, `grp_a_level` ... `grp_d_bypass`, `grp_a_lpf` ...
+  `grp_d_reverse_size`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
@@ -96,6 +98,16 @@ Sections that aren't built yet are visibly marked offline on the panel
   of the box on the iRig's default scene; **Learn pad layout** handles any
   other scene (hit each pad as it lights red). **Test lights** and **Swap
   red / green** in the same menu. Saved with the set.
+* **Performance FX** (bottom middle): pick a group (GRP A-D), then the 16
+  keys switch that group's effects: MUTE, LPF, HPF, BPF, CRUSH, RATE,
+  DRIVE, TAPE, STUTTER, REPEAT, GATE, PITCH (drop), DELAY, REVERB, COMB,
+  REVERSE, in that order in the chain. Each key is LOCKED (click on / off)
+  or MOMENTARY (held), marked L / M. STUTTER, REPEAT and REVERSE land on the
+  next 1/16, 1/8 ... of Live's grid; DELAY and REVERB are throws whose tails
+  ring on. The **FX** key opens the FX editor for the picked key (right-
+  click a key to edit without switching it): its settings, LOCKED /
+  MOMENTARY, ALL OFF. MIDI notes **C3-D#4** play FX 1-16 of the selected
+  group; everything is automatable. PANIC stops tails and switches FX off.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

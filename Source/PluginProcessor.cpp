@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Core/FxDefs.h"
 #include "PluginEditor.h"
 #include <cmath>
 
@@ -60,6 +61,16 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         gp.solo   = apvts.getRawParameterValue (groupId (g, grpSolo));
         gp.bypass = apvts.getRawParameterValue (groupId (g, grpBypass));
         jassert (gp.level && gp.pan && gp.mute && gp.solo && gp.bypass);
+        for (int f = 0; f < tb::fx::kNumFx; ++f)
+        {
+            gp.fxOn[(size_t) f] = apvts.getRawParameterValue (tb::fx::paramId (g, f));
+            jassert (gp.fxOn[(size_t) f] != nullptr);
+            for (int k = 0; k < tb::fx::def (f).numParams; ++k)
+            {
+                gp.fxParam[(size_t) f][(size_t) k] = apvts.getRawParameterValue (tb::fx::paramId (g, f, k));
+                jassert (gp.fxParam[(size_t) f][(size_t) k] != nullptr);
+            }
+        }
     }
 
     for (auto* param : AudioProcessor::getParameters())
@@ -217,6 +228,13 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         dst.mute    = src.mute->load (relaxed) > 0.5f;
         dst.solo    = src.solo->load (relaxed) > 0.5f;
         dst.bypass  = src.bypass->load (relaxed) > 0.5f;
+        for (int f = 0; f < tb::fx::kNumFx; ++f)
+        {
+            dst.fxOn[(size_t) f] = src.fxOn[(size_t) f]->load (relaxed) > 0.5f;
+            for (int k = 0; k < 3; ++k)
+                if (auto* a = src.fxParam[(size_t) f][(size_t) k])
+                    dst.fxParam[(size_t) f][(size_t) k] = a->load (relaxed);
+        }
     }
 
     engine.process (buffer, midi, ts, p);
@@ -262,6 +280,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (kMidiMapId), nullptr);
     state.removeChild (state.getChildWithName (tb::SampleManager::padsId), nullptr);
     state.removeChild (state.getChildWithName (tb::PadLights::lightsId), nullptr);
+    state.removeChild (state.getChildWithName ("FX"), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -279,6 +298,11 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (midiMap, nullptr);
     state.appendChild (samples.toValueTree(), nullptr);
     state.appendChild (lights.toValueTree(), nullptr);
+
+    juce::ValueTree fxState ("FX");
+    fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
+    fxState.setProperty ("group", engine.getFxTargetGroup(), nullptr);
+    state.appendChild (fxState, nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -302,7 +326,42 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
+    if (auto fxState = state.getChildWithName ("FX"); fxState.isValid())
+    {
+        engine.setFxLockedMask ((uint32_t) (juce::int64) fxState.getProperty ("lockedMask", (juce::int64) tb::fx::kDefaultLockedMask));
+        engine.setFxTargetGroup ((int) fxState.getProperty ("group", 0));
+    }
     apvts.replaceState (state);
+}
+
+//==============================================================================
+void TwistedBreaksProcessor::setFxLocked (int fxId, bool locked)
+{
+    if (! juce::isPositiveAndBelow (fxId, tb::fx::kNumFx) || isFxLocked (fxId) == locked) return;
+    const uint32_t bit = 1u << fxId;
+    engine.setFxLockedMask (locked ? (engine.getFxLockedMask() | bit) : (engine.getFxLockedMask() & ~bit));
+    markStateChanged();
+}
+
+void TwistedBreaksProcessor::allFxOff()
+{
+    for (int g = 0; g < tb::kNumGroups; ++g)
+        for (int f = 0; f < tb::fx::kNumFx; ++f)
+            if (auto* prm = apvts.getParameter (tb::fx::paramId (g, f)))
+                if (prm->getValue() > 0.5f)
+                {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost (0.0f);
+                    prm->endChangeGesture();
+                }
+}
+
+void TwistedBreaksProcessor::setFxGroup (int g)
+{
+    g = juce::jlimit (0, tb::kNumGroups - 1, g);
+    if (g == engine.getFxTargetGroup()) return;
+    engine.setFxTargetGroup (g);
+    markStateChanged();
 }
 
 //==============================================================================

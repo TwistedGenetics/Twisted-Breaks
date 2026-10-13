@@ -67,6 +67,16 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ If the wrong pads light: Learn pad layout, hit each pad as it lights red
 - [ ] ✅ Unplug / replug the iRig: lights come back within a few seconds. Close the set: all lights off
 
+## Performance FX (Phase 6)
+- [ ] ✅ Break on a pad in group A playing. GRP A, click LPF: filtered; FX key: turn CUTOFF / RES while it plays (no zipper)
+- [ ] ✅ Hold STUTTER (M): it waits for the next 1/16 and stutters in time with Live; release: straight back
+- [ ] ✅ REPEAT (set DIV 1/8 in the editor): repeats the last 1/8, on the beat. REVERSE: plays the last beat backwards, in time
+- [ ] ✅ PITCH: tape-stop dive; GATE: chops on the grid; CRUSH / RATE / DRIVE / TAPE / COMB: sound right, no clicks switching on / off
+- [ ] ✅ DELAY / REVERB throws: switch on for a snare, off again: the echoes / tail carry on
+- [ ] ✅ MIDI: notes C3-D#4 from your controller play FX 1-16 of the selected group (LOCKED toggles, MOMENTARY while held)
+- [ ] ✅ Change a key to MOMENTARY / LOCKED in the FX editor; save, reopen: modes, group and FX settings come back
+- [ ] ✅ Record FX automation in Live (arm automation, click keys): plays back
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)
@@ -82,7 +92,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ **Panic** automated 0→1 stops all sound with no click
 - [ ] ✅ "Configure" mode: touching the knob adds it to the device's parameter list
 - [ ] ✅ Map Master Level to a MIDI CC (Cmd-M)
-- [ ] Phase 6: FX on/off per group automatable and MIDI-mappable
+- [ ] ✅ Phase 6: FX on/off per group automatable (`Group A FX LPF`) and MIDI-mappable (Cmd-M a key's parameter)
 
 ## BPM sync & transport
 - [ ] ✅ **TEMP / BPM** readout matches Live (try 160, 174, 87.5); follows tempo automation live
@@ -117,7 +127,8 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 ## Panic
 - [ ] ✅ PANIC (red STOP) button: all sound stops within ~5 ms, no click, button flashes
 - [ ] ✅ MIDI CC 120 (All Sound Off) acts as panic
-- [ ] Phase 6/7: panic also kills stutter, beat repeat, delay/reverb tails and sequencer-triggered voices
+- [ ] ✅ Phase 6: PANIC also kills stutter, beat repeat, delay / reverb tails and switches the FX off
+- [ ] Phase 7: panic also stops sequencer-triggered voices
 
 ## Latency
 - [ ] ✅ Live's device delay compensation shows **0 samples** for the plugin (hover the device title bar with Delay Compensation on)
@@ -127,7 +138,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Idle, editor closed: Live CPU meter ≈ unchanged vs empty track
 - [ ] ✅ Editor open, transport running: UI stays smooth (lamps/meter ~30 fps), no audio dropouts at 128-sample buffer
 - [ ] ✅ 8 instances on 8 tracks with editors closed: no dropouts at 256 samples
-- [ ] Phase 6: all 16 FX on all 4 groups at once — note CPU %, no dropouts at 256
+- [ ] ✅ Phase 6: all 16 FX on all 4 groups at once — note CPU %, no dropouts at 256
 - [ ] ✅ Freeze and flatten a track: frozen audio matches live playback
 
 ## Stress

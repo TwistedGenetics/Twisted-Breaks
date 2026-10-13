@@ -202,7 +202,9 @@ namespace tb::ui
           waveform (p),
           padEditor (p),
           mixer (p),
+          fxEditor (p),
           meter (p.getBridge()),
+          fxGrid (p),
           status (p)
     {
         setOpaque (true);
@@ -212,6 +214,7 @@ namespace tb::ui
         addAndMakeVisible (waveform);
         addAndMakeVisible (padEditor);
         addChildComponent (mixer);
+        addChildComponent (fxEditor);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -232,7 +235,9 @@ namespace tb::ui
         addAndMakeVisible (panicButton);
         addAndMakeVisible (lightsKey);
         lightsKey.onClick = [this] { showLightsMenu(); };
-        panicButton.onClick = [this] { processor.requestPanic(); panicButton.flash(); };
+        // PANIC: stop every voice and tail, and switch the effects off so
+        // nothing LOCKED re-engages on the next beat.
+        panicButton.onClick = [this] { processor.allFxOff(); processor.requestPanic(); panicButton.flash(); };
 
         struct NavDef { const char* latin; int phase; };
         const NavDef nav[] = {
@@ -247,7 +252,10 @@ namespace tb::ui
         // MIXER swaps the CRT for the group mixer.
         navKeys[0]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::sound); };
         navKeys[1]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::slice); };
-        navKeys[4]->onClick = [this] { showMixer (! mixer.isVisible()); };
+        navKeys[3]->onClick = [this] { showView (view == View::fx ? View::crt : View::fx); };
+        navKeys[4]->onClick = [this] { showView (view == View::mixer ? View::crt : View::mixer); };
+        fxGrid.onSelectionChanged = [this] (int g, int f) { fxEditor.setTarget (g, f); };
+        fxEditor.setTarget (fxGrid.getGroup(), fxGrid.getSelected());
         padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
         {
             waveform.setSliceView (page == PadEditorPanel::Page::slice || page == PadEditorPanel::Page::swap);
@@ -283,6 +291,7 @@ namespace tb::ui
         transportDisplay.setBounds (layout::transport);
         waveform.setBounds (layout::scope);
         mixer.setBounds (layout::scope);
+        fxEditor.setBounds (layout::scope);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
@@ -303,8 +312,13 @@ namespace tb::ui
     {
         padGrid.refresh();
         transportDisplay.refresh();
-        if (mixer.isVisible()) mixer.refresh();
-        else                   waveform.refresh();
+        switch (view)
+        {
+            case View::mixer: mixer.refresh(); break;
+            case View::fx:    fxEditor.refresh(); break;
+            case View::crt:   waveform.refresh(); break;
+        }
+        fxGrid.refresh();
         padEditor.refresh();
 
         // MIDI-learn / note edits change saved state: tell the host.
@@ -353,20 +367,23 @@ namespace tb::ui
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
     }
 
-    void MainView::showMixer (bool show)
+    void MainView::showView (View v)
     {
-        mixer.setVisible (show);
-        waveform.setVisible (! show);
+        view = v;
+        waveform.setVisible (v == View::crt);
+        mixer.setVisible (v == View::mixer);
+        fxEditor.setVisible (v == View::fx);
         updateNavLamps();
     }
 
     void MainView::updateNavLamps()
     {
-        const bool mix   = mixer.isVisible();
+        const bool crt   = view == View::crt;
         const bool slice = padEditor.getPage() == PadEditorPanel::Page::slice;
-        navKeys[0]->setToggleState (! mix && ! slice, dontSendNotification);
-        navKeys[1]->setToggleState (! mix && slice,   dontSendNotification);
-        navKeys[4]->setToggleState (mix,              dontSendNotification);
+        navKeys[0]->setToggleState (crt && ! slice,     dontSendNotification);
+        navKeys[1]->setToggleState (crt && slice,       dontSendNotification);
+        navKeys[3]->setToggleState (view == View::fx,   dontSendNotification);
+        navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
     }
 
     void MainView::paint (Graphics& g)

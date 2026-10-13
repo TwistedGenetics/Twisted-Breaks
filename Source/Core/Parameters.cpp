@@ -1,5 +1,6 @@
 #include "Core/Parameters.h"
 #include "Core/EngineBridge.h"
+#include "Core/FxDefs.h"
 
 namespace tb::params
 {
@@ -178,6 +179,38 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpMute),   kV6 }, name + "Mute", false));
             layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpSolo),   kV6 }, name + "Solo", false));
             layout.add (std::make_unique<AudioParameterBool> (ParameterID { groupId (g, grpBypass), kV6 }, name + "FX Bypass", false));
+        }
+
+        // ---- Phase 6: performance FX, per group: on / off + settings ----
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            const String gname = "Group " + String::charToString ((juce_wchar) ('A' + g)) + " ";
+            for (int f = 0; f < fx::kNumFx; ++f)
+            {
+                const auto& d = fx::def (f);
+                layout.add (std::make_unique<AudioParameterBool> (ParameterID { fx::paramId (g, f), kV8 },
+                                                                  gname + "FX " + d.label, false));
+                for (int k = 0; k < d.numParams; ++k)
+                {
+                    const auto& pd = d.params[k];
+                    const String pname = gname + "FX " + d.label + " " + String (pd.label).toLowerCase();
+                    if (pd.isChoice())
+                    {
+                        StringArray items;
+                        for (int c = 0; c < pd.numChoices; ++c) items.add (pd.choices[c]);
+                        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { fx::paramId (g, f, k), kV8 },
+                                                                            pname, items, roundToInt (pd.def)));
+                    }
+                    else
+                    {
+                        layout.add (std::make_unique<AudioParameterFloat> (
+                            ParameterID { fx::paramId (g, f, k), kV8 }, pname,
+                            NormalisableRange<float> (0.0f, 1.0f, 0.001f), pd.def,
+                            AudioParameterFloatAttributes()
+                                .withStringFromValueFunction ([&pd] (float v, int) { return fx::valueText (pd, v); })));
+                    }
+                }
+            }
         }
 
         return layout;

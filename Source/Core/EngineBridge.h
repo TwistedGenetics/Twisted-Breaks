@@ -84,6 +84,8 @@ namespace tb
         std::atomic<float> peakLeft  { 0.0f };   // linear, held by the UI
         std::atomic<float> peakRight { 0.0f };
         std::array<std::atomic<float>, kNumGroups> groupPeak {};   // post-fader, linear, held by the UI
+        std::array<std::atomic<uint32_t>, kNumGroups> fxEngaged {}; // effects audibly on (bit per fx::Id)
+        std::array<std::atomic<uint32_t>, kNumGroups> fxArmed {};   // effects waiting for their boundary
         std::atomic<float> limiterReductionDb { 0.0f };
         std::atomic<uint32_t> clipCount { 0 };   // increments on any over
 

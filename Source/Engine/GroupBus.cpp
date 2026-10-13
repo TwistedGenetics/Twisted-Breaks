@@ -9,6 +9,7 @@ namespace tb
         input.setSize (2, capacity, false, true, false);
         gainL.reset (sampleRate, 0.02);
         gainR.reset (sampleRate, 0.02);
+        chain.prepare (sampleRate, capacity);
         reset();
     }
 
@@ -49,20 +50,24 @@ namespace tb
         return input;
     }
 
-    float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples) noexcept
+    float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock& clock) noexcept
     {
         numSamples = juce::jmin (numSamples, spanLength);
 
-        // Nothing routed here this span (and no FX tails yet): just keep the
-        // level glides moving so they stay in step with the clock.
-        if (! used)
+        // Nothing routed here this span and no effect on or ringing: just keep
+        // the level glides and the FX clock / histories moving.
+        if (! used && (fxBypass || chain.isIdle()))
         {
             gainL.skip (numSamples);
             gainR.skip (numSamples);
+            chain.advanceSilent (numSamples, clock);
             return 0.0f;
         }
 
-        // ---- FX chain (Phase 6) goes here, skipped when fxBypass is set. ----
+        // ---- FX chain, in place (FX BYPASS: audio skips it, histories still record).
+        if (fxBypass) chain.recordOnly (input.getReadPointer (0), input.getReadPointer (1), numSamples, clock);
+        else          chain.process (input.getWritePointer (0), input.getWritePointer (1), numSamples, clock);
+        used = true;      // the input now holds effect output: clear it next span
 
         const float* inL = input.getReadPointer (0);
         const float* inR = input.getReadPointer (1);

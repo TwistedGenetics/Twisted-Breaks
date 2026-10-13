@@ -33,6 +33,7 @@ namespace tb::params
     inline constexpr int kV5 = 5;   // parameters introduced in 0.4.1 (SWAP groups)
     inline constexpr int kV6 = 6;   // parameters introduced in 0.5.x (group buses)
     inline constexpr int kV7 = 7;   // parameters introduced in 0.5.2 (fixed velocity)
+    inline constexpr int kV8 = 8;   // parameters introduced in 0.6.x (performance FX)
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB

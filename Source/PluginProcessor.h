@@ -76,6 +76,15 @@ public:
     */
     void markStateChanged();
 
+    // ---- Performance FX keys (state, not parameters) ----------------------------
+    /** LOCKED (click / note toggles) or MOMENTARY (on while held), per effect. */
+    void setFxLocked (int fxId, bool locked);
+    bool isFxLocked (int fxId) const noexcept { return ((engine.getFxLockedMask() >> fxId) & 1u) != 0; }
+    /** Group the FX grid and the FX MIDI notes act on (0..3). */
+    void setFxGroup (int g);
+    /** Message thread: switch every group's effects off (PANIC button). */
+    void allFxOff();
+
     /**
         SPREAD: puts each slice of `pad` on its own pad (pad, pad+1, ...),
         sharing the same decoded sample, each in SLICE mode playing slice
@@ -129,6 +138,8 @@ private:
         std::atomic<float>* mute = nullptr;
         std::atomic<float>* solo = nullptr;
         std::atomic<float>* bypass = nullptr;
+        std::array<std::atomic<float>*, 16> fxOn {};
+        std::array<std::array<std::atomic<float>*, 3>, 16> fxParam {};
     };
     std::array<GroupParamPointers, tb::kNumGroups> groupParams {};
 

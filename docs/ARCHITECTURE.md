@@ -254,7 +254,38 @@ Hand-off between breaks at slice points (spec addition A1 in
   that routes the selected pad when clicked, fader, LED bar, PAN, M, S,
   BYPASS). The SOUND page has A / B / C / D keys; tiles show "GRP B".
 
-## 7. The 16 performance effects (Phase 6)
+## 7. The 16 performance effects (Phase 6, implemented)
+
+As built (`Engine/FXChain`, `Core/FxDefs`, `UI/FXGrid`, `UI/FxEditorPanel`):
+
+* One `FXChain` per `GroupBus`, run in place on the bus input before level /
+  pan, in spec order. `FxDefs` is the single table (labels, settings, units,
+  choice lists, IDs) used by the parameter layout, the DSP and the editor.
+* Parameters per group: `grp_a_lpf` (on / off) and its settings
+  (`grp_a_lpf_cutoff`, `_res`, `_drive` ...): 16 switches + 34 settings per
+  group, 200 in all. FX MUTE's switch is `grp_a_fxmute` (`grp_a_mute` is the
+  mixer's mute). A test asserts every ID is unique.
+* An effect is on when its parameter (mouse / automation) XOR a MIDI latch
+  is set, or while its MIDI note is held. MIDI notes C3–D#4 (60–75) not used
+  by a pad drive FX 1–16 of the FX grid's selected group; LOCKED notes
+  toggle a latch, MOMENTARY notes are on while held. Applied at the note's
+  sample position. PANIC (any source) clears latches and tails; the on-screen
+  PANIC button also switches the parameters off.
+* Insert effects crossfade over 10 ms. STUTTER / REPEAT / REVERSE arm, then
+  start on the next boundary of their size (sample-exact, from PPQ or a free
+  clock when Live is stopped) with a 3 ms fade; STUTTER loops the slice that
+  starts there, REPEAT the slice that just ended, REVERSE plays each chunk's
+  predecessor backwards with 2 ms raised-cosine edges. Loop seams crossfade
+  into the audio before the loop start. Each keeps 3 s of history.
+* PITCH DROP reads its own history at a speed falling linearly from 1 to 0
+  over its TIME (a tape stop), fading out as it stops.
+* DELAY and REVERB are throws (send model): switching off stops the feed
+  and the tail rings out; the chain idles only once the delay line has been
+  silent for a whole delay time / the reverb output has died away.
+* Idle groups skip the chain entirely; with everything on, 4 groups cost
+  ~4 % of one core (measured in the test suite).
+
+Original plan:
 
 Each `GroupBus` owns one `FXChain` holding all 16 effect instances in fixed
 order (MUTE … REVERSE). Every effect implements:
@@ -349,7 +380,7 @@ Ableton stores in the `.als` file:
 | **4 ✅** | `TransientDetector` (two-band spectral flux), `SliceTable`, slice editing on the CRT, equal / transient slicing, SLICE mode, SPREAD to pads with shared audio | 158/158 checks: every kick and snare of a test break found, slices ≤ 2.5 ms before the attack, no false slices on a tone, slice playback, edits, SPREAD memory sharing, state |
 | **4.1 ✅** | SWAP groups: latched pads hand off to each other at the next slice point (or 1/16 / beat / bar), continuing from the same point in the incoming break | 175/175 checks: lands within 2 samples of the marker, incoming starts on its own marker, stays on the grid, AT BAR, cancel, stop, transport stopped, state |
 | **5 ✅** | Four `GroupBus`es (level / pan / mute / solo / FX-bypass hook), per-pad GROUP routing, MIXER view, group meters | 195/195 checks: exact -6 / -12 dB scaling, pan, mute, solo, re-routing, click-free mute glide, oversize host blocks render identically, MIXER fader / header / GROUP keys drive the parameters, state |
-| 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |
+| **6 ✅** | 16 performance FX per group, LOCKED/MOMENTARY, MIDI notes + automation, FX editor view | 267/267 checks: each effect measured (filter slopes, crush levels, S&H runs, clip, roll-off, sample-exact stutter / repeat / reverse / delay timing, gate on the grid, pitch dive, comb pitch), click-free engage, throws, group independence, bypass, MIDI latch / momentary, mouse keys, state, ~4 % CPU with all 64 on |
 | 7 | 32-step sequencer, live record with quantise; **per-pad slice sequencer** (spec addition A5) | Sequencer sample-accurate vs. Live's metronome after loop wraps |
 | 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |

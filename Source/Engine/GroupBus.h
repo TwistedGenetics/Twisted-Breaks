@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_basics/juce_audio_basics.h>
+#include "Engine/FXChain.h"
 
 namespace tb
 {
@@ -38,8 +39,16 @@ namespace tb
         /** Something was rendered into the input this span. */
         void markUsed() noexcept { used = true; }
 
+        /** Which effects should be on (bit per fx::Id) and their settings; once per block. */
+        void setFx (uint32_t onMask, const std::array<std::array<float, 3>, 16>& params) noexcept { chain.setTargets (onMask, params); }
+
         /** FX, then level / pan, adding into `dest` at `destStart`. Returns the post-fader peak. */
-        float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples) noexcept;
+        float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock&) noexcept;
+
+        /** PANIC: silence the effects (tails, repeats) too. */
+        void panicFx() noexcept { chain.reset(); }
+
+        const FXChain& getChain() const noexcept { return chain; }
 
         bool isFxBypassed() const noexcept { return fxBypass; }
 
@@ -60,5 +69,6 @@ namespace tb
         bool jumpToParams = true;   // first setParams() after prepare / reset: no glide
 
         juce::SmoothedValue<float> gainL, gainR;
+        FXChain chain;
     };
 }

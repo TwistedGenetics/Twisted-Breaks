@@ -18,11 +18,13 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Engine/TransientDetector.h"
+#include "Core/FxDefs.h"
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <new>
+#include <set>
 
 //==============================================================================
 //  Allocation tracking: counts heap allocations / frees made on the thread
@@ -326,7 +328,14 @@ namespace
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
         check (allPadParams, "288 per-pad parameters exist (pad01_gain .. pad16_fixvel)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 311, "311 automatable parameters in total (3 master + 18 x 16 pads + 5 x 4 groups)");
+        {
+            std::set<juce::String> ids;
+            bool unique = true;
+            for (auto* prm : p.getParameters().processor.getParameters())
+                if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
+            check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
+        }
+        check (p.getParameters().processor.getParameters().size() == 511, "511 automatable parameters in total (3 master + 18 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -959,6 +968,479 @@ namespace
                  && q.getEngine().getPadNote (5) == 70, "mode, choke and learned notes are saved with the set");
     }
 
+
+    //==========================================================================
+    //  PHASE 6: performance FX
+    //==========================================================================
+    juce::AudioBuffer<float> makeSine (double hz, int len, float amp = 0.5f)
+    {
+        juce::AudioBuffer<float> b (1, len);
+        for (int i = 0; i < len; ++i)
+            b.setSample (0, i, amp * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / 48000.0));
+        return b;
+    }
+
+    float rmsOf (const juce::AudioBuffer<float>& b, int ch, int from, int num)
+    {
+        double s = 0.0;
+        for (int i = from; i < from + num; ++i) s += (double) b.getSample (ch, i) * b.getSample (ch, i);
+        return (float) std::sqrt (s / juce::jmax (1, num));
+    }
+
+    float cutoffNorm (float hz) { return std::log (hz / 20.0f) / std::log (1000.0f); }
+
+    struct FxRig
+    {
+        Rig r;
+        FxRig()
+        {
+            r.load (0, writeAudio ("fx_sine440",  makeSine (440.0,  4 * 48000), 48000.0, Fmt::wavFloat));
+            r.load (1, writeAudio ("fx_sine100",  makeSine (100.0,  4 * 48000), 48000.0, Fmt::wavFloat));
+            r.load (2, writeAudio ("fx_sine5k",   makeSine (5000.0, 4 * 48000), 48000.0, Fmt::wavFloat));
+            juce::AudioBuffer<float> burst (1, 48000);
+            burst.clear();
+            for (int i = 0; i < 400; ++i) burst.setSample (0, i, 0.8f * (float) std::sin (i * 0.05) * (float) std::sin (juce::MathConstants<double>::pi * i / 400.0));
+            r.load (3, writeAudio ("fx_burst", burst, 48000.0, Fmt::wavFloat));
+            // A rising chirp never repeats, so loops / reversals can be checked exactly.
+            juce::AudioBuffer<float> chirp (1, 4 * 48000);
+            double ph = 0.0;
+            for (int i = 0; i < chirp.getNumSamples(); ++i)
+            {
+                ph += juce::MathConstants<double>::twoPi * (200.0 + 0.02 * i) / 48000.0;
+                chirp.setSample (0, i, 0.5f * (float) std::sin (ph));
+            }
+            r.load (4, writeAudio ("fx_chirp", chirp, 48000.0, Fmt::wavFloat));
+            r.host.bpm = 120.0;              // 1 beat = 24000 samples
+        }
+        void fx (int fxId, bool on, int group = 0)            { setParam (r.p, tb::fx::paramId (group, fxId), on ? 1.0f : 0.0f); }
+        void set (int fxId, int k, float v, int group = 0)    { setParam (r.p, tb::fx::paramId (group, fxId, k), v); }
+        void allOff()
+        {
+            for (int g = 0; g < 4; ++g)
+                for (int f = 0; f < tb::fx::kNumFx; ++f) fx (f, false, g);
+            r.p.requestPanic();
+            r.settle();
+        }
+
+        /** Plays `note` from the top of the timeline (Live playing from bar 1); hook runs before each block. */
+        juce::AudioBuffer<float> play (int note, int blocks, std::function<void (int)> hook = {})
+        {
+            r.host.ppq = 0.0;
+            r.host.playing = true;
+            juce::AudioBuffer<float> out (2, blocks * kBlock), buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 127), 0);
+            for (int b = 0; b < blocks; ++b)
+            {
+                if (hook) hook (b);
+                runBlock (r.p, r.host, buf, midi);
+                for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            }
+            r.host.playing = false;
+            return out;
+        }
+    };
+
+    void testFxFilters()
+    {
+        std::cout << "\n== Phase 6: FX - mute, filters, crush, rate, drive, tape ==" << std::endl;
+        using namespace tb::fx;
+        FxRig x;
+        const auto dry440 = x.play (36, 40);
+        x.allOff();
+
+        // MUTE
+        auto out = x.play (36, 40, [&] (int b) { if (b == 10) x.fx (mute, true); if (b == 25) x.fx (mute, false); });
+        check (isSilent (out.getMagnitude (0, 12 * kBlock, 12 * kBlock)), "MUTE silences the group (10 ms fade)");
+        check (maxStepIn (out, 0, 10 * kBlock - 4, 12 * kBlock) <= maxStepIn (dry440, 0, 1000, 10 * kBlock) * 1.05f, "...without a click");
+        float diff = 0.0f;
+        for (int i = 28 * kBlock; i < 40 * kBlock; ++i) diff = juce::jmax (diff, std::abs (out.getSample (0, i) - dry440.getSample (0, i)));
+        check (diff < 1.0e-6f, "...and off again it's exactly the dry signal (" + juce::String (diff, 8) + ")");
+        x.allOff();
+
+        // Filters: measured attenuation.
+        auto level = [&] (int note, int fxId, float hz, float res = 0.0f)
+        {
+            x.set (fxId, 0, cutoffNorm (hz)); x.set (fxId, 1, res); x.set (fxId, 2, 0.0f);
+            x.fx (fxId, true);
+            x.r.settle();
+            const auto o = x.play (note, 30);
+            x.allOff();
+            const auto d = x.play (note, 30);
+            x.allOff();
+            return juce::Decibels::gainToDecibels (rmsOf (o, 0, 15 * kBlock, 14 * kBlock) / rmsOf (d, 0, 15 * kBlock, 14 * kBlock));
+        };
+        const float lp5k = level (38, lpf, 500.0f), lp100 = level (37, lpf, 500.0f);
+        check (lp5k < -20.0f && lp100 > -1.5f, "LPF at 500 Hz: 5 kHz down " + juce::String (-lp5k, 1) + " dB, 100 Hz passes ("
+                                                 + juce::String (lp100, 1) + " dB)");
+        const float hp100 = level (37, hpf, 2000.0f), hp5k = level (38, hpf, 2000.0f);
+        check (hp100 < -20.0f && hp5k > -1.5f, "HPF at 2 kHz: 100 Hz down " + juce::String (-hp100, 1) + " dB, 5 kHz passes ("
+                                                 + juce::String (hp5k, 1) + " dB)");
+        const float bpC = level (36, bpf, 440.0f, 0.5f), bpLo = level (37, bpf, 440.0f, 0.5f), bpHi = level (38, bpf, 440.0f, 0.5f);
+        check (std::abs (bpC) < 1.5f && bpLo < -9.0f && bpHi < -12.0f, "BPF at 440 Hz: centre passes (" + juce::String (bpC, 1)
+                 + " dB), 100 Hz " + juce::String (bpLo, 1) + " dB, 5 kHz " + juce::String (bpHi, 1) + " dB");
+
+        // CRUSH to 2 bits: at most 4 output levels.
+        x.set (crush, 0, 1.0f / 15.0f); x.set (crush, 1, 1.0f); x.fx (crush, true);
+        x.r.settle();
+        out = x.play (36, 20);
+        std::set<int> levels;
+        for (int i = 10 * kBlock; i < 20 * kBlock; ++i) levels.insert (juce::roundToInt (out.getSample (0, i) * 1.0e5f));
+        check (levels.size() <= 4, "BIT CRUSH at 2 bits: the signal has " + juce::String ((int) levels.size()) + " levels (max 4)");
+        x.allOff();
+
+        // RATE: 1 kHz, stepped -> runs of exactly 48 identical samples.
+        x.set (rate, 0, std::log (1000.0f / 200.0f) / std::log (220.5f)); x.set (rate, 1, 1.0f); x.set (rate, 2, 1.0f);
+        x.fx (rate, true);
+        x.r.settle();
+        out = x.play (36, 20);
+        int changes = 0;
+        for (int i = 10 * kBlock + 1; i < 20 * kBlock; ++i) if (out.getSample (0, i) != out.getSample (0, i - 1)) ++changes;
+        const float expected = (10.0f * kBlock) / 48.0f;
+        check (std::abs ((float) changes - expected) <= 2.0f, "SAMPLE RATE 1 kHz (stepped): the output holds each value for 48 samples ("
+                                                                 + juce::String (changes) + " changes, expected ~" + juce::String (expected, 0) + ")");
+        x.allOff();
+
+        // DRIVE hard +36 dB: a clipped square, never above full scale.
+        x.set (drive, 0, 1.0f); x.set (drive, 1, 1.0f); x.set (drive, 2, 1.0f); x.fx (drive, true);
+        x.r.settle();
+        out = x.play (36, 20);
+        int atRail = 0;
+        for (int i = 10 * kBlock; i < 20 * kBlock; ++i) if (std::abs (out.getSample (0, i)) > 0.95f) ++atRail;
+        check (out.getMagnitude (0, 10 * kBlock, 10 * kBlock) <= 1.0001f && atRail > 4 * kBlock,
+               "DRIVE (hard, +36 dB) clips the sine flat (" + juce::String (100 * atRail / (10 * kBlock)) + " % of samples at the rail; master limiter keeps it under 0 dBFS)");
+        x.allOff();
+
+        // TAPE with the tone down: highs roll off.
+        x.set (tape, 0, 0.5f); x.set (tape, 1, cutoffNorm (1000.0f)); x.fx (tape, true);
+        x.r.settle();
+        out = x.play (38, 20);
+        x.allOff();
+        const auto d5k = x.play (38, 20);
+        x.allOff();
+        const float tapeDb = juce::Decibels::gainToDecibels (rmsOf (out, 0, 10 * kBlock, 9 * kBlock) / rmsOf (d5k, 0, 10 * kBlock, 9 * kBlock));
+        check (tapeDb < -10.0f, "TAPE (tone 1 kHz) rolls off a 5 kHz tone (" + juce::String (tapeDb, 1) + " dB)");
+    }
+
+    void testFxTime()
+    {
+        std::cout << "\n== Phase 6: FX - stutter, repeat, gate, pitch drop, reverse ==" << std::endl;
+        using namespace tb::fx;
+        FxRig x;
+        const int beat = 24000, n16 = beat / 4, n8 = beat / 2;
+        const auto dry = x.play (36, 120);
+        x.allOff();
+
+        // Engaged at sample 1024 (mid 1/16), on a chirp that never repeats.
+        const auto dryC = x.play (40, 160);
+        x.allOff();
+        auto engageAt2 = [&] (int fxId) { return [&x, fxId] (int b) { if (b == 2) x.fx (fxId, true); }; };
+
+        // STUTTER 1/16: waits for 6000, lets [6000, 12000) through, then loops it.
+        x.set (stutter, 0, 3.0f);
+        auto out = x.play (40, 60, engageAt2 (stutter));
+        float pass = 0.0f, d1 = 0.0f;
+        for (int k = 0; k < n16; ++k) pass = juce::jmax (pass, std::abs (out.getSample (0, k) - dryC.getSample (0, k)), std::abs (out.getSample (0, n16 + k) - dryC.getSample (0, n16 + k)));
+        for (int k = 300; k < n16 - 300; ++k)
+            d1 = juce::jmax (d1, std::abs (out.getSample (0, 2 * n16 + k) - dryC.getSample (0, n16 + k)),
+                                 std::abs (out.getSample (0, 4 * n16 + k) - dryC.getSample (0, n16 + k)));
+        check (pass < 1.0e-6f, "STUTTER waits for the next 1/16 and lets that 1/16 through");
+        check (d1 < 1.0e-4f, "...then repeats exactly that 1/16, again and again (err " + juce::String (d1, 6) + ")");
+        check (maxStepIn (out, 0, 2 * n16 - 300, 2 * n16 + 300) < maxStepIn (dryC, 0, 1000, n16 * 2) * 1.5f, "...seamlessly");
+        x.allOff();
+
+        // BEAT REPEAT 1/8: at 12000 it repeats [0, 12000).
+        x.set (repeat, 0, 2.0f);
+        out = x.play (40, 70, engageAt2 (repeat));
+        d1 = 0.0f;
+        float before = 0.0f;
+        for (int k = 300; k < n8 - 300; ++k)
+        {
+            d1 = juce::jmax (d1, std::abs (out.getSample (0, n8 + k) - dryC.getSample (0, k)), std::abs (out.getSample (0, 2 * n8 + k) - dryC.getSample (0, k)));
+            before = juce::jmax (before, std::abs (out.getSample (0, k) - dryC.getSample (0, k)));
+        }
+        check (before < 1.0e-6f && d1 < 1.0e-4f, "BEAT REPEAT 1/8: on the next 1/8 it repeats the 1/8 just played (err " + juce::String (d1, 6) + ")");
+        check (maxStepIn (out, 0, n8 - 200, n8 + 400) < maxStepIn (dryC, 0, 1000, n8) * 1.5f, "...landing without a click");
+        x.allOff();
+
+        // GATE 1/16 at 50 %: second half of every 1/16 silent.
+        x.set (gate, 0, 1.0f); x.set (gate, 1, 0.5f); x.fx (gate, true);
+        x.r.settle();
+        out = x.play (36, 60);
+        bool chopped = true;
+        for (int st = 2; st < 5; ++st)
+        {
+            chopped &= rmsOf (out, 0, st * n16 + n16 / 2 + 100, n16 / 2 - 200) < 1.0e-6f;
+            chopped &= rmsOf (out, 0, st * n16 + 100, n16 / 2 - 200) > 0.3f;
+        }
+        check (chopped, "GATE 1/16 at 50 %: each 1/16 plays for its first half, silent for the second, on Live's grid");
+        x.allOff();
+
+        // PITCH DROP over 1/4: the tone slows (fewer zero crossings), then stops.
+        x.set (pitch, 0, 2.0f);
+        out = x.play (36, 80, [&] (int b) { if (b == 10) x.fx (pitch, true); });
+        auto crossings = [&] (int from, int num)
+        {
+            int c = 0;
+            for (int i = from + 1; i < from + num; ++i) if ((out.getSample (0, i - 1) < 0.0f) != (out.getSample (0, i) < 0.0f)) ++c;
+            return c;
+        };
+        const int s0 = 10 * kBlock;
+        const int c1 = crossings (s0 + 500, 4000), c2 = crossings (s0 + 10000, 4000), c3 = crossings (s0 + 18000, 4000);
+        check (c1 > c2 && c2 > c3, "PITCH DROP: the pitch falls (zero crossings " + juce::String (c1) + " > " + juce::String (c2) + " > " + juce::String (c3) + ")");
+        check (rmsOf (out, 0, s0 + beat + 500, 8000) < 1.0e-3f, "...and after 1/4 it has stopped dead");
+        x.allOff();
+
+        // REVERSE 1/4: from the next beat (24000), the beat before plays backwards.
+        x.set (reverse, 0, 1.0f);
+        out = x.play (40, 150, engageAt2 (reverse));
+        d1 = 0.0f;
+        for (int k = 500; k < beat - 500; ++k)
+            d1 = juce::jmax (d1, std::abs (out.getSample (0, beat + k) - dryC.getSample (0, beat - 1 - k)),
+                                 std::abs (out.getSample (0, 2 * beat + k) - dryC.getSample (0, 2 * beat - 1 - k)));
+        check (d1 < 1.0e-4f, "REVERSE 1/4: on the next beat the last beat plays backwards, then the next... (err " + juce::String (d1, 6) + ")");
+        check (maxStepIn (out, 0, 2 * beat - 300, 2 * beat + 300) < maxStepIn (dryC, 0, 2 * beat - 300, 2 * beat + 300) * 1.2f,
+               "...chunk joins are click-free (2 ms raised-cosine edges)");
+        x.allOff();
+    }
+
+    void testFxSpace()
+    {
+        std::cout << "\n== Phase 6: FX - delay, reverb, comb; groups, bypass, MIDI ==" << std::endl;
+        using namespace tb::fx;
+        FxRig x;
+
+        // DELAY 1/8, no feedback, mix 100 %: the burst comes back exactly 1/8 later.
+        x.set (delay, 0, 1.0f); x.set (delay, 1, 0.0f); x.set (delay, 2, 1.0f); x.fx (delay, true);
+        x.r.settle();
+        auto out = x.play (39, 60);
+        const int n8 = 12000;
+        float e = 0.0f;
+        for (int k = 0; k < 400; ++k) e = juce::jmax (e, std::abs (out.getSample (0, n8 + k) - out.getSample (0, k)));
+        check (e < 0.02f && out.getMagnitude (0, n8, 400) > 0.3f, "DELAY 1/8: the echo lands exactly 1/8 later (err " + juce::String (e, 4) + ")");
+        x.allOff();
+
+        // Throw: with feedback the tail keeps ringing after DELAY is switched off.
+        x.set (delay, 1, 0.6f);
+        out = x.play (39, 80, [&] (int b) { if (b == 0) x.fx (delay, true); if (b == 4) x.fx (delay, false); });
+        check (out.getMagnitude (0, 3 * n8, 400) > 0.05f, "...it's a throw: switched off, the echoes keep repeating and fade");
+        x.allOff();
+
+        // REVERB tail.
+        x.set (reverb, 2, 1.0f); x.fx (reverb, true);
+        x.r.settle();
+        out = x.play (39, 60, [&] (int b) { if (b == 6) x.fx (reverb, false); });
+        check (rmsOf (out, 0, 8000, 4000) > 1.0e-3f && rmsOf (out, 0, 20000, 4000) > 1.0e-4f, "REVERB: the burst rings on as a tail (also after switching it off)");
+        x.allOff();
+
+        // COMB at C3: the burst rings at 130.8 Hz (period 367 samples).
+        x.set (comb, 0, 0.5f); x.set (comb, 1, 0.9f); x.set (comb, 2, 0.0f); x.fx (comb, true);
+        x.r.settle();
+        out = x.play (39, 20);
+        const int period = juce::roundToInt (48000.0 / 130.81);
+        float best = 0.0f; int bestLag = 0;
+        for (int lag = 200; lag < 600; ++lag)
+        {
+            double c = 0.0;
+            for (int i = 2000; i < 6000; ++i) c += out.getSample (0, i) * out.getSample (0, i + lag);
+            if (c > best) { best = (float) c; bestLag = lag; }
+        }
+        check (std::abs (bestLag - period) <= 2, "COMB at C3 resonates with a period of " + juce::String (bestLag) + " samples (130.8 Hz = " + juce::String (period) + ")");
+        x.allOff();
+
+        // Each group has its own chain: LPF on group A doesn't touch a pad in group B.
+        setPadParam (x.r.p, 2, tb::params::padGroup, 1.0f);
+        x.set (lpf, 0, cutoffNorm (300.0f)); x.fx (lpf, true, 0);
+        x.r.settle();
+        out = x.play (38, 20);
+        x.allOff();
+        const auto dB = x.play (38, 20);
+        x.allOff();
+        float diff = 0.0f;
+        for (int i = 0; i < 20 * kBlock; ++i) diff = juce::jmax (diff, std::abs (out.getSample (0, i) - dB.getSample (0, i)));
+        check (diff < 1.0e-6f, "groups are independent: LPF on group A leaves a group B pad untouched");
+        setPadParam (x.r.p, 2, tb::params::padGroup, 0.0f);
+
+        // FX BYPASS on the group: effects skipped.
+        x.fx (lpf, true, 0);
+        setParam (x.r.p, tb::params::groupId (0, tb::params::grpBypass), 1.0f);
+        x.r.settle();
+        out = x.play (38, 20);
+        setParam (x.r.p, tb::params::groupId (0, tb::params::grpBypass), 0.0f);
+        x.allOff();
+        const auto d5k = x.play (38, 20);
+        x.allOff();
+        diff = 0.0f;
+        for (int i = 0; i < 20 * kBlock; ++i) diff = juce::jmax (diff, std::abs (out.getSample (0, i) - d5k.getSample (0, i)));
+        check (diff < 1.0e-6f, "group FX BYPASS: the LPF is skipped, dry signal out");
+
+        // MIDI: note C#3 (61) = FX 2 (LPF) on the FX panel's group.
+        auto& eng = x.r.p.getEngine();
+        auto& br  = x.r.p.getBridge();
+        eng.setFxTargetGroup (2);
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 61, (juce::uint8) 100), 0);
+        midi.addEvent (juce::MidiMessage::noteOff (1, 61), 200);
+        runBlock (x.r.p, x.r.host, buf, midi);
+        runBlock (x.r.p, x.r.host, buf, midi);
+        check ((br.fxEngaged[2].load() >> lpf) & 1u, "MIDI note C#3 (LOCKED): LPF on group C stays on after the note ends");
+        check ((br.fxEngaged[0].load() >> lpf) & 1u ? false : true, "...only on the selected group");
+        midi.addEvent (juce::MidiMessage::noteOn (1, 61, (juce::uint8) 100), 0);
+        runBlock (x.r.p, x.r.host, buf, midi);
+        for (int b = 0; b < 4; ++b) runBlock (x.r.p, x.r.host, buf, midi);
+        check (((br.fxEngaged[2].load() >> lpf) & 1u) == 0, "...a second press turns it off");
+
+        eng.setFxLockedMask (~(1u << hpf));     // HPF momentary
+        midi.addEvent (juce::MidiMessage::noteOn (1, 62, (juce::uint8) 100), 0);
+        runBlock (x.r.p, x.r.host, buf, midi);
+        const bool held = (br.fxEngaged[2].load() >> hpf) & 1u;
+        midi.addEvent (juce::MidiMessage::noteOff (1, 62), 0);
+        for (int b = 0; b < 4; ++b) runBlock (x.r.p, x.r.host, buf, midi);
+        check (held && ((br.fxEngaged[2].load() >> hpf) & 1u) == 0, "MOMENTARY from MIDI: HPF on while the note is held, off on release");
+
+        midi.addEvent (juce::MidiMessage::noteOn (1, 61, (juce::uint8) 100), 0);
+        runBlock (x.r.p, x.r.host, buf, midi);
+        x.r.p.requestPanic();
+        for (int b = 0; b < 4; ++b) runBlock (x.r.p, x.r.host, buf, midi);
+        check (br.fxEngaged[2].load() == 0, "PANIC turns MIDI-latched effects off and kills tails");
+        eng.setFxLockedMask (0xffffffffu);
+    }
+
+    void testFxUi()
+    {
+        std::cout << "\n== Phase 6: FX keys and FX editor ==" << std::endl;
+        using namespace tb::fx;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+        tb::ui::MainView* view = nullptr; tb::ui::FXGrid* grid = nullptr; tb::ui::FxEditorPanel* editor = nullptr;
+        juce::Button* fxKey = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* g = dynamic_cast<tb::ui::FXGrid*> (&c)) grid = g;
+            if (auto* e = dynamic_cast<tb::ui::FxEditorPanel*> (&c)) editor = e;
+            if (auto* sk = dynamic_cast<tb::ui::SelectorKey*> (&c)) if (sk->getName() == "FX") fxKey = sk;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (view && grid && editor && fxKey, "found the FX grid, FX editor and FX key");
+        if (! (view && grid && editor && fxKey)) return;
+
+        auto raw = [&] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto mouse = [&] (juce::Component* comp, juce::Point<float> pos, bool down, bool right = false)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            auto mods = down ? (right ? juce::ModifierKeys::rightButtonModifier : juce::ModifierKeys::leftButtonModifier) : juce::ModifierKeys();
+            juce::MouseEvent e (src, pos, mods, 1.0f, 0, 0, 0, 0, comp, comp, t, pos, t, 1, false);
+            if (down) comp->mouseDown (e); else comp->mouseUp (e);
+        };
+
+        check (fxKey->isEnabled(), "FX key is online");
+        fxKey->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (editor->isVisible() && view->getView() == tb::ui::MainView::View::fx, "FX shows the FX editor in place of the CRT");
+
+        // LPF (LOCKED by default): click on, click off.
+        const auto lpfKey = grid->keyBounds (lpf).getCentre();
+        mouse (grid, lpfKey, true); mouse (grid, lpfKey, false);
+        check (raw (paramId (0, lpf)) > 0.5f, "clicking LPF (LOCKED) switches it on for group A and it stays on");
+        check (editor->getFx() == lpf, "...and the FX editor now shows the LPF");
+        mouse (grid, lpfKey, true); mouse (grid, lpfKey, false);
+        check (raw (paramId (0, lpf)) < 0.5f, "...click again: off");
+
+        // STUTTER (MOMENTARY by default): on only while held.
+        const auto stKey = grid->keyBounds (stutter).getCentre();
+        mouse (grid, stKey, true);
+        const bool whileHeld = raw (paramId (0, stutter)) > 0.5f;
+        mouse (grid, stKey, false);
+        check (whileHeld && raw (paramId (0, stutter)) < 0.5f, "STUTTER (MOMENTARY): on while the mouse is held, off on release");
+
+        // Right-click: edit without switching.
+        mouse (grid, grid->keyBounds (delay).getCentre(), true, true); mouse (grid, grid->keyBounds (delay).getCentre(), false);
+        check (editor->getFx() == delay && raw (paramId (0, delay)) < 0.5f, "right-click picks DELAY for editing without switching it on");
+
+        // Group C.
+        mouse (grid, grid->groupBounds (2).getCentre(), true); mouse (grid, grid->groupBounds (2).getCentre(), false);
+        check (r.p.getEngine().getFxTargetGroup() == 2 && editor->getGroup() == 2, "GRP C: the keys, the editor and the FX MIDI notes now act on group C");
+        mouse (grid, lpfKey, true); mouse (grid, lpfKey, false);
+        check (raw (paramId (2, lpf)) > 0.5f && raw (paramId (0, lpf)) < 0.5f, "...LPF now switches group C's LPF, not A's");
+
+        // Editor knob drives group C's cutoff.
+        juce::Slider* knob = nullptr;
+        for (auto* c : editor->getChildren())
+            if (auto* sl = dynamic_cast<juce::Slider*> (c)) if (sl->isVisible() && sl->getTooltip().contains ("CUTOFF")) knob = sl;
+        check (knob != nullptr, "the editor shows LPF's CUTOFF knob");
+        if (knob != nullptr)
+        {
+            knob->setValue (0.2, juce::sendNotificationSync);
+            check (std::abs (raw (paramId (2, lpf, 0)) - 0.2f) < 0.01f, "...turning it sets grp_c_lpf_cutoff (automatable)");
+        }
+
+        // LOCKED / MOMENTARY setting, saved with the set.
+        juce::Button* momentary = nullptr; juce::Button* allOff = nullptr;
+        for (auto* c : editor->getChildren())
+            if (auto* b = dynamic_cast<juce::Button*> (c))
+            {
+                if (b->getName() == "MOMENTARY") momentary = b;
+                if (b->getName() == "ALL OFF") allOff = b;
+            }
+        check (momentary != nullptr && allOff != nullptr, "found MOMENTARY and ALL OFF");
+        if (momentary == nullptr || allOff == nullptr) return;
+        momentary->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (! r.p.isFxLocked (lpf), "MOMENTARY sets LPF to momentary");
+
+        allOff->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (raw (paramId (2, lpf)) < 0.5f, "ALL OFF switches group C's effects off");
+
+        juce::MemoryBlock blob;
+        r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        check (! q.isFxLocked (lpf) && q.isFxLocked (hpf) && ! q.isFxLocked (stutter) && q.getEngine().getFxTargetGroup() == 2,
+               "key modes and the FX group are saved with the set");
+
+        // The PANIC button also switches effects off (so a LOCKED stutter doesn't come back).
+        setParam (r.p, paramId (1, delay), 1.0f);
+        setParam (r.p, paramId (3, repeat), 1.0f);
+        juce::Button* panic = nullptr;
+        std::function<void (juce::Component&)> findPanic = [&] (juce::Component& c)
+        {
+            if (auto* b = dynamic_cast<tb::ui::PanicButton*> (&c)) panic = b;
+            for (auto* child : c.getChildren()) findPanic (*child);
+        };
+        findPanic (*ed);
+        if (panic != nullptr) { panic->triggerClick(); juce::MessageManager::getInstance()->runDispatchLoopUntil (30); }
+        check (panic != nullptr && raw (paramId (1, delay)) < 0.5f && raw (paramId (3, repeat)) < 0.5f, "the PANIC button switches every effect off too");
+    }
+
+    void testFxCpu()
+    {
+        std::cout << "\n== Phase 6: CPU with every effect on ==" << std::endl;
+        FxRig x;
+        for (int g = 0; g < 4; ++g)
+            for (int f = 0; f < tb::fx::kNumFx; ++f)
+                if (f != tb::fx::mute) x.fx (f, true, g);
+        for (int p = 0; p < 4; ++p) setPadParam (x.r.p, p, tb::params::padGroup, (float) p);
+        x.r.host.playing = true;
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int p = 0; p < 4; ++p) midi.addEvent (juce::MidiMessage::noteOn (1, 36 + p, (juce::uint8) 120), 0);
+        const int blocks = 400;   // ~4.3 s of audio
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int b = 0; b < blocks; ++b) runBlock (x.r.p, x.r.host, buf, midi);
+        const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+        const double audioMs = blocks * kBlock * 1000.0 / kSr;
+        const double load = ms / audioMs * 100.0;
+        std::cout << "  all 16 FX x 4 groups, 4 pads: " << juce::String (load, 1) << " % of one core" << std::endl;
+        check (load < 60.0, "all 16 effects on all 4 groups run well inside real time (" + juce::String (load, 1) + " % of one core)");
+        check (peakOf (buf) <= 1.0f && ! std::isnan (buf.getSample (0, 100)), "...and the output stays sane (no NaN, limiter holds)");
+    }
 
     void testFixedVelocity (const juce::File& tone)
     {
@@ -1935,6 +2417,15 @@ namespace
         const bool slicePage = out.getFileName().contains ("slice");
         const bool swapPage  = out.getFileName().contains ("swap");
         const bool mixerView = out.getFileName().contains ("mixer");
+        const bool fxView    = out.getFileName().contains ("fx");
+        if (fxView)
+        {
+            setParam (p, tb::fx::paramId (0, tb::fx::lpf), 1.0f);
+            setParam (p, tb::fx::paramId (0, tb::fx::lpf, 0), 0.42f);
+            setParam (p, tb::fx::paramId (0, tb::fx::lpf, 1), 0.55f);
+            setParam (p, tb::fx::paramId (0, tb::fx::delay), 1.0f);
+            setParam (p, tb::fx::paramId (0, tb::fx::tape), 1.0f);
+        }
         if (mixerView)
         {
             // Kick + snare in A, hats in B, stab in C; a mix with a muted D.
@@ -1971,6 +2462,16 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (fxView)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::fx);
+                if (auto* grid = dynamic_cast<tb::ui::FXGrid*> (&c)) grid->setSelected (tb::fx::delay);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+        }
         if (mixerView)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -2056,6 +2557,11 @@ int main (int argc, char* argv[])
         testMixerView();
         testPadLights (tone);
         testFixedVelocity (tone);
+        testFxFilters();
+        testFxTime();
+        testFxSpace();
+        testFxUi();
+        testFxCpu();
         testEditorDrivesState();
         testRealtimeSafety();
 

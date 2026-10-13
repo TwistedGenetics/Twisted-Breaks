@@ -1,5 +1,6 @@
 #include "Engine/AudioEngine.h"
 #include "Core/Parameters.h"
+#include "Core/FxDefs.h"
 #include <cmath>
 
 namespace tb
@@ -143,6 +144,14 @@ namespace tb
         {
             const auto& gp = bp.groups[(size_t) g];
             groups[(size_t) g].setParams (gp.levelDb, gp.pan, ! gp.mute && (! anyGroupSolo || gp.solo), gp.bypass);
+
+            uint32_t mask = 0;
+            for (int f = 0; f < fx::kNumFx; ++f)
+                if (gp.fxOn[(size_t) f]) mask |= 1u << f;
+            fxParamMask[(size_t) g] = mask;
+            fxParams[(size_t) g]    = gp.fxParam;
+            // On = parameter (mouse / automation) XOR a MIDI latch, or held from MIDI.
+            groups[(size_t) g].setFx ((mask ^ fxLatch[(size_t) g].load (std::memory_order_relaxed)) | fxHeld[(size_t) g], gp.fxParam);
         }
 
         for (int p = 0; p < kNumPads; ++p)
@@ -468,6 +477,14 @@ namespace tb
         pendingSwap.fill ({});
         swapPlaying.fill (-1);
 
+        // Effects: stop repeats / dives / tails, forget MIDI latches.
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            groups[(size_t) g].panicFx();
+            fxLatch[(size_t) g].store (0);
+            fxHeld[(size_t) g] = 0;
+        }
+
         // Later phases add: sequencer voices, stutter / beat-repeat buffers,
         // delay & reverb tails are cleared here too.
     }
@@ -486,16 +503,47 @@ namespace tb
 
             const int pad = padForNote (m.getNoteNumber());
             if (pad >= 0) triggerPad (pad, m.getFloatVelocity(), currentOffset);
+            else          handleFxNote (m.getNoteNumber(), true);
         }
         else if (m.isNoteOff())
         {
             const int pad = padForNote (m.getNoteNumber());
             if (pad >= 0) releasePad (pad);
+            else          handleFxNote (m.getNoteNumber(), false);
         }
         else if (m.isAllSoundOff())   // CC 120: a hardware panic button
         {
             panic();
         }
+    }
+
+    bool AudioEngine::handleFxNote (int note, bool on) noexcept
+    {
+        const int f = note - fx::kFirstMidiNote;
+        if (! juce::isPositiveAndBelow (f, fx::kNumFx)) return false;
+        const int g = fxTargetGroup.load (std::memory_order_relaxed);
+        const uint32_t bit = 1u << f;
+
+        if ((fxLocked.load (std::memory_order_relaxed) & bit) != 0)
+        {
+            if (on) fxLatch[(size_t) g].fetch_xor (bit, std::memory_order_relaxed);   // LOCKED: each press flips it
+        }
+        else
+        {
+            if (on) fxHeld[(size_t) g] |= bit;                                        // MOMENTARY: on while held
+            else    fxHeld[(size_t) g] &= ~bit;
+        }
+
+        // Apply now (sample-accurate) rather than next block.
+        groups[(size_t) g].setFx ((fxParamMask[(size_t) g] ^ fxLatch[(size_t) g].load (std::memory_order_relaxed)) | fxHeld[(size_t) g],
+                                  fxParams[(size_t) g]);
+        return true;
+    }
+
+    void AudioEngine::clearFxLatch (int group, int fxId) noexcept
+    {
+        if (juce::isPositiveAndBelow (group, kNumGroups) && juce::isPositiveAndBelow (fxId, fx::kNumFx))
+            fxLatch[(size_t) group].fetch_and (~(1u << fxId));
     }
 
     void AudioEngine::renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept
@@ -548,8 +596,17 @@ namespace tb
                     }
             }
 
+            FxClock clock;
+            if (transportNow != nullptr)
+            {
+                clock.ppq          = transportNow->ppqAt (start);
+                clock.ppqPerSample = transportNow->ppqPerSample;
+                clock.bpm          = transportNow->bpm;
+                clock.ppqPerBar    = transportNow->ppqPerBar();
+                clock.playing      = transportNow->isPlaying && transportNow->ppqPerSample > 0.0;
+            }
             for (int g = 0; g < kNumGroups; ++g)
-                groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g], groups[(size_t) g].mixInto (buffer, start, n));
+                groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g], groups[(size_t) g].mixInto (buffer, start, n, clock));
 
             start += n;
             num   -= n;
@@ -622,7 +679,11 @@ namespace tb
         };
         storeMax (bridge.peakLeft,  result.peakLeft);
         for (int g = 0; g < kNumGroups; ++g)
+        {
             storeMax (bridge.groupPeak[(size_t) g], groupPeak[(size_t) g]);
+            bridge.fxEngaged[(size_t) g].store (groups[(size_t) g].getChain().engagedMask(), std::memory_order_relaxed);
+            bridge.fxArmed[(size_t) g].store (groups[(size_t) g].getChain().armedMask(), std::memory_order_relaxed);
+        }
         storeMax (bridge.peakRight, result.peakRight);
         bridge.limiterReductionDb.store (result.maxReductionDb, std::memory_order_relaxed);
         if (result.clipped) bridge.clipCount.fetch_add (1, std::memory_order_relaxed);

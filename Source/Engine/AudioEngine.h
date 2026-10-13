@@ -11,6 +11,7 @@
 #include "Engine/SliceTable.h"
 #include "Engine/MasterSection.h"
 #include "Engine/GroupBus.h"
+#include "Core/FxDefs.h"
 
 namespace tb
 {
@@ -93,6 +94,8 @@ namespace tb
             bool  mute    = false;
             bool  solo    = false;
             bool  bypass  = false;
+            std::array<bool, 16> fxOn {};                       // fx::Id order
+            std::array<std::array<float, 3>, 16> fxParam {};    // raw values (0..1 or choice index)
         };
 
         struct BlockParams
@@ -146,6 +149,16 @@ namespace tb
         static constexpr int kDefaultFirstNote = 36;  // C1 in Ableton = Drum Rack pad 1
         static constexpr int kSwapGroups = 4;
 
+        // ---- Performance FX from MIDI (notes C3..D#4 = FX 1..16) --------------
+        /** Group the FX notes (and the FX grid) act on: 0..3. */
+        void setFxTargetGroup (int g) noexcept   { fxTargetGroup.store (juce::jlimit (0, kNumGroups - 1, g)); }
+        int  getFxTargetGroup() const noexcept   { return fxTargetGroup.load(); }
+        /** Bit per fx::Id: 1 = LOCKED (a note toggles), 0 = MOMENTARY (on while held). */
+        void setFxLockedMask (uint32_t m) noexcept { fxLocked.store (m); }
+        uint32_t getFxLockedMask() const noexcept  { return fxLocked.load(); }
+        /** UI: clear MIDI latches so the on/off parameters alone decide. */
+        void clearFxLatch (int group, int fxId) noexcept;
+
     private:
         void triggerPad (int pad, float velocity, int sampleOffset) noexcept;
         void startVoice (int pad, float level, int sampleOffset, double startAt = -1.0) noexcept;
@@ -167,6 +180,7 @@ namespace tb
         void handleMidi (const juce::MidiMessage& m) noexcept;
         void renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
         void renderSpan (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
+        bool handleFxNote (int note, bool on) noexcept;
         void applyPadCommands() noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
 
@@ -191,6 +205,14 @@ namespace tb
         std::array<int,  kNumPads>  padGroup {};      // 0..3 = A..D
         std::array<GroupBus, kNumGroups> groups;
         std::array<float, kNumGroups> groupPeak {};   // per-block, for the mixer meters
+
+        // FX state from MIDI: latched (LOCKED notes) and held (MOMENTARY notes).
+        std::array<std::atomic<uint32_t>, kNumGroups> fxLatch {};
+        std::array<uint32_t, kNumGroups> fxHeld {};
+        std::array<uint32_t, kNumGroups> fxParamMask {};
+        std::array<std::array<std::array<float, 3>, 16>, kNumGroups> fxParams {};
+        std::atomic<int>      fxTargetGroup { 0 };
+        std::atomic<uint32_t> fxLocked { fx::kDefaultLockedMask };
         std::array<int,  kNumPads>  padSwapAt {};
         std::array<int,  kSwapGroups + 1> swapPlaying {};   // [1..4]: pad, or -1
         std::array<PendingSwap, kSwapGroups + 1> pendingSwap {};

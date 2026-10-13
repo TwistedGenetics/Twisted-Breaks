@@ -7,6 +7,7 @@
 #include "UI/WaveformEditor.h"
 #include "UI/PadEditorPanel.h"
 #include "UI/MixerPanel.h"
+#include "UI/FxEditorPanel.h"
 #include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
@@ -29,7 +30,7 @@ namespace tb::ui
     };
 
     /** Highest development phase that is built (nav keys up to this are live). */
-    inline constexpr int kCurrentPhase = 5;
+    inline constexpr int kCurrentPhase = 6;
 
     /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button
@@ -81,9 +82,14 @@ namespace tb::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
+        /** What fills the screen area: the CRT, the group MIXER or the FX editor. */
+        enum class View { crt, mixer, fx };
+        void showView (View);
+        View getView() const noexcept { return view; }
+
         /** MIXER view on / off (the mixer takes the CRT's place). */
-        void showMixer (bool);
-        bool isMixerShown() const noexcept { return mixer.isVisible(); }
+        void showMixer (bool show) { showView (show ? View::mixer : View::crt); }
+        bool isMixerShown() const noexcept { return view == View::mixer; }
 
         /** LIGHTS menu: controller LEDs (iRig Pads). */
         void showLightsMenu();
@@ -100,6 +106,8 @@ namespace tb::ui
         WaveformEditor   waveform;
         PadEditorPanel   padEditor;
         MixerPanel       mixer;
+        FxEditorPanel    fxEditor;
+        View             view = View::crt;
         NeedleMeter      meter;
         FXGrid           fxGrid;
         StatusStrip      status;
