@@ -34,6 +34,37 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.reverse = apvts.getRawParameterValue (padId (pad, padReverse));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse);
     }
+
+    for (auto* param : AudioProcessor::getParameters())
+        param->addListener (this);
+
+    samples.onStateChanged = [this] { markStateChanged(); };
+}
+
+TwistedBreaksProcessor::~TwistedBreaksProcessor()
+{
+    cancelPendingUpdate();
+    for (auto* param : AudioProcessor::getParameters())
+        param->removeListener (this);
+}
+
+//==============================================================================
+void TwistedBreaksProcessor::parameterGestureChanged (int, bool gestureIsStarting)
+{
+    // Gestures only come from a person touching a control (never from host
+    // automation playback), so this can't flood the host.
+    if (! gestureIsStarting)
+        markStateChanged();
+}
+
+void TwistedBreaksProcessor::markStateChanged()
+{
+    triggerAsyncUpdate();   // coalesces bursts into one host notification
+}
+
+void TwistedBreaksProcessor::handleAsyncUpdate()
+{
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
 //==============================================================================

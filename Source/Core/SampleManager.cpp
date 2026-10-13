@@ -57,9 +57,12 @@ namespace tb
     //==========================================================================
     void SampleManager::setInfo (int pad, PadInfo&& info)
     {
-        const juce::ScopedLock sl (lock);
-        info.version = pads[(size_t) pad].version + 1;
-        pads[(size_t) pad] = std::move (info);
+        {
+            const juce::ScopedLock sl (lock);
+            info.version = pads[(size_t) pad].version + 1;
+            pads[(size_t) pad] = std::move (info);
+        }
+        if (onStateChanged) onStateChanged();
     }
 
     SampleManager::PadInfo SampleManager::getInfo (int pad) const

@@ -18,11 +18,13 @@
       * get/setStateInformation() serialise parameters + non-parameter state
         (from Phase 8, StateManager takes over the non-parameter part)
 */
-class TwistedBreaksProcessor final : public juce::AudioProcessor
+class TwistedBreaksProcessor final : public juce::AudioProcessor,
+                                     private juce::AudioProcessorParameter::Listener,
+                                     private juce::AsyncUpdater
 {
 public:
     TwistedBreaksProcessor();
-    ~TwistedBreaksProcessor() override = default;
+    ~TwistedBreaksProcessor() override;
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -62,6 +64,16 @@ public:
     void triggerPadFromUi (int pad, float velocity, bool noteOn);
     void requestPanic() noexcept { bridge.panicRequested.store (true); }
 
+    /**
+        Tells the host "my saved state is out of date, fetch it again".
+        Ableton keeps its own cached copy of an Audio Unit's state and uses it
+        for saving the set, duplicating the track and undo; it only refreshes
+        that copy when the plugin says so. Called (debounced) after every
+        knob / switch gesture in the plugin window and after any sample load,
+        clear or MIDI-note change. Never from the audio thread.
+    */
+    void markStateChanged();
+
     static constexpr int kStateVersion = 1;
 
 private:
@@ -86,6 +98,11 @@ private:
         std::atomic<float>* reverse = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
+
+    // Parameter listener: a finished UI gesture means the saved state changed.
+    void parameterValueChanged (int, float) override {}
+    void parameterGestureChanged (int, bool gestureIsStarting) override;
+    void handleAsyncUpdate() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TwistedBreaksProcessor)
 };

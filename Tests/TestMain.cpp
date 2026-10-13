@@ -778,6 +778,101 @@ namespace
     }
 
     //==========================================================================
+    void testEditorDrivesState()
+    {
+        std::cout << "\n== Plugin window -> saved state ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+
+        juce::Slider* knob = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* sl = dynamic_cast<juce::Slider*> (&c))
+                if (sl->getTooltip().startsWith ("Master level")) knob = sl;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (knob != nullptr, "found the MASTER LEVEL knob");
+        if (knob == nullptr) return;
+
+        struct Spy : juce::AudioProcessorListener
+        {
+            int changes = 0, gestures = 0, dirty = 0;
+            void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override { ++changes; }
+            void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& d) override { if (d.nonParameterStateChanged) ++dirty; }
+            void audioProcessorParameterChangeGestureBegin (juce::AudioProcessor*, int) override { ++gestures; }
+        } spy;
+        r.p.addListener (&spy);
+
+        // A real mouse drag on the knob: press, drag up 60 px, release.
+        auto centre = knob->getLocalBounds().getCentre().toFloat();
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        const auto t0 = juce::Time::getCurrentTime();
+        auto ev = [&] (juce::Point<float> pos, int ms, bool down)
+        {
+            return juce::MouseEvent (src, pos, down ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(),
+                                     1.0f, 0, 0, 0, 0, knob, knob, t0 + juce::RelativeTime::milliseconds (ms),
+                                     centre, t0, 1, false);
+        };
+        const double before = knob->getValue();
+        knob->mouseDown (ev (centre, 0, true));
+        for (int i = 1; i <= 6; ++i) knob->mouseDrag (ev (centre.translated (0.0f, -10.0f * (float) i), i * 10, true));
+        knob->mouseUp (ev (centre.translated (0.0f, -60.0f), 80, false));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+
+        const float raw = r.p.getParameters().getRawParameterValue (tb::params::masterGain)->load();
+        std::cout << "  knob " << before << " -> " << knob->getValue() << " dB, parameter now " << raw
+                  << " dB, host saw " << spy.changes << " changes / " << spy.gestures << " gestures" << std::endl;
+        check (std::abs (knob->getValue() - before) > 0.5, "dragging the knob moves it");
+        check (std::abs (raw - (float) knob->getValue()) < 0.05f, "the parameter follows the knob");
+        check (spy.changes > 0 && spy.gestures > 0, "the host is told (value change + gesture)");
+        check (spy.dirty == 1, "after the drag the host is told to re-fetch the plugin state (Ableton AU save / duplicate / undo)");
+
+
+
+        juce::MemoryBlock blob;
+        r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        const float restored = q.getParameters().getRawParameterValue (tb::params::masterGain)->load();
+        check (std::abs (restored - raw) < 0.05f, "knob-set value survives save / restore (" + juce::String (restored, 2) + " dB)");
+
+        spy.dirty = 0;
+        for (int d = 0; d < 5; ++d)    // five quick drags
+        {
+            knob->mouseDown (ev (centre, 0, true));
+            knob->mouseDrag (ev (centre.translated (0.0f, 8.0f), 10, true));
+            knob->mouseUp (ev (centre.translated (0.0f, 8.0f), 20, false));
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        check (spy.dirty == 1, "a burst of edits sends one coalesced notification (" + juce::String (spy.dirty) + ")");
+
+        spy.dirty = 0;
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("tb-dirty-test.wav");
+        {
+            juce::WavAudioFormat wav;
+            auto* os = new juce::FileOutputStream (f);
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os, 48000.0, 1, 16, {}, 0));
+            juce::AudioBuffer<float> b (1, 480); b.clear();
+            w->writeFromAudioSampleBuffer (b, 0, 480);
+        }
+        r.p.getSamples().loadFile (4, f);
+        waitForLoads (r.p);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        check (spy.dirty >= 1, "loading a sample also tells the host the state changed");
+        f.deleteFile();
+
+        // Host automation playback must NOT spam state notifications.
+        spy.dirty = 0;
+        auto* gainParam = r.p.getParameters().getParameter (tb::params::masterGain);
+        for (int i = 0; i < 20; ++i) gainParam->setValueNotifyingHost ((float) i / 20.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        check (spy.dirty == 0, "host automation does not trigger state notifications");
+        r.p.removeListener (&spy);
+    }
+
+    //==========================================================================
     int renderSnapshot (const juce::File& out)
     {
         std::cout << "\n== Rendering editor snapshot ==" << std::endl;
@@ -854,6 +949,7 @@ int main (int argc, char* argv[])
         testRateConversionAndStereo();
         testLiveEditsAndLifetime (tone, other);
         testState (tone);
+        testEditorDrivesState();
         testRealtimeSafety();
 
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed" << std::endl;

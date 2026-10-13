@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_events/juce_events.h>
 #include <array>
+#include <functional>
 #include <vector>
 #include "Core/EngineBridge.h"
 #include "Engine/SampleBuffer.h"
@@ -64,6 +65,9 @@ namespace tb
         void restoreFromValueTree (const juce::ValueTree&);
 
         static const juce::Identifier padsId;
+
+        /** Called on the message thread whenever a pad's sample (or its status) changes. */
+        std::function<void()> onStateChanged;
 
     private:
         void timerCallback() override;

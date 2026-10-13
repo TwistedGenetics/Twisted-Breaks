@@ -110,7 +110,7 @@ int main (int argc, char* argv[])
     // Undo path: host sets the old value back.
     gainB->setValueNotifyingHost (gainB->getValueForText ("0"));
     block (*b); pump (50);
-    check (gainB->getCurrentValueAsText().startsWith ("0.0"), "host can set the value back (undo): " + gainB->getCurrentValueAsText());
+    check (std::abs (gainB->getCurrentValueAsText().getFloatValue()) < 0.05f, "host can set the value back (undo): " + gainB->getCurrentValueAsText());
 
     // Editor open during restore (Ableton often has the window open).
     std::unique_ptr<juce::AudioProcessorEditor> ed (b->createEditorIfNeeded());
