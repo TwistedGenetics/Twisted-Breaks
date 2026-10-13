@@ -85,6 +85,15 @@ public:
     /** Message thread: switch every group's effects off (PANIC button). */
     void allFxOff();
 
+    // ---- Slice sequencer edits (message thread) -----------------------------------
+    enum class SliceOp { shuffle, random, reverseOrder, half, rotateLeft, rotateRight, reset };
+    /** The slot the pad's SLOT parameter points at (0..7). */
+    int  sliceSlotOf (int pad) const;
+    /** Turns an unwritten slot (playing the break as recorded) into editable steps. */
+    void materializeSliceSlot (int pad, int slot);
+    /** One-press variations on the pad's current slot. */
+    void sliceSeqOp (int pad, SliceOp op, juce::Random& rnd);
+
     /**
         SPREAD: puts each slice of `pad` on its own pad (pad, pad+1, ...),
         sharing the same decoded sample, each in SLICE mode playing slice
@@ -132,6 +141,8 @@ private:
         std::atomic<float>* swapAt = nullptr;
         std::atomic<float>* group = nullptr;
         std::atomic<float>* fixVel = nullptr;
+        std::atomic<float>* sliceSeq = nullptr;
+        std::atomic<float>* sliceSlot = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

@@ -273,6 +273,31 @@ Hand-off between breaks at slice points (spec addition A1 in
   playhead, LEN / STEP / REC Q readouts, RUN, ARM, CLEAR). Recorded steps
   bump the data version; the UI marks the host state dirty.
 
+## 6e. Slice sequencer (Phase 7.1, implemented)
+
+* `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
+  step (kind PLAY / REST / TIE, slice, rev, pitch, velocity, gate length,
+  ratchet, chance, micro in 1/64 step) and one 32-bit atomic per slot
+  (length, rate, swing, written). Unwritten slots play
+  `defaultPattern()`: each slice on its nearest step plus micro-timing.
+* Engine: a pad with SLICE SEQ on starts / stops its sequence when hit
+  (the main sequencer only starts it). `addSliceEvents` lists the block's
+  hits / releases on the slice clock (Live's PPQ, or a free clock when Live
+  is stopped, restarted at the press so step 1 plays at once) and inserts
+  them into the same sorted event list as MIDI and the main sequencer;
+  events carry a generation so a stop / restart cancels stale ones, and
+  inserts never land behind the play cursor. A hit plays from the slice
+  start on through the break (or backwards from its end) until the next
+  hit, a REST or its gate; when the break is already playing at exactly
+  that spot (the as-recorded case) it just carries on, which is what makes
+  the default pattern sample-exact.
+* Slot changes land at the pattern start (re-anchoring if the step size
+  differs); SWAP groups treat a running sequence as the playing pad and
+  hand off on its next step; choke and PANIC stop sequences.
+* UI: the pad editor's SEQ page (SLICE SEQ, SLOT, LEN, RATE, SWING) and
+  `SliceSeqPanel` on the screen; edits materialise an unwritten slot first.
+  Variations (`TwistedBreaksProcessor::sliceSeqOp`) run on the message thread.
+
 ## 7. The 16 performance effects (Phase 6, implemented)
 
 As built (`Engine/FXChain`, `Core/FxDefs`, `UI/FXGrid`, `UI/FxEditorPanel`):
@@ -401,6 +426,6 @@ Ableton stores in the `.als` file:
 | **5 ✅** | Four `GroupBus`es (level / pan / mute / solo / FX-bypass hook), per-pad GROUP routing, MIXER view, group meters | 195/195 checks: exact -6 / -12 dB scaling, pan, mute, solo, re-routing, click-free mute glide, oversize host blocks render identically, MIXER fader / header / GROUP keys drive the parameters, state |
 | **6 ✅** | 16 performance FX per group, LOCKED/MOMENTARY, MIDI notes + automation, FX editor view | 267/267 checks: each effect measured (filter slopes, crush levels, S&H runs, clip, roll-off, sample-exact stutter / repeat / reverse / delay timing, gate on the grid, pitch dive, comb pitch), click-free engage, throws, group independence, bypass, MIDI latch / momentary, mouse keys, state, ~4 % CPU with all 64 on |
 | **7 ✅** | 32-step sequencer (16 lanes, velocity, length, step size, RUN), live record with quantise | 296/296 checks: steps sample-exact mid-block, length / step size, micro-timing, stopped / RUN off silent, jumps and restarts land on the right step, recording at 1/4–1/32 (finer kept as micro-timing) without double hits, mouse + MIDI, state, grid editing |
-| 7.1 | **Per-pad slice sequencer** (spec addition A5) | Rearranged slices land on their steps to the sample |
+| **7.1 ✅** | **Per-pad slice sequencer** (spec addition A5) | 333/333 checks: untouched pattern replays the break sample-exactly, rearranged / REST / REV / RATCHET / gate / PITCH / CHANCE / MICRO / SWING / RATE timed to the sample, start / stop, free clock when stopped, slot switch at the pattern start, FILL, main-sequencer start, SWAP hand-off on the step, edit ops, screen editing, STEP REC, state |
 | 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |

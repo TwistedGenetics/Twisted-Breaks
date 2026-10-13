@@ -82,6 +82,10 @@ namespace tb::params
     // ---- Per pad (0.5.2) -------------------------------------------------------
     inline constexpr const char* padFixVel  = "fixvel";    // bool: every hit at full level
 
+    // ---- Per pad (0.7.1: slice sequencer) ------------------------------------
+    inline constexpr const char* padSliceSeq  = "sseq";    // bool: a hit starts / stops the pad's slice sequence
+    inline constexpr const char* padSliceSlot = "sslot";   // int 1..8: pattern slot (switches at the pattern start)
+
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB
     inline constexpr const char* grpPan     = "pan";       // -1 .. +1

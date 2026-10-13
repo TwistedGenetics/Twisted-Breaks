@@ -29,6 +29,12 @@ namespace tb::ui
 
     void DragReadout::stepBy (int delta)
     {
+        if (param == nullptr && model.get)
+        {
+            model.set (jlimit (model.min, model.max, model.get() + delta));
+            repaint();
+            return;
+        }
         if (param == nullptr || att == nullptr) return;
         const auto& range = param->getNormalisableRange();
         const float v = jlimit (range.start, range.end, param->convertFrom0to1 (param->getValue()) + (float) delta);
@@ -39,12 +45,18 @@ namespace tb::ui
     {
         dragged = false;
         if (param != nullptr) { startValue = param->convertFrom0to1 (param->getValue()); att->beginGesture(); }
+        else if (model.get) modelStart = model.get();
     }
 
     void DragReadout::mouseDrag (const MouseEvent& e)
     {
-        if (param == nullptr) return;
         const int steps = -e.getDistanceFromDragStartY() / 8;
+        if (param == nullptr && model.get)
+        {
+            if (steps != 0) { dragged = true; model.set (jlimit (model.min, model.max, modelStart + steps)); repaint(); }
+            return;
+        }
+        if (param == nullptr) return;
         if (steps != 0) dragged = true;
         const auto& range = param->getNormalisableRange();
         att->setValueAsPartOfGesture (jlimit (range.start, range.end, startValue + (float) steps));
@@ -52,6 +64,13 @@ namespace tb::ui
 
     void DragReadout::mouseUp (const MouseEvent& e)
     {
+        if (param == nullptr && model.get)
+        {
+            if (! dragged && e.mouseWasClicked() && model.cycleOnClick)
+                model.set (model.get() + 1 > model.max ? model.min : model.get() + 1);
+            repaint();
+            return;
+        }
         if (param == nullptr) return;
         att->endGesture();
         // A click (no drag) on a choice cycles it.
@@ -71,6 +90,7 @@ namespace tb::ui
     void DragReadout::mouseDoubleClick (const MouseEvent&)
     {
         if (param != nullptr) att->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+        else if (model.set) { model.set (model.def); repaint(); }
     }
 
     void DragReadout::paint (Graphics& g)
@@ -82,7 +102,9 @@ namespace tb::ui
         paint::recess (g, b, 3.0f);
         g.setColour (c::vfd);
         g.setFont (monoFont (14.0f));
-        g.drawText (param != nullptr ? param->getCurrentValueAsText() : String ("--"), b, Justification::centred, false);
+        const String text = param != nullptr ? param->getCurrentValueAsText()
+                          : (model.get ? (model.text ? model.text (model.get()) : String (model.get())) : String ("--"));
+        g.drawText (text, b, Justification::centred, false);
     }
 
     //==========================================================================

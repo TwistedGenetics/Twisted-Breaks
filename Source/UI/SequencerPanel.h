@@ -16,6 +16,17 @@ namespace tb::ui
     public:
         DragReadout (const juce::String& caption, const juce::String& tooltip);
         void attach (juce::RangedAudioParameter*);
+
+        /** Or drive a plain value (state, not a parameter). */
+        struct Model
+        {
+            std::function<int()> get;
+            std::function<void (int)> set;
+            int min = 0, max = 1, def = 0;
+            std::function<juce::String (int)> text;
+            bool cycleOnClick = false;
+        };
+        void bind (Model m) { attach (nullptr); model = std::move (m); repaint(); }
         void paint (juce::Graphics&) override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;
@@ -25,6 +36,8 @@ namespace tb::ui
     private:
         void stepBy (int delta);
         juce::String caption;
+        Model model;
+        int modelStart = 0;
         juce::RangedAudioParameter* param = nullptr;
         std::unique_ptr<juce::ParameterAttachment> att;
         float startValue = 0.0f;

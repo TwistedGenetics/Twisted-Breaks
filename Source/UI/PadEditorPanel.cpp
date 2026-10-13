@@ -126,13 +126,48 @@ namespace tb::ui
         addChildComponent (swapSel);
         addChildComponent (swapAtSel);
 
-        for (auto* k : { &soundTab, &playTab, &sliceTab, &swapTab, &loadKey, &clearKey })
+        // ---- SEQ page
+        sseqKey.setClickingTogglesState (true);
+        for (auto* comp : seqControls()) addChildComponent (comp);
+        {
+            auto slotModel = [this] (std::function<int (const SliceSlot&)> get, std::function<void (SliceSlot&, int)> set)
+            {
+                DragReadout::Model m;
+                m.get = [this, get]
+                {
+                    const auto s = processor.getBridge().sliceSeq.getSlot (pad, processor.sliceSlotOf (pad));
+                    return get (s);
+                };
+                m.set = [this, set] (int v)
+                {
+                    const int sl = processor.sliceSlotOf (pad);
+                    processor.materializeSliceSlot (pad, sl);
+                    auto s = processor.getBridge().sliceSeq.getSlot (pad, sl);
+                    set (s, v);
+                    processor.getBridge().sliceSeq.setSlot (pad, sl, s);
+                    processor.markStateChanged();
+                };
+                return m;
+            };
+            auto m = slotModel ([] (const SliceSlot& s) { return s.length; }, [] (SliceSlot& s, int v) { s.length = v; });
+            m.min = 1; m.max = 32; m.def = 16;
+            sLenRead.bind (m);
+            m = slotModel ([] (const SliceSlot& s) { return s.rate; }, [] (SliceSlot& s, int v) { s.rate = v; });
+            m.min = 0; m.max = 3; m.def = 1; m.cycleOnClick = true; m.text = [] (int v) { return String (kSliceRateNames[jlimit (0, 3, v)]); };
+            sRateRead.bind (m);
+            m = slotModel ([] (const SliceSlot& s) { return s.swing; }, [] (SliceSlot& s, int v) { s.swing = v; });
+            m.min = 0; m.max = 100; m.def = 0; m.cycleOnClick = false; m.text = [] (int v) { return String (v) + "%"; };
+            swingRead.bind (m);
+        }
+
+        for (auto* k : { &soundTab, &playTab, &sliceTab, &swapTab, &seqTab, &loadKey, &clearKey })
             addAndMakeVisible (k);
 
         soundTab.onClick = [this] { setPage (Page::sound); };
         playTab.onClick  = [this] { setPage (Page::play); };
         sliceTab.onClick = [this] { setPage (Page::slice); };
         swapTab.onClick  = [this] { setPage (Page::swap); };
+        seqTab.onClick   = [this] { setPage (Page::seq); };
         loadKey.onClick  = [this] { chooseFile(); };
         clearKey.onClick = [this] { processor.getSamples().clearPad (pad); };
 
@@ -149,12 +184,19 @@ namespace tb::ui
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
         groupAttachment.reset();
+        sseqAttachment.reset();
+        slotRead.attach (nullptr);
     }
 
     void PadEditorPanel::showGroup (int g)
     {
         for (int k = 0; k < kNumGroups; ++k)
             groupKeys[(size_t) k].setToggleState (k == g, dontSendNotification);
+    }
+
+    std::vector<Component*> PadEditorPanel::seqControls()
+    {
+        return { &sseqKey, &slotRead, &sLenRead, &sRateRead, &swingRead };
     }
 
     std::vector<Component*> PadEditorPanel::sliceControls()
@@ -177,7 +219,9 @@ namespace tb::ui
     {
         page = p;
         const bool sound = page == Page::sound, play = page == Page::play, slice = page == Page::slice,
-                   swap = page == Page::swap;
+                   swap = page == Page::swap, seq = page == Page::seq;
+        seqTab.setToggleState (seq, dontSendNotification);
+        for (auto* comp : seqControls()) comp->setVisible (seq);
         soundTab.setToggleState (sound, dontSendNotification);
         playTab.setToggleState (play, dontSendNotification);
         sliceTab.setToggleState (slice, dontSendNotification);
@@ -230,6 +274,9 @@ namespace tb::ui
         chokeSel.attach (apvts.getParameter (id (params::padChoke)));
         swapSel.attach  (apvts.getParameter (id (params::padSwap)));
         swapAtSel.attach (apvts.getParameter (id (params::padSwapAt)));
+        sseqAttachment.reset();
+        sseqAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padSliceSeq), sseqKey);
+        slotRead.attach (apvts.getParameter (id (params::padSliceSlot)));
 
         noteSel.setNote (processor.getEngine().getPadNote (pad));
 
@@ -261,6 +308,16 @@ namespace tb::ui
 
     void PadEditorPanel::refresh()
     {
+        if (page == Page::seq)
+        {
+            const auto sv = processor.getBridge().sliceSeq.getVersion();
+            if (sv != shownSliceVersion)
+            {
+                shownSliceVersion = sv;
+                for (auto* r : { &sLenRead, &sRateRead, &swingRead, &slotRead }) r->repaint();
+            }
+        }
+
         const auto v = processor.getSamples().getVersion (pad);
         if (v != shownVersion)
         {
@@ -310,10 +367,17 @@ namespace tb::ui
     void PadEditorPanel::resized()
     {
         const int w = getWidth();
-        soundTab.setBounds (64,  0, 62, kHeaderH);
-        playTab.setBounds  (128, 0, 52, kHeaderH);
-        sliceTab.setBounds (182, 0, 56, kHeaderH);
-        swapTab.setBounds  (240, 0, 54, kHeaderH);
+        soundTab.setBounds (63,  0, 60, kHeaderH);
+        playTab.setBounds  (124, 0, 47, kHeaderH);
+        sliceTab.setBounds (172, 0, 51, kHeaderH);
+        swapTab.setBounds  (224, 0, 51, kHeaderH);
+        seqTab.setBounds   (276, 0, 42, kHeaderH);
+
+        sseqKey.setBounds   (0,   kCtlTop - 6, 110, 34);
+        slotRead.setBounds  (124, kCtlTop - 10, 60, 40);
+        sLenRead.setBounds  (196, kCtlTop - 10, 60, 40);
+        sRateRead.setBounds (268, kCtlTop - 10, 60, 40);
+        swingRead.setBounds (340, kCtlTop - 10, 60, 40);
 
         swapSel.setBounds   (0,   kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
         swapAtSel.setBounds (108, kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
@@ -366,7 +430,7 @@ namespace tb::ui
                            "PAD " + String (pad + 1).paddedLeft ('0', 2), {}, paint::PlateStyle::black, rnd);
 
         // Sample readout in a recess between the tabs and LOAD.
-        auto r = Rectangle<float> (298.0f, 0.0f, (float) (getWidth() - 298 - 140), (float) kHeaderH);
+        auto r = Rectangle<float> (320.0f, 0.0f, (float) (getWidth() - 320 - 140), (float) kHeaderH);
         paint::recess (g, r, 3.0f);
         r.reduce (8.0f, 0.0f);
 
@@ -409,6 +473,13 @@ namespace tb::ui
             g.drawText ("SENS",  Rectangle<float> (108.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
             g.drawText ("COUNT", Rectangle<float> (182.0f, (float) kCtlTop - 18.0f, 90.0f, 14.0f), Justification::centred, false);
             g.drawText ("SLICE", Rectangle<float> (274.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
+        }
+        else if (page == Page::seq)
+        {
+            g.setColour (c::bakelite.withAlpha (0.75f));
+            g.setFont (monoFont (10.5f));
+            g.drawFittedText ("STEPS ON THE SCREEN.\nHIT THE PAD: START / STOP.", Rectangle<int> (410, kCtlTop - 10, getWidth() - 410, 44),
+                              Justification::centredLeft, 2, 1.0f);
         }
         else if (page == Page::swap)
         {

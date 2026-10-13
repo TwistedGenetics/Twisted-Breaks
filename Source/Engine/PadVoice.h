@@ -62,6 +62,8 @@ namespace tb
 
         /** Live updates once per block (speed, gain, pan, region edges). */
         void update (const Settings&) noexcept;
+        /** Gain / pan only (slice-sequencer voices keep their own region and speed). */
+        void updateGains (const Settings& s) noexcept { if (active) { gainL.setTargetValue (s.gainLeft); gainR.setTargetValue (s.gainRight); } }
 
         /** Re-locks a synced loop to the host position at the start of this block. */
         void syncTo (double ppq) noexcept;

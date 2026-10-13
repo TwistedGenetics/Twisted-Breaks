@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 515, "515 automatable parameters in total (3 master + 4 sequencer + 18 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 547, "547 automatable parameters in total (3 master + 4 sequencer + 20 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -1729,6 +1729,346 @@ namespace
         check (! seq.laneHasSteps (6), "CLEAR empties pad 7's lane");
     }
 
+    //==========================================================================
+    //  PHASE 7.1: per-pad slice sequencer
+    //==========================================================================
+    struct SliceRig
+    {
+        Rig r;
+        juce::AudioBuffer<float> brk;
+        tb::SliceSeqData& data;
+        int step = 0;      // 1/16 in samples
+        SliceRig() : brk (makeBreak (48000.0)), data (r.p.getBridge().sliceSeq)
+        {
+            r.load (0, writeAudio ("sseq_break", brk, 48000.0, Fmt::wavFloat));
+            step = breakStepLength (48000.0);
+            r.host.bpm = 60.0 * 8.0 * 48000.0 / (double) brk.getNumSamples();   // the break's own tempo: 1/16 = `step` samples
+            setPadParam (r.p, 0, tb::params::padSliceSeq, 1.0f);
+            setParam (r.p, tb::params::masterLimiter, 0.0f);   // the synthetic break peaks above the limiter's ceiling
+            r.settle();
+        }
+        void equal16() { r.p.getSamples().setSliceCount (0, 16); r.p.getSamples().equalSlice (0); juce::MessageManager::getInstance()->runDispatchLoopUntil (20); r.settle(); }
+        /** Write a slot from a list of steps (rest of the 32 = TIE). */
+        void write (int slot, std::vector<tb::SliceStep> steps, int length, int rate = 1, int swing = 0)
+        {
+            data.resetSlot (0, slot);
+            for (int k = 0; k < (int) steps.size(); ++k) data.setStep (0, slot, k, steps[(size_t) k]);
+            tb::SliceSlot ss; ss.length = length; ss.rate = rate; ss.swing = swing; ss.written = true;
+            data.setSlot (0, slot, ss);
+        }
+        /** Live playing from bar 1; the pad is hit at `hitAt`. */
+        juce::AudioBuffer<float> run (int samples, std::vector<TimedEvent> extra = {}, int hitAt = 0, bool playing = true)
+        {
+            r.host.ppq = 0.0;
+            r.host.playing = playing;
+            extra.insert (extra.begin(), TimedEvent { hitAt, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) });
+            auto out = renderTimeline (r, samples, extra);
+            r.host.playing = false;
+            r.p.requestPanic();
+            r.settle();
+            return out;
+        }
+        /** Max difference, skipping the first 40 samples (a hit's 0.5 ms fade-in). */
+        float diffFromBreak (const juce::AudioBuffer<float>& out, int outStart, int brkStart, int num, int ch = 0) const
+        {
+            float d = 0.0f;
+            for (int i = 40; i < num; ++i)
+                d = juce::jmax (d, std::abs (out.getSample (ch, outStart + i) - brk.getSample (ch, brkStart + i)));
+            return d;
+        }
+    };
+
+    void testSliceSequencer()
+    {
+        std::cout << "\n== Phase 7.1: slice sequencer ==" << std::endl;
+        using SS = tb::SliceStep;
+        {
+            SS st; st.kind = SS::play; st.slice = 13; st.rev = true; st.pitch = -7; st.velocity = 90; st.length = 1; st.ratchet = 3; st.chance = 42; st.micro = -32;
+            check (SS::unpack (st.pack()) == st, "a slice step packs into 64 bits and back (slice, rev, pitch, vel, length, ratchet, chance, micro)");
+        }
+
+        SliceRig x;
+        const int L = x.brk.getNumSamples();
+        auto play = [] (int slice) { return SS::playing (slice); };
+        auto rest = [] { SS s; s.kind = SS::rest; return s; };
+
+        // Untouched pattern on an AUTO-sliced break: replays the break exactly.
+        x.r.p.getSamples().autoSlice (0);
+        waitForLoads (x.r.p);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        x.r.settle();
+        auto out = x.run (L + 4000);
+        check (x.diffFromBreak (out, 0, 0, L - 64) < 1.0e-5f, "untouched pattern (AUTO slices): the break plays back exactly as recorded (err "
+                                                               + juce::String (x.diffFromBreak (out, 0, 0, L - 64), 7) + ")");
+        check (x.diffFromBreak (out, L, 0, 3000) < 1.0e-3f, "...and loops round in time");
+
+        x.equal16();
+        const int s2 = 2 * x.step;          // EQUAL 16 on 32 steps: a slice every 2 steps
+
+        // Rearranged: slice 5 first, then a rest, then slice 1 reversed.
+        SS rev1 = play (0); rev1.rev = true;
+        x.write (0, { play (4), {}, rest(), {}, rev1 }, 8);
+        out = x.run (4 * x.step + s2 + 500);
+        check (x.diffFromBreak (out, 0, 4 * s2, s2 - 300) < 1.0e-5f, "step 1 plays slice 5 (rearranged), from its first sample");
+        check (isSilent (out.getMagnitude (0, s2 + 200, s2 - 400)), "REST cuts it on step 3 (3 ms fade)");
+        float d = 0.0f;
+        for (int i = 300; i < s2 - 300; ++i) d = juce::jmax (d, std::abs (out.getSample (0, 4 * x.step + i) - x.brk.getSample (0, s2 - 1 - i)));
+        check (d < 1.0e-4f, "REV: step 5 plays slice 1 backwards from its end (err " + juce::String (d, 6) + ")");
+
+        // Ratchet x2: the slice restarts half way through the step.
+        SS r2 = play (2); r2.ratchet = 2;
+        x.write (0, { r2, rest() }, 2);
+        out = x.run (x.step + 100);
+        const int half = x.step / 2;
+        check (x.diffFromBreak (out, 0, 2 * s2, half - 300) < 1.0e-5f && x.diffFromBreak (out, half + 300, 2 * s2 + 300, half - 600) < 1.0e-3f,
+               "RATCHET x2: the slice plays twice inside the step");
+
+        // Gate 1/2: silent for the second half of the step.
+        SS g = play (3); g.length = 1;
+        x.write (0, { g, {} }, 2);
+        out = x.run (2 * x.step);
+        check (x.diffFromBreak (out, 0, 3 * s2, half - 300) < 1.0e-5f && isSilent (out.getMagnitude (0, half + 200, x.step - 400)),
+               "LENGTH 1/2: the hit is gated to half a step");
+
+        // Pitch +12: twice the speed.
+        SS p12 = play (1); p12.pitch = 12;
+        x.write (0, { p12 }, 1);
+        out = x.run (x.step);
+        d = 0.0f;
+        for (int i = 100; i < 1500; ++i) d = juce::jmax (d, std::abs (out.getSample (0, i) - x.brk.getSample (0, s2 + 2 * i)));
+        check (d < 2.0e-3f, "PITCH +12: the slice plays an octave up (twice as fast)");
+
+        // Chance 0 never plays; micro -32 = half a step early; swing delays odd steps.
+        SS never = play (1); never.chance = 0;
+        x.write (0, { rest(), {}, never, {} }, 4);
+        check (isSilent (peakOf (x.run (4 * x.step))), "CHANCE 0 %: never plays");
+
+        SS early = play (6); early.micro = -32;
+        x.write (0, { rest(), {}, early, rest() }, 4);
+        out = x.run (4 * x.step);
+        auto o = onsets (out);
+        check (! o.empty() && std::abs (o[0] - (2 * x.step - x.step / 2)) <= 2, "MICRO -1/2: the hit lands half a step early (at "
+                                                                                + juce::String (o.empty() ? -1 : o[0]) + ")");
+
+        x.write (0, { rest(), play (6), rest(), rest() }, 4, 1, 50);
+        out = x.run (4 * x.step);
+        o = onsets (out);
+        check (! o.empty() && std::abs (o[0] - (x.step + x.step / 4)) <= 2, "SWING 50 %: the off-beat step comes a quarter step late (at "
+                                                                            + juce::String (o.empty() ? -1 : o[0]) + ")");
+
+        // Rate 1/8: steps twice as long.
+        x.write (0, { rest(), play (6) }, 2, 0);
+        o = onsets (x.run (4 * x.step));
+        check (! o.empty() && std::abs (o[0] - 2 * x.step) <= 1, "RATE 1/8: step 2 is an 1/8 in");
+
+        // A second press stops it; Live stopped: a press starts it right away.
+        x.write (0, { play (0), {}, {}, {} }, 4);
+        out = x.run (20 * x.step, { { 5 * x.step, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100) } });
+        check (! isSilent (out.getMagnitude (0, x.step, x.step)) && isSilent (out.getMagnitude (0, 5 * x.step + 300, 10 * x.step)),
+               "a second hit on the pad stops its sequence");
+        out = x.run (4 * x.step, {}, 3000, false);
+        o = onsets (out);
+        check (! o.empty() && std::abs (o[0] - 3000) <= 1 && x.diffFromBreak (out, 3000, 0, 2000) < 1.0e-5f,
+               "Live stopped: hitting the pad starts the sequence immediately (free clock)");
+
+        // Slots: switching lands on the next pattern start.
+        x.write (1, { play (8) }, 1);       // slot 2: slice 9 on every step
+        x.write (0, { play (0), {} }, 2);   // slot 1: slice 1 every 2 steps
+        {
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            juce::AudioBuffer<float> all (2, 30 * x.step / kBlock * kBlock + kBlock), buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            const int blocks = all.getNumSamples() / kBlock;
+            for (int b = 0; b < blocks; ++b)
+            {
+                if (b * kBlock >= x.step && b * kBlock < x.step + kBlock) setPadParam (x.r.p, 0, tb::params::padSliceSlot, 2.0f);
+                runBlock (x.r.p, x.r.host, buf, midi);
+                for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            }
+            x.r.host.playing = false;
+            check (x.diffFromBreak (all, 2 * x.step + 300, 8 * s2 + 300, x.step - 600) < 1.0e-5f && x.diffFromBreak (all, 0, 0, x.step) < 1.0e-5f,
+                   "SLOT change mid-pattern lands on the next pattern start (step 3 plays slot 2)");
+            x.r.p.requestPanic(); x.r.settle();
+            setPadParam (x.r.p, 0, tb::params::padSliceSlot, 1.0f);
+        }
+
+        // FILL: rolls (x4) while held.
+        x.write (0, { play (2), {}, {}, {} }, 4);
+        x.r.p.getBridge().sliceFill[0].store (true);
+        out = x.run (x.step);
+        x.r.p.getBridge().sliceFill[0].store (false);
+        const int q = (int) std::lround (x.step / 4.0);     // 1058.75 -> 1059
+        check (x.diffFromBreak (out, q + 300, 2 * s2 + 300, q - 600) < 1.0e-3f, "FILL held: each hit rolls x4");
+
+        // The main sequencer starts it (but never stops it).
+        x.write (0, { play (0), {}, {}, {} }, 4);
+        {
+            tb::SeqStep st; st.on = true;
+            auto& seq = x.r.p.getBridge().seq;
+            seq.set (0, 0, st); seq.set (0, 4, st);
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            auto all = renderTimeline (x.r, 10 * x.step, {});
+            x.r.host.playing = false;
+            check (x.diffFromBreak (all, 0, 0, 2000) < 1.0e-5f && ! isSilent (all.getMagnitude (0, 8 * x.step, x.step)),
+                   "a main-sequencer step starts the slice sequence, and the next one doesn't stop it");
+            seq.clearAll();
+            x.r.p.requestPanic(); x.r.settle();
+        }
+
+        // State.
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        TwistedBreaksProcessor qp;
+        qp.setStateInformation (blob.getData(), (int) blob.getSize());
+        bool same = qp.getBridge().sliceSeq.getSlot (0, 1).written && qp.getBridge().sliceSeq.getSlot (0, 0).length == 4;
+        for (int k = 0; k < 32; ++k) same &= qp.getBridge().sliceSeq.getStep (0, 0, k) == x.data.getStep (0, 0, k);
+        check (same, "slice sequences (all slots and their settings) are saved with the set");
+    }
+
+    void testSliceSeqEditing()
+    {
+        std::cout << "\n== Phase 7.1: slice sequence editing ==" << std::endl;
+        using SS = tb::SliceStep;
+        using Op = TwistedBreaksProcessor::SliceOp;
+        SliceRig x;
+        x.equal16();
+        auto& d = x.data;
+        juce::Random rnd (7);
+
+        check (! d.getSlot (0, 0).written, "a new slot plays the break as recorded (nothing written yet)");
+        x.r.p.materializeSliceSlot (0, 0);
+        check (d.getSlot (0, 0).written && d.getSlot (0, 0).length == 32 && d.getStep (0, 0, 2).kind == SS::play && d.getStep (0, 0, 2).slice == 1
+                 && d.getStep (0, 0, 1).kind == SS::tie, "editing turns it into steps: EQUAL 16 on a 2-bar break = a slice every other 1/16, ties between");
+
+        auto snapshot = [&] { std::array<SS, 32> a; for (int k = 0; k < 32; ++k) a[(size_t) k] = d.getStep (0, 0, k); return a; };
+        const auto orig = snapshot();
+
+        x.r.p.sliceSeqOp (0, Op::shuffle, rnd);
+        auto sh = snapshot();
+        bool beatsKept = true, changed = false;
+        std::multiset<int> a, b;
+        for (int k = 0; k < 32; ++k)
+        {
+            if (k % 4 == 0) beatsKept &= sh[(size_t) k] == orig[(size_t) k];
+            changed |= ! (sh[(size_t) k] == orig[(size_t) k]);
+            if (orig[(size_t) k].kind == SS::play) a.insert (orig[(size_t) k].slice);
+            if (sh[(size_t) k].kind == SS::play) b.insert (sh[(size_t) k].slice);
+        }
+        check (changed && beatsKept && a == b, "SHUFFLE moves the hits around, keeps every beat in place, uses the same slices");
+
+        x.r.p.sliceSeqOp (0, Op::reset, rnd);
+        check (! d.getSlot (0, 0).written, "RESET: back to the break as recorded");
+
+        x.r.p.materializeSliceSlot (0, 0);
+        x.r.p.sliceSeqOp (0, Op::reverseOrder, rnd);
+        check (d.getStep (0, 0, 31) == orig[0] && d.getStep (0, 0, 0) == orig[31], "REVERSE flips the step order");
+        x.r.p.sliceSeqOp (0, Op::reset, rnd);
+        x.r.p.materializeSliceSlot (0, 0);
+        x.r.p.sliceSeqOp (0, Op::rotateRight, rnd);
+        check (d.getStep (0, 0, 1) == orig[0] && d.getStep (0, 0, 0) == orig[31], "ROT > moves everything one step later");
+        x.r.p.sliceSeqOp (0, Op::reset, rnd);
+        x.r.p.materializeSliceSlot (0, 0);
+        x.r.p.sliceSeqOp (0, Op::half, rnd);
+        check (d.getStep (0, 0, 16) == orig[0] && d.getStep (0, 0, 18) == orig[2], "HALF repeats the first half");
+        x.r.p.sliceSeqOp (0, Op::reset, rnd);
+        x.r.p.materializeSliceSlot (0, 0);
+        x.r.p.sliceSeqOp (0, Op::random, rnd);
+        bool beats = true;
+        for (int k = 0; k < 32; k += 4) beats &= d.getStep (0, 0, k) == orig[(size_t) k];
+        check (beats, "RANDOM re-picks the off-beat slices only");
+        x.r.p.sliceSeqOp (0, Op::reset, rnd);
+
+        // The screen.
+        std::unique_ptr<juce::AudioProcessorEditor> ed (x.r.p.createEditor());
+        tb::ui::PadEditorPanel* pe = nullptr; tb::ui::SliceSeqPanel* panel = nullptr; tb::ui::MainView* view = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* p1 = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) pe = p1;
+            if (auto* p2 = dynamic_cast<tb::ui::SliceSeqPanel*> (&c)) panel = p2;
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (pe && panel && view, "found the SEQ page and the slice sequence screen");
+        if (! (pe && panel && view)) return;
+        pe->setPage (tb::ui::PadEditorPanel::Page::seq);
+        check (panel->isVisible() && view->getView() == tb::ui::MainView::View::sliceSeq, "the SEQ tab puts the steps on the screen");
+
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Point<float> pos, juce::Point<float> down, bool pressed, int clicks = 1)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            return juce::MouseEvent (src, pos, pressed ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(),
+                                     1.0f, 0, 0, 0, 0, panel, panel, t, down, t, clicks, false);
+        };
+        const auto c3 = panel->cellBounds (3).getCentre();
+        panel->mouseDown (ev (c3, c3, true));
+        panel->mouseDrag (ev (c3.translated (0.0f, -40.0f), c3, true));     // up 5 from TIE (-2) -> slice index 3
+        panel->mouseUp (ev (c3.translated (0.0f, -40.0f), c3, false));
+        check (panel->getSelectedStep() == 3 && d.getStep (0, 0, 3).kind == SS::play && d.getStep (0, 0, 3).slice == 3,
+               "dragging a step up picks its slice (TIE -> slice 4)");
+        panel->mouseDoubleClick (ev (c3, c3, false, 2));
+        check (d.getStep (0, 0, 3).kind == SS::tie, "double-click makes it a TIE again");
+
+        juce::Button* rev = nullptr; juce::Button* stepRec = nullptr;
+        for (auto* ch : panel->getChildren())
+            if (auto* bt = dynamic_cast<juce::Button*> (ch))
+            {
+                if (bt->getName() == "REV") rev = bt;
+                if (bt->getName() == "STEP REC") stepRec = bt;
+            }
+        panel->selectStep (2);
+        if (rev != nullptr) { rev->triggerClick(); juce::MessageManager::getInstance()->runDispatchLoopUntil (20); }
+        check (rev != nullptr && d.getStep (0, 0, 2).rev, "REV reverses the selected step");
+
+        // STEP REC: SPREAD pads write their slices into the steps in turn.
+        x.r.p.spreadSlices (0);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        setPadParam (x.r.p, 0, tb::params::padSliceSeq, 1.0f);
+        x.r.settle();
+        if (stepRec != nullptr) { stepRec->triggerClick(); juce::MessageManager::getInstance()->runDispatchLoopUntil (20); }
+        panel->selectStep (0);
+        panel->refresh();
+        for (int pad : { 5, 9 })
+        {
+            x.r.p.triggerPadFromUi (pad, 1.0f, true);
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            runBlock (x.r.p, x.r.host, buf, midi);
+            panel->refresh();
+        }
+        check (d.getStep (0, 0, 0).slice == 5 && d.getStep (0, 0, 1).slice == 9 && d.getStep (0, 0, 1).kind == SS::play && panel->getSelectedStep() == 2,
+               "STEP REC: tapping SPREAD pads 6 and 10 writes slices 6 and 10 into steps 1 and 2");
+        pe->setPage (tb::ui::PadEditorPanel::Page::sound);
+        check (view->getView() == tb::ui::MainView::View::crt, "leaving the SEQ page brings the CRT back");
+    }
+
+    void testSliceSeqSwap()
+    {
+        std::cout << "\n== Phase 7.1: slice sequences + SWAP ==" << std::endl;
+        SliceRig x;
+        x.equal16();
+        x.r.load (1, writeAudio ("sseq_break", x.brk, 48000.0, Fmt::wavFloat));     // same file: shared audio
+        x.r.p.getSamples().equalSlice (1);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        for (int p = 0; p < 2; ++p)
+        {
+            setPadParam (x.r.p, p, tb::params::padSliceSeq, 1.0f);
+            setPadParam (x.r.p, p, tb::params::padSwap, 1.0f);
+            setPadParam (x.r.p, p, tb::params::padPan, p == 0 ? -1.0f : 1.0f);
+        }
+        x.r.settle();
+        const int hit2 = 3 * x.step + 1000;      // mid step 4
+        auto out = x.run (8 * x.step, { { hit2, juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127) } });
+        const int first = firstSoundIn (out, 1, 0, out.getNumSamples());
+        check (std::abs (first - 4 * x.step) <= 2, "hitting pad 2 mid-step: its sequence takes over on pad 1's next step (at "
+                                                    + juce::String (first) + ", step " + juce::String (4 * x.step) + ")");
+        check (isSilent (out.getMagnitude (0, 4 * x.step + 300, 3 * x.step)), "...and pad 1's sequence stops there");
+        check (x.diffFromBreak (out, 4 * x.step + 300, 4 * x.step + 300, x.step - 600, 1) < 1.0e-4f,
+               "...continuing from the same point in the bar (step 5 of its own pattern)");
+    }
+
     void testFixedVelocity (const juce::File& tone)
     {
         std::cout << "\n== 0.5.2: fixed velocity ==" << std::endl;
@@ -2677,7 +3017,24 @@ namespace
         const bool swapPage  = out.getFileName().contains ("swap");
         const bool mixerView = out.getFileName().contains ("mixer");
         const bool fxView    = out.getFileName().contains ("fx");
-        const bool seqView   = out.getFileName().contains ("seq");
+        const bool sliceSeqView = out.getFileName().contains ("sseq");
+        const bool seqView   = out.getFileName().contains ("seq") && ! sliceSeqView;
+        if (sliceSeqView)
+        {
+            p.getSamples().autoSlice (0);
+            waitForLoads (p);
+            setPadParam (p, 0, tb::params::padSliceSeq, 1.0f);
+            setPadParam (p, 0, tb::params::padMode, (float) tb::params::modeOneShot);
+            p.materializeSliceSlot (0, 0);
+            auto& d = p.getBridge().sliceSeq;
+            using SS = tb::SliceStep;
+            auto put = [&] (int k, SS st) { d.setStep (0, 0, k, st); };
+            put (2, SS::playing (4)); { SS st = SS::playing (2); st.rev = true; put (6, st); }
+            { SS st; st.kind = SS::rest; put (11, st); }
+            { SS st = SS::playing (7); st.ratchet = 3; put (14, st); }
+            { SS st = SS::playing (1); st.pitch = -5; put (20, st); }
+            { SS st = SS::playing (9); st.chance = 50; put (27, st); }
+        }
         if (seqView)
         {
             auto& seq = p.getBridge().seq;
@@ -2738,6 +3095,17 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (sliceSeqView)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) pe->setPage (tb::ui::PadEditorPanel::Page::seq);
+                if (auto* ssp = dynamic_cast<tb::ui::SliceSeqPanel*> (&c)) ssp->selectStep (6);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+            host.playing = true;
+        }
         if (seqView)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -2851,6 +3219,9 @@ int main (int argc, char* argv[])
         testSequencer();
         testLiveRecord();
         testSequencerView();
+        testSliceSequencer();
+        testSliceSeqEditing();
+        testSliceSeqSwap();
         testEditorDrivesState();
         testRealtimeSafety();
 

@@ -85,6 +85,8 @@ namespace tb
             int   swapAt  = 0;       // params::SwapAt: when a hand-off lands
             int   group   = 0;       // 0..3 = A..D
             bool  fixVel  = false;   // every hit at full level
+            bool  sliceSeq  = false; // a hit starts / stops the slice sequence
+            int   sliceSlot = 0;     // 0..7
         };
 
         struct GroupParams
@@ -165,8 +167,11 @@ namespace tb
         void clearFxLatch (int group, int fxId) noexcept;
 
     private:
-        void triggerPad (int pad, float velocity, int sampleOffset) noexcept;
-        void startVoice (int pad, float level, int sampleOffset, double startAt = -1.0) noexcept;
+        void triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer = false) noexcept;
+        void startVoice (int pad, float level, int sampleOffset, double startAt = -1.0,
+                         const PadVoice::Settings* custom = nullptr) noexcept;
+        void startPad (int pad, float level, int sampleOffset, double startAt = -1.0) noexcept;
+        float levelFor (int pad, float velocity) const noexcept;
 
         // ---- SWAP groups
         struct PendingSwap
@@ -188,8 +193,28 @@ namespace tb
         bool handleFxNote (int note, bool on) noexcept;
 
         // ---- Sequencer
-        struct SeqEvent { int offset; int pad; float velocity; };
+        enum class SeqKind : uint8_t { padHit, sliceRelease, sliceHit };   // order = priority on a tie
+        struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; };
         void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
+        void insertEvent (const SeqEvent&) noexcept;
+
+        // ---- Slice sequencer
+        struct SliceRun
+        {
+            bool     running = false;
+            int64_t  anchor = 0;       // absolute step that is pattern step 0
+            int      slot = 0;
+            int      lastSlice = 0;
+            uint32_t gen = 0;          // bumps on start / stop: stale events are ignored
+            double   stepPpq = 0.25;   // current slot's step size
+        };
+        void startSliceSeq (int pad, int sampleOffset) noexcept;
+        void stopSliceSeq (int pad) noexcept;
+        void addSliceEvents (int pad, int fromOffset) noexcept;
+        void sliceHit (int pad, const SliceStep&, float velocity, int sampleOffset) noexcept;
+        /** The slot's pattern (or its default if never written) and its settings. */
+        int  slicePattern (int pad, int slot, std::array<SliceStep, SliceSeqData::kSteps>&, SliceSlot&) const noexcept;
+        double clockAt (int sampleOffset) const noexcept { return clock0 + sampleOffset * clockDppq; }
         void recordHit (int pad, float velocity, int sampleOffset) noexcept;
         void applyPadCommands() noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
@@ -226,7 +251,16 @@ namespace tb
         static constexpr int kMaxSeqEvents = 1024;
         std::array<SeqEvent, kMaxSeqEvents> seqEvents {};
         int seqEventCount = 0;
+        int seqCursor = 0;          // next event to play; inserts never go before it
         std::array<int64_t, kNumPads> seqSkipOnce {};    // absolute step just live-recorded: don't double it this pass
+        std::array<SliceRun, kNumPads> sliceRun {};
+        std::array<bool, kNumPads> padSliceSeq {};
+        std::array<int,  kNumPads> padSliceSlot {};
+        std::array<float, kNumPads> padPitchNow {};
+        double freePpq = 0.0, clock0 = 0.0, clockDppq = 0.0;   // slice-sequencer clock (Live's, or free when stopped)
+        bool   clockPlaying = false;
+        int    blockLength = 0;
+        juce::Random seqRandom { 4242 };
         int    seqLengthNow = 16;
         double seqStepPpq = 0.25, seqQuantPpq = 0.25;
         bool   seqRecording = false;                     // transport running: hits may be recorded

@@ -85,8 +85,20 @@ dims while it's on.
 
 ## A5. Slice sequencer per pad — rearrange a break's slices
 
-**Status: planned for Phase 7** (shares the sequencer's clock, transport
-sync and live-record code; the main 32-step sequencer still triggers pads).
+**Status: built in 0.7.1.** As built: per-pad `pad01_sseq` (on) and
+`pad01_sslot` (slot 1-8, switches at the pattern start), steps / slots in
+`Core/SliceSeqData` (lock-free, saved with the set), the pad editor's
+**SEQ** page (SLICE SEQ, SLOT, LEN, RATE 1/8 / 1/16 / 1/32 / 1/16T, SWING)
+and the slice-sequence screen (32 steps, per-step SLICE / REST / TIE, REV,
+PITCH, VEL, LEN gate, RATCHET, CHANCE, MICRO; FILL; SHUFFLE, RANDOM,
+REVERSE, HALF, ROTATE, RESET; STEP REC from SPREAD pads). An unwritten
+slot plays the DEFAULT pattern (each slice on its nearest step with
+micro-timing) and replays the break sample-exactly. Hitting the pad
+starts / stops it (latched); the main sequencer starts it; SWAP groups
+hand off on the next step. Not built from the list below: undo / redo in
+the editor and drag-across-steps copy (later).
+
+(Original prompt and plan follow.)
 
 Prompt:
 

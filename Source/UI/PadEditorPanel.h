@@ -5,6 +5,7 @@
 #include <array>
 #include "UI/Controls.h"
 #include "Core/EngineBridge.h"
+#include "UI/SequencerPanel.h"
 
 class TwistedBreaksProcessor;
 
@@ -21,6 +22,7 @@ namespace tb::ui
             PLAY:   MODE  SYNC  RATE  CHOKE  VEL  FIXED  MUTE/SOLO  NOTE (+ LEARN)
             SLICE:  AUTO / EQUAL  SENS  COUNT  SLICE  RESET / UNSLICE  SPREAD / FIT
             SWAP:   GROUP  AT  (+ how it works)
+            SEQ:    SLICE SEQ on, SLOT, LEN, RATE, SWING (steps on the screen)
 
         Every control is bound to that pad's automatable parameters
         (pad07_gain, pad07_mode ...), so the knobs, Ableton automation and
@@ -39,7 +41,7 @@ namespace tb::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
-        enum class Page { sound, play, slice, swap };
+        enum class Page { sound, play, slice, swap, seq };
         void setPage (Page);
         Page getPage() const noexcept { return page; }
         std::function<void (Page)> onPageChanged;
@@ -56,6 +58,7 @@ namespace tb::ui
         int  pad = 0;
         Page page = Page::sound;
         uint32_t shownVersion = 0xffffffff;
+        uint32_t shownSliceVersion = 0xffffffff;
 
         // ---- SOUND page
         enum { kGain, kPan, kPitch, kStart, kEnd, kNumKnobs };
@@ -94,11 +97,21 @@ namespace tb::ui
         RotarySelector swapSel   { { "OFF", "1", "2", "3", "4" } };
         RotarySelector swapAtSel { { "SLICE", "1/16", "BEAT", "BAR" } };
 
+        // ---- SEQ page (slice sequencer)
+        PushKey     sseqKey  { "SLICE SEQ", "On: hitting this pad starts / stops its slice sequence (steps on the screen)", juce::Colour (0xff7dff5a) };
+        DragReadout slotRead  { "SLOT",  "Pattern slot 1-8 (switches at the pattern start; automatable)" };
+        DragReadout sLenRead  { "LEN",   "Pattern length in steps" };
+        DragReadout sRateRead { "RATE",  "Step size: 1/8, 1/16, 1/32, 1/16T (click to change)" };
+        DragReadout swingRead { "SWING", "Swing: delays every other step" };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> sseqAttachment;
+        std::vector<juce::Component*> seqControls();
+
         // ---- Header
         PushKey soundTab { "SOUND", "Level, pan, pitch, start / end, reverse" };
         PushKey playTab  { "PLAY",  "Mode, loop sync and rate, choke group, velocity, mute / solo, MIDI note" };
         PushKey sliceTab { "SLICE", "Find hits, edit slice markers, spread slices onto pads" };
         PushKey swapTab  { "SWAP",  "Swap between breaks at their slice points while they play" };
+        PushKey seqTab   { "SEQ",   "Slice sequencer: rearrange this pad's slices into a new pattern" };
         PushKey loadKey  { "LOAD",  "Load a WAV / AIFF into the selected pad (or drag a file onto a pad)" };
         PushKey clearKey { "CLEAR", "Remove the sample from the selected pad" };
 

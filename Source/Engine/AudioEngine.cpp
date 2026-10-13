@@ -3,6 +3,8 @@
 #include "Core/FxDefs.h"
 #include <cmath>
 #include <limits>
+#include <cstdio>
+#include <cstdlib>
 
 namespace tb
 {
@@ -163,6 +165,11 @@ namespace tb
             padChoke[(size_t) p]   = pp.choke;
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
             padFixVel[(size_t) p]  = pp.fixVel;
+            padPitchNow[(size_t) p] = pp.pitch;
+            padSliceSlot[(size_t) p] = juce::jlimit (0, SliceSeqData::kSlots - 1, pp.sliceSlot);
+            if (padSliceSeq[(size_t) p] && ! pp.sliceSeq && sliceRun[(size_t) p].running)
+                stopSliceSeq (p);                     // SLICE SEQ switched off while it played
+            padSliceSeq[(size_t) p] = pp.sliceSeq;
             padSwap[(size_t) p]    = juce::jlimit (0, kSwapGroups, pp.swap);
             padSwapAt[(size_t) p]  = juce::jlimit (0, 3, pp.swapAt);
             padGroup[(size_t) p]   = juce::jlimit (0, kNumGroups - 1, pp.group);
@@ -228,7 +235,10 @@ namespace tb
 
             for (auto& v : voices[(size_t) p])
                 if (v.isActive() && v.getBuffer() == buf)
-                    v.update (s);
+                {
+                    if (padSliceSeq[(size_t) p]) v.updateGains (s);    // slice hits keep their own region / pitch
+                    else                         v.update (s);
+                }
         }
     }
 
@@ -237,11 +247,28 @@ namespace tb
         if (group <= 0) return;
         for (int p = 0; p < kNumPads; ++p)
             if (p != pad && padChoke[(size_t) p] == group)
+            {
+                if (sliceRun[(size_t) p].running) stopSliceSeq (p);
                 for (auto& v : voices[(size_t) p])
                     v.release (3.0f);           // very short, still click-free
+            }
     }
 
-    void AudioEngine::triggerPad (int pad, float velocity, int sampleOffset) noexcept
+    float AudioEngine::levelFor (int pad, float velocity) const noexcept
+    {
+        // Velocity sensitivity: 0 = every hit at full level, 1 = level follows velocity.
+        // FIXED VEL: always full level, whatever the sensitivity.
+        const float sens = padFixVel[(size_t) pad] ? 0.0f : padVelSens[(size_t) pad];
+        return 1.0f - sens + sens * velocity;
+    }
+
+    void AudioEngine::startPad (int pad, float level, int sampleOffset, double startAt) noexcept
+    {
+        if (padSliceSeq[(size_t) pad]) startSliceSeq (pad, sampleOffset);
+        else                           startVoice (pad, level, sampleOffset, startAt);
+    }
+
+    void AudioEngine::triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer) noexcept
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
@@ -250,10 +277,7 @@ namespace tb
 
         chokeOthers (pad, padChoke[(size_t) pad]);
 
-        // Velocity sensitivity: 0 = every hit at full level, 1 = level follows velocity.
-        // FIXED VEL: always full level, whatever the sensitivity.
-        const float sens  = padFixVel[(size_t) pad] ? 0.0f : padVelSens[(size_t) pad];
-        const float level = 1.0f - sens + sens * velocity;
+        const float level = levelFor (pad, velocity);
 
         // ---- SWAP group: queue a hand-off instead of starting now.
         const int group = padSwap[(size_t) pad];
@@ -279,7 +303,7 @@ namespace tb
                 if (padSample[(size_t) pad] == nullptr) return;
                 pending = {};
                 swapPlaying[(size_t) group] = pad;
-                startVoice (pad, level, sampleOffset);
+                startPad (pad, level, sampleOffset);
                 return;
             }
 
@@ -288,10 +312,20 @@ namespace tb
         }
 
         if (padSample[(size_t) pad] == nullptr) return;
+
+        // SLICE SEQ: a hit starts the pad's slice sequence, another stops it
+        // (the main sequencer only ever starts it).
+        if (padSliceSeq[(size_t) pad])
+        {
+            if (! sliceRun[(size_t) pad].running) startSliceSeq (pad, sampleOffset);
+            else if (! fromSequencer)             stopSliceSeq (pad);
+            return;
+        }
         startVoice (pad, level, sampleOffset);
     }
 
-    void AudioEngine::startVoice (int pad, float level, int sampleOffset, double startAt) noexcept
+    void AudioEngine::startVoice (int pad, float level, int sampleOffset, double startAt,
+                                  const PadVoice::Settings* custom) noexcept
     {
         const auto& sample = padSample[(size_t) pad];
         if (sample == nullptr) return;
@@ -308,7 +342,7 @@ namespace tb
         slots[(size_t) cur].release();
         cur = (cur + 1) % kVoicesPerPad;
         slots[(size_t) cur].kill();
-        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], level, ppqHere, playing, startAt);
+        slots[(size_t) cur].start (sample, custom != nullptr ? *custom : padSettings[(size_t) pad], level, ppqHere, playing, startAt);
     }
 
     //==========================================================================
@@ -318,6 +352,7 @@ namespace tb
     {
         const int p = swapPlaying[(size_t) group];
         if (p < 0 || padSwap[(size_t) p] != group) return -1;
+        if (padSliceSeq[(size_t) p]) return sliceRun[(size_t) p].running ? p : -1;
         const auto& v = voices[(size_t) p][(size_t) currentVoice[(size_t) p]];
         return v.isActive() && ! v.isReleasing() ? p : -1;
     }
@@ -333,6 +368,18 @@ namespace tb
             const double now = t->ppqAt (sampleOffset);
             const double target = std::ceil (now / q - 1.0e-9) * q;
             return (int) std::lround ((target - now) / t->ppqPerSample);
+        }
+
+        // A running slice sequence: its next step.
+        if (padSliceSeq[(size_t) owner] && sliceRun[(size_t) owner].running && clockDppq > 0.0)
+        {
+            std::array<SliceStep, SliceSeqData::kSteps> pat;
+            SliceSlot slot;
+            slicePattern (owner, sliceRun[(size_t) owner].slot, pat, slot);
+            const double stepPpq = kSliceRateBeats[slot.rate];
+            const double now = clockAt (sampleOffset);
+            const double next = std::ceil (now / stepPpq - 1.0e-9) * stepPpq;
+            return (int) std::lround ((next - now) / clockDppq);
         }
 
         // SLICE (and any setting while Live is stopped): the next slice
@@ -439,7 +486,8 @@ namespace tb
         const int owner = swapOwner (group);
         if (pending.pad < 0)
         {
-            if (owner >= 0)
+            if (owner >= 0 && padSliceSeq[(size_t) owner]) stopSliceSeq (owner);
+            else if (owner >= 0)
                 for (auto& v : voices[(size_t) owner]) v.release (3.0f);
             swapPlaying[(size_t) group] = -1;
             return;
@@ -448,16 +496,19 @@ namespace tb
         const int to = pending.pad;
         if (padSample[(size_t) to] == nullptr) return;
 
-        const double at = handoffPosition (owner, to, sampleOffset);
+        const double at = padSliceSeq[(size_t) to] ? -1.0 : handoffPosition (owner, to, sampleOffset);
 
         // The outgoing break was cut on its own slice point (1 ms before its
         // next hit), so a 1 ms fade is clean and nothing of that hit leaks.
         if (owner >= 0 && owner != to)
+        {
+            if (padSliceSeq[(size_t) owner]) stopSliceSeq (owner);
             for (auto& v : voices[(size_t) owner]) v.release (1.0f);
+        }
 
         swapPlaying[(size_t) group] = to;
         padFlash[(size_t) to] = true;
-        startVoice (to, pending.level, sampleOffset, at);
+        startPad (to, pending.level, sampleOffset, at);
     }
 
     void AudioEngine::releasePad (int pad) noexcept
@@ -465,7 +516,7 @@ namespace tb
         // One-shots (and slices) ignore note-off; loops play while held.
         // Pads in a SWAP group latch: they play until another pad takes over.
         if (! juce::isPositiveAndBelow (pad, kNumPads) || padMode[(size_t) pad] != params::modeLoop
-             || padSwap[(size_t) pad] > 0) return;
+             || padSwap[(size_t) pad] > 0 || padSliceSeq[(size_t) pad]) return;
         for (auto& v : voices[(size_t) pad])
             if (v.isLooping()) v.release();
     }
@@ -478,6 +529,8 @@ namespace tb
 
         pendingSwap.fill ({});
         swapPlaying.fill (-1);
+        for (int p = 0; p < kNumPads; ++p)
+            if (sliceRun[(size_t) p].running) stopSliceSeq (p);
 
         // Effects: stop repeats / dives / tails, forget MIDI latches.
         for (int g = 0; g < kNumGroups; ++g)
@@ -525,6 +578,15 @@ namespace tb
     void AudioEngine::collectSequencerEvents (const TransportState& t, const BlockParams& bp, int numSamples) noexcept
     {
         seqEventCount = 0;
+        seqCursor = 0;
+        blockLength = numSamples;
+
+        // Slice-sequencer clock: Live's when it plays, free-running when stopped.
+        clockPlaying = t.isPlaying && t.ppqPerSample > 0.0;
+        clock0    = clockPlaying ? t.ppqAtBlockStart : freePpq;
+        clockDppq = clockPlaying ? t.ppqPerSample : t.bpm / 60.0 / sampleRate;
+        for (int p = 0; p < kNumPads; ++p)
+            if (sliceRun[(size_t) p].running) addSliceEvents (p, 0);
         seqLengthNow  = juce::jlimit (1, SequencerData::kSteps, bp.seqLength);
         seqStepPpq    = params::seqResPpq[juce::jlimit (0, 2, bp.seqRes)];
         seqQuantPpq   = params::seqQuantPpq[juce::jlimit (0, 3, bp.seqQuant)];
@@ -560,14 +622,210 @@ namespace tb
                 const double when = ((double) k + st.micro / 128.0) * seqStepPpq;
                 if (when < p0 - 1.0e-9 || when >= p1 - 1.0e-9) continue;
 
-                if (seqEventCount >= kMaxSeqEvents) break;
                 const int offset = juce::jlimit (0, numSamples - 1, (int) std::lround ((when - p0) / t.ppqPerSample));
-                // Insert sorted by offset (a handful of events per block).
-                int i = seqEventCount++;
-                while (i > 0 && seqEvents[(size_t) i - 1].offset > offset) { seqEvents[(size_t) i] = seqEvents[(size_t) i - 1]; --i; }
-                seqEvents[(size_t) i] = { offset, pad, (float) st.velocity / 127.0f };
+                insertEvent ({ offset, pad, (float) st.velocity / 127.0f, SeqKind::padHit, 0, 0 });
             }
         }
+    }
+
+    void AudioEngine::insertEvent (const SeqEvent& e) noexcept
+    {
+        // Sorted by offset, then kind (releases before hits on a tie). Stable.
+        if (seqEventCount >= kMaxSeqEvents) return;
+        int i = seqEventCount++;
+        while (i > seqCursor && (seqEvents[(size_t) i - 1].offset > e.offset
+                         || (seqEvents[(size_t) i - 1].offset == e.offset && seqEvents[(size_t) i - 1].kind > e.kind)))
+        {
+            seqEvents[(size_t) i] = seqEvents[(size_t) i - 1];
+            --i;
+        }
+        seqEvents[(size_t) i] = e;
+    }
+
+    //==========================================================================
+    //  Slice sequencer
+    //==========================================================================
+    int AudioEngine::slicePattern (int pad, int slot, std::array<SliceStep, SliceSeqData::kSteps>& pat, SliceSlot& settings) const noexcept
+    {
+        auto& data = bridge.sliceSeq;
+        settings = data.getSlot (pad, slot);
+        if (settings.written)
+        {
+            for (int k = 0; k < SliceSeqData::kSteps; ++k) pat[(size_t) k] = data.getStep (pad, slot, k);
+            return settings.length;
+        }
+        // Never written: the break as recorded.
+        const auto* buf = padSample[(size_t) pad].get();
+        if (buf == nullptr) { pat.fill ({}); return settings.length; }
+        const double beats = PadVoice::loopBeatsFor ((double) buf->getNumSamples() / buf->sourceSampleRate);
+        settings.length = SliceSeqData::defaultPattern (padSlices[(size_t) pad], buf->getNumSamples(), buf->sourceSampleRate,
+                                                        kSliceRateBeats[settings.rate], beats, pat);
+        return settings.length;
+    }
+
+    void AudioEngine::startSliceSeq (int pad, int sampleOffset) noexcept
+    {
+        auto& run = sliceRun[(size_t) pad];
+        if (padSample[(size_t) pad] == nullptr) return;
+        run.running = true;
+        run.slot = padSliceSlot[(size_t) pad];
+        ++run.gen;
+
+        std::array<SliceStep, SliceSeqData::kSteps> pat;
+        SliceSlot slot;
+        slicePattern (pad, run.slot, pat, slot);
+        const double stepPpq = kSliceRateBeats[slot.rate];
+
+        if (clockPlaying)
+        {
+            run.anchor = 0;                      // on Live's grid: enters where the bar says
+        }
+        else
+        {
+            bool others = false;
+            for (int p = 0; p < kNumPads; ++p) others = others || (p != pad && sliceRun[(size_t) p].running);
+            if (! others)
+            {
+                // Live stopped, nothing else running: start the free clock here,
+                // so step 1 plays right now.
+                clock0 = -sampleOffset * clockDppq;
+                run.anchor = 0;
+            }
+            else
+            {
+                run.anchor = (int64_t) std::ceil (clockAt (sampleOffset) / stepPpq - 1.0e-9);   // join the others' grid
+            }
+        }
+        addSliceEvents (pad, sampleOffset);
+    }
+
+    void AudioEngine::stopSliceSeq (int pad) noexcept
+    {
+        auto& run = sliceRun[(size_t) pad];
+        run.running = false;
+        ++run.gen;
+        for (auto& v : voices[(size_t) pad]) v.release (3.0f);
+        bridge.sliceStep[(size_t) pad].store (-1, std::memory_order_relaxed);
+    }
+
+    void AudioEngine::addSliceEvents (int pad, int fromOffset) noexcept
+    {
+        auto& run = sliceRun[(size_t) pad];
+        if (! run.running || clockDppq <= 0.0) return;
+
+        std::array<SliceStep, SliceSeqData::kSteps> pat;
+        SliceSlot slot;
+        int L = slicePattern (pad, run.slot, pat, slot);
+        double stepPpq = kSliceRateBeats[slot.rate];
+        run.stepPpq = stepPpq;
+
+        const double p0 = clockAt (fromOffset), p1 = clockAt (blockLength);
+        const bool fill = bridge.sliceFill[(size_t) pad].load (std::memory_order_relaxed);
+        const int64_t kFirst = (int64_t) std::floor (p0 / stepPpq) - 1;
+        int64_t kLast = (int64_t) std::ceil (p1 / stepPpq) + 1;
+        auto offsetOf = [this] (double ppq) { return juce::jlimit (0, blockLength - 1, (int) std::lround ((ppq - clock0) / clockDppq)); };
+        auto inBlock  = [&] (double ppq) { return ppq >= p0 - 1.0e-9 && ppq < p1 - 1.0e-9; };
+
+        for (int64_t k = kFirst; k <= kLast; ++k)
+        {
+            if (k < run.anchor) continue;
+            int idx = (int) (((k - run.anchor) % L + L) % L);
+
+            // Slot change (automation / SLOT readout) lands at the pattern start.
+            if (idx == 0 && padSliceSlot[(size_t) pad] != run.slot && inBlock (k * stepPpq))
+            {
+                run.slot = padSliceSlot[(size_t) pad];
+                L = slicePattern (pad, run.slot, pat, slot);
+                const double newStep = kSliceRateBeats[slot.rate];
+                if (std::abs (newStep - stepPpq) > 1.0e-12)
+                {
+                    // Different step size: re-anchor so this moment is step 0 of the new slot.
+                    run.anchor = (int64_t) std::llround (k * stepPpq / newStep);
+                    stepPpq = newStep;
+                    run.stepPpq = stepPpq;
+                    kLast = (int64_t) std::ceil (p1 / stepPpq) + 1;
+                    k = run.anchor - 1;
+                    continue;
+                }
+            }
+
+            const auto& st = pat[(size_t) idx];
+            const bool odd = ((k - run.anchor) & 1) != 0;
+            const double base = k * stepPpq + (odd ? slot.swing / 100.0 * 0.5 * stepPpq : 0.0);
+            const double when = base + st.micro / 64.0 * stepPpq;
+
+            if (st.kind == SliceStep::rest)
+            {
+                if (inBlock (when)) insertEvent ({ offsetOf (when), pad, 0.0f, SeqKind::sliceRelease, 0, run.gen });
+                continue;
+            }
+
+            SliceStep hit = st;
+            if (st.kind == SliceStep::tie)
+            {
+                if (! fill) continue;
+                hit = SliceStep::playing (run.lastSlice);     // FILL: roll the slice that's ringing
+                hit.ratchet = 2;
+            }
+            else if (fill)
+            {
+                hit.ratchet = 4;
+            }
+
+            const int r = juce::jlimit (1, 4, hit.ratchet);
+            const double sub = stepPpq / r;
+            const float frac = kSliceLengthFrac[juce::jlimit (0, 3, hit.length)];
+            for (int j = 0; j < r; ++j)
+            {
+                const double t = when + j * sub;
+                if (inBlock (t))
+                {
+                    // Chance is rolled once per step, when its first hit comes due.
+                    if (j == 0 && hit.chance < 100 && seqRandom.nextInt (100) >= hit.chance) break;
+                    insertEvent ({ offsetOf (t), pad, (float) hit.velocity / 127.0f, SeqKind::sliceHit, hit.pack(), run.gen });
+                }
+                if (frac < 1.0f && inBlock (t + sub * frac))
+                    insertEvent ({ offsetOf (t + sub * frac), pad, 0.0f, SeqKind::sliceRelease, 0, run.gen });
+            }
+        }
+    }
+
+    void AudioEngine::sliceHit (int pad, const SliceStep& st, float velocity, int sampleOffset) noexcept
+    {
+        const auto* buf = padSample[(size_t) pad].get();
+        if (buf == nullptr) return;
+        const int len = buf->getNumSamples();
+        const auto table = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (len, 16) : padSlices[(size_t) pad];
+        const auto r = table.region (st.slice, len);
+
+        // Play from the slice start on through the break (the next hit or a
+        // REST cuts it; TIE lets it ring), or backwards from the slice end.
+        PadVoice::Settings s = padSettings[(size_t) pad];
+        s.loop = false;
+        s.syncPeriodBeats = 0.0;
+        s.reverse = st.rev;
+        s.regionStart = st.rev ? 0 : r.getStart();
+        s.regionEnd   = st.rev ? juce::jmax (32, r.getEnd()) : len;
+        s.increment   = buf->sourceSampleRate / sampleRate * std::pow (2.0, (double) (padPitchNow[(size_t) pad] + (float) st.pitch) / 12.0);
+
+        sliceRun[(size_t) pad].lastSlice = st.slice;
+        padFlash[(size_t) pad] = true;
+
+        // Continuation: the break is already playing right here (the slice
+        // that follows the one before, as recorded). Retriggering would only
+        // double it for a few ms, so let it run on. Tolerance: half a
+        // micro-timing step, so the default pattern replays the break exactly.
+        const auto& cur = voices[(size_t) pad][(size_t) currentVoice[(size_t) pad]];
+        if (! st.rev && st.pitch == 0 && cur.isActive() && ! cur.isReleasing() && ! cur.isReverse()
+            && cur.getBuffer() == buf && cur.getRegionEnd() == len && std::abs (cur.getIncrement() - s.increment) < 1.0e-9
+            && clockDppq > 0.0)
+        {
+            const double stepSrc = sliceRun[(size_t) pad].stepPpq / clockDppq * s.increment;
+            if (std::abs (cur.getPosition() - (double) r.getStart()) <= stepSrc / 128.0 + 2.0)
+                return;
+        }
+
+        startVoice (pad, levelFor (pad, velocity), sampleOffset, -1.0, &s);
     }
 
     void AudioEngine::recordHit (int pad, float velocity, int sampleOffset) noexcept
@@ -734,16 +992,30 @@ namespace tb
 
         // ---- Sample-accurate MIDI and sequencer steps, in time order: render
         //      up to each event, then apply it (steps first on a tie).
-        int pos = 0, si = 0;
+        int pos = 0;
         auto playStepsUpTo = [&] (int limit)
         {
-            while (si < seqEventCount && seqEvents[(size_t) si].offset <= limit)
+            while (seqCursor < seqEventCount && seqEvents[(size_t) seqCursor].offset <= limit)
             {
-                const auto& e = seqEvents[(size_t) si++];
+                auto e = seqEvents[(size_t) seqCursor++];
+                e.offset = juce::jmax (pos, e.offset);      // never render backwards
                 renderVoices (buffer, pos, e.offset - pos);
                 pos = e.offset;
                 currentOffset = e.offset;
-                triggerPad (e.pad, e.velocity, e.offset);
+                switch (e.kind)
+                {
+                    case SeqKind::padHit:
+                        triggerPad (e.pad, e.velocity, e.offset, true);
+                        break;
+                    case SeqKind::sliceHit:
+                        if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)
+                            sliceHit (e.pad, SliceStep::unpack (e.step), e.velocity, e.offset);
+                        break;
+                    case SeqKind::sliceRelease:
+                        if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)
+                            for (auto& v : voices[(size_t) e.pad]) v.release (3.0f);
+                        break;
+                }
             }
         };
         for (const auto meta : midi)
@@ -757,6 +1029,24 @@ namespace tb
         }
         playStepsUpTo (numSamples - 1);
         renderVoices (buffer, pos, numSamples - pos);
+
+        // Slice-sequencer playheads (UI), and the free clock moves on.
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const auto& run = sliceRun[(size_t) p];
+            int step = -1;
+            if (run.running && clockDppq > 0.0)
+            {
+                std::array<SliceStep, SliceSeqData::kSteps> pat;
+                SliceSlot slot;
+                const int L = slicePattern (p, run.slot, pat, slot);
+                const int64_t k = (int64_t) std::floor (clockAt (numSamples - 1) / kSliceRateBeats[slot.rate] + 1.0e-9);
+                if (k >= run.anchor) step = (int) (((k - run.anchor) % L + L) % L);
+            }
+            bridge.sliceStep[(size_t) p].store (step, std::memory_order_relaxed);
+            bridge.sliceSlotNow[(size_t) p].store (run.slot, std::memory_order_relaxed);
+        }
+        freePpq = clock0 + numSamples * clockDppq;
 
         transportNow = nullptr;
 

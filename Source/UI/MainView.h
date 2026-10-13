@@ -9,6 +9,7 @@
 #include "UI/MixerPanel.h"
 #include "UI/FxEditorPanel.h"
 #include "UI/SequencerPanel.h"
+#include "UI/SliceSeqPanel.h"
 #include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
@@ -84,7 +85,7 @@ namespace tb::ui
         void resized() override;
 
         /** What fills the screen area: the CRT, the group MIXER or the FX editor. */
-        enum class View { crt, mixer, fx, sequencer };
+        enum class View { crt, mixer, fx, sequencer, sliceSeq };
         void showView (View);
         View getView() const noexcept { return view; }
 
@@ -109,6 +110,7 @@ namespace tb::ui
         MixerPanel       mixer;
         FxEditorPanel    fxEditor;
         SequencerPanel   sequencer;
+        SliceSeqPanel    sliceSeq;
         uint32_t         shownSeqVersion = 0;
         View             view = View::crt;
         NeedleMeter      meter;

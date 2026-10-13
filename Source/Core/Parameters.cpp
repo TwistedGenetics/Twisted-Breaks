@@ -122,6 +122,12 @@ namespace tb::params
             // ---- 0.5.2: fixed velocity (MPC "full level") ----
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padFixVel), kV7 }, prefix + "Fixed Velocity", false));
+
+            // ---- 0.7.1: slice sequencer ----
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padSliceSeq), kV9 }, prefix + "Slice Seq", false));
+            layout.add (std::make_unique<AudioParameterInt> (
+                ParameterID { padId (pad, padSliceSlot), kV9 }, prefix + "Slice Seq Slot", 1, 8, 1));
         }
     }
 

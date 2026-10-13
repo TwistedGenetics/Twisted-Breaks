@@ -5,6 +5,7 @@
 #include <atomic>
 #include "Core/TransportSync.h"
 #include "Core/SequencerData.h"
+#include "Core/SliceSeqData.h"
 
 namespace tb
 {
@@ -81,6 +82,12 @@ namespace tb
         // ---- Sequencer (shared: UI edits, audio plays + records) ----------------
         SequencerData    seq;
         std::atomic<int> seqStep { -1 };            // step under the playhead, -1 = stopped
+
+        // ---- Slice sequencer (per pad) ---------------------------------------------
+        SliceSeqData sliceSeq;
+        std::array<std::atomic<int>, kNumPads>  sliceStep {};    // pattern step playing, -1 = not running
+        std::array<std::atomic<int>, kNumPads>  sliceSlotNow {}; // slot actually playing (0..7)
+        std::array<std::atomic<bool>, kNumPads> sliceFill {};    // FILL held (UI -> audio)
 
         std::atomic<int>      lastMidiNote     { -1 };
         std::atomic<int>      lastMidiVelocity { 0 };

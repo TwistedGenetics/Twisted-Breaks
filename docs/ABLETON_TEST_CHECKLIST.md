@@ -85,6 +85,16 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ REC Q 1/32: off-grid hits play back where you played them
 - [ ] ✅ Save, close, reopen: the pattern comes back; automate `Sequencer Run` to drop the pattern in and out
 
+## Slice sequencer (0.7.1)
+- [ ] ✅ Break on a pad, AUTO SLICE, SEQ tab, SLICE SEQ on. Live playing: hit the pad: the break plays exactly as recorded, in time; hit again: stops
+- [ ] ✅ Change Live's tempo (e.g. 160 -> 175): the break follows the grid (re-sequenced, slices at their own speed)
+- [ ] ✅ Drag steps up / down to pick slices; REST / TIE; REV, PITCH, RAT, CHANCE, MICRO on a step: all audible and in time
+- [ ] ✅ SHUFFLE / RANDOM / REVERSE / HALF / ROTATE / RESET; hold FILL for rolls; SWING 50 %
+- [ ] ✅ SPREAD the break, STEP REC, tap pads: their slices fill the steps in order
+- [ ] ✅ Two SLICE SEQ pads in one SWAP group: hand-off lands on the next step
+- [ ] ✅ Automate `Pad 01 Slice Seq Slot` between slots 1 and 2: the switch lands at the pattern start
+- [ ] ✅ Save, close, reopen: slots, steps and settings come back
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)

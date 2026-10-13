@@ -2,6 +2,8 @@
 #include "Core/FxDefs.h"
 #include "PluginEditor.h"
 #include <cmath>
+#include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -51,9 +53,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.swapAt  = apvts.getRawParameterValue (padId (pad, padSwapAt));
         pp.group   = apvts.getRawParameterValue (padId (pad, padGroup));
         pp.fixVel  = apvts.getRawParameterValue (padId (pad, padFixVel));
+        pp.sliceSeq  = apvts.getRawParameterValue (padId (pad, padSliceSeq));
+        pp.sliceSlot = apvts.getRawParameterValue (padId (pad, padSliceSlot));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
-                 && pp.swap && pp.swapAt && pp.group && pp.fixVel);
+                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -226,6 +230,8 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         dst.swapAt  = juce::roundToInt (src.swapAt->load (relaxed));
         dst.group   = juce::jlimit (0, tb::kNumGroups - 1, juce::roundToInt (src.group->load (relaxed)));
         dst.fixVel  = src.fixVel->load (relaxed) > 0.5f;
+        dst.sliceSeq  = src.sliceSeq->load (relaxed) > 0.5f;
+        dst.sliceSlot = juce::jlimit (0, 7, juce::roundToInt (src.sliceSlot->load (relaxed)) - 1);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -291,6 +297,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (tb::PadLights::lightsId), nullptr);
     state.removeChild (state.getChildWithName ("FX"), nullptr);
     state.removeChild (state.getChildWithName (tb::SequencerData::seqId), nullptr);
+    state.removeChild (state.getChildWithName (tb::SliceSeqData::sliceSeqId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -310,6 +317,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (lights.toValueTree(), nullptr);
 
     state.appendChild (bridge.seq.toValueTree(), nullptr);
+    state.appendChild (bridge.sliceSeq.toValueTree(), nullptr);
 
     juce::ValueTree fxState ("FX");
     fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
@@ -339,6 +347,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     bridge.seq.fromValueTree (state.getChildWithName (tb::SequencerData::seqId));
+    bridge.sliceSeq.fromValueTree (state.getChildWithName (tb::SliceSeqData::sliceSeqId));
     if (auto fxState = state.getChildWithName ("FX"); fxState.isValid())
     {
         engine.setFxLockedMask ((uint32_t) (juce::int64) fxState.getProperty ("lockedMask", (juce::int64) tb::fx::kDefaultLockedMask));
@@ -367,6 +376,73 @@ void TwistedBreaksProcessor::allFxOff()
                     prm->setValueNotifyingHost (0.0f);
                     prm->endChangeGesture();
                 }
+}
+
+int TwistedBreaksProcessor::sliceSlotOf (int pad) const
+{
+    return juce::jlimit (0, 7, juce::roundToInt (apvts.getRawParameterValue (tb::params::padId (pad, tb::params::padSliceSlot))->load()) - 1);
+}
+
+void TwistedBreaksProcessor::materializeSliceSlot (int pad, int slot)
+{
+    auto& data = bridge.sliceSeq;
+    auto settings = data.getSlot (pad, slot);
+    if (settings.written) return;
+
+    const auto info = samples.getInfo (pad);
+    std::array<tb::SliceStep, tb::SliceSeqData::kSteps> pat {};
+    int length = settings.length;
+    if (info.buffer != nullptr)
+    {
+        const double beats = tb::PadVoice::loopBeatsFor ((double) info.buffer->getNumSamples() / info.buffer->sourceSampleRate);
+        length = tb::SliceSeqData::defaultPattern (info.slices, info.buffer->getNumSamples(), info.buffer->sourceSampleRate,
+                                                   tb::kSliceRateBeats[settings.rate], beats, pat);
+    }
+    for (int k = 0; k < tb::SliceSeqData::kSteps; ++k) data.setStep (pad, slot, k, pat[(size_t) k]);
+    settings.length = length;
+    settings.written = true;
+    data.setSlot (pad, slot, settings);
+}
+
+void TwistedBreaksProcessor::sliceSeqOp (int pad, SliceOp op, juce::Random& rnd)
+{
+    auto& data = bridge.sliceSeq;
+    const int slot = sliceSlotOf (pad);
+    if (op == SliceOp::reset) { data.resetSlot (pad, slot); markStateChanged(); return; }
+
+    materializeSliceSlot (pad, slot);
+    const int L = data.getSlot (pad, slot).length;
+    std::array<tb::SliceStep, tb::SliceSeqData::kSteps> st {};
+    for (int k = 0; k < L; ++k) st[(size_t) k] = data.getStep (pad, slot, k);
+
+    const auto info = samples.getInfo (pad);
+    const int sliceCount = info.slices.isEmpty() ? 16 : info.slices.count;
+
+    switch (op)
+    {
+        case SliceOp::shuffle:
+        {
+            // Swap hits around, but leave every beat (steps 1, 5, 9 ...) alone,
+            // so the kicks / snares that carry the groove stay put.
+            std::vector<int> pos;
+            for (int k = 0; k < L; ++k) if (k % 4 != 0 && st[(size_t) k].kind == tb::SliceStep::play) pos.push_back (k);
+            for (int i = (int) pos.size() - 1; i > 0; --i)
+                std::swap (st[(size_t) pos[(size_t) i]], st[(size_t) pos[(size_t) rnd.nextInt (i + 1)]]);
+            break;
+        }
+        case SliceOp::random:
+            for (int k = 0; k < L; ++k)
+                if (k % 4 != 0 && st[(size_t) k].kind == tb::SliceStep::play)
+                    st[(size_t) k].slice = rnd.nextInt (sliceCount);
+            break;
+        case SliceOp::reverseOrder: std::reverse (st.begin(), st.begin() + L); break;
+        case SliceOp::half:         for (int k = L / 2; k < L; ++k) st[(size_t) k] = st[(size_t) (k - L / 2)]; break;
+        case SliceOp::rotateLeft:   std::rotate (st.begin(), st.begin() + 1, st.begin() + L); break;
+        case SliceOp::rotateRight:  std::rotate (st.begin(), st.begin() + L - 1, st.begin() + L); break;
+        case SliceOp::reset:        break;
+    }
+    for (int k = 0; k < L; ++k) data.setStep (pad, slot, k, st[(size_t) k]);
+    markStateChanged();
 }
 
 void TwistedBreaksProcessor::setFxGroup (int g)
