@@ -12,12 +12,13 @@ namespace tb::ui
     /*
         PadEditorPanel
         --------------
-        Controls for the SELECTED pad, under the pad matrix, on two pages:
+        Controls for the SELECTED pad, under the pad matrix, on three pages:
 
-            [PAD 07] [SOUND] [PLAY] [ sample readout ] [LOAD] [CLEAR]
+            [PAD 07] [SOUND] [PLAY] [SLICE] [ sample readout ] [LOAD] [CLEAR]
 
             SOUND:  GAIN  PAN  PITCH  START  END  REVERSE
             PLAY:   MODE  SYNC  RATE  CHOKE  VEL  MUTE/SOLO  NOTE (+ LEARN)
+            SLICE:  AUTO / EQUAL  SENS  COUNT  SLICE  RESET / UNSLICE  SPREAD / FIT
 
         Every control is bound to that pad's automatable parameters
         (pad07_gain, pad07_mode ...), so the knobs, Ableton automation and
@@ -36,14 +37,17 @@ namespace tb::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
-        enum class Page { sound, play };
+        enum class Page { sound, play, slice };
         void setPage (Page);
         Page getPage() const noexcept { return page; }
+        std::function<void (Page)> onPageChanged;
+        std::function<void()>      onFitView;      // SLICE page FIT key
 
     private:
         void bindControls();
         void chooseFile();
         void layoutPages();
+        std::vector<juce::Component*> sliceControls();
         juce::Rectangle<int> knobCell (int index) const;
 
         TwistedBreaksProcessor& processor;
@@ -66,16 +70,28 @@ namespace tb::ui
         PushKey        soloKey { "S", "Solo this pad (other pads go quiet)", juce::Colour (0xff7dff5a) };
         NoteSelector   noteSel;
 
+        // ---- SLICE page
+        PushKey        autoKey   { "AUTO SLICE", "Find the hits in this break and put a slice marker on each (up to COUNT)" };
+        PushKey        equalKey  { "EQUAL",      "Cut into COUNT equal slices" };
+        juce::Slider   sensKnob;
+        RotarySelector countSel  { { "4", "8", "16" } };
+        juce::Slider   sliceKnob;
+        PushKey        resetKey  { "RESET",   "Undo your marker edits: back to the last AUTO / EQUAL result" };
+        PushKey        unsliceKey { "UNSLICE", "Remove all slice markers from this pad" };
+        PushKey        spreadKey { "SPREAD",  "Put each slice on its own pad, starting here (pads in SLICE mode, ready to play from your controller)" };
+        PushKey        fitKey    { "FIT",     "Zoom the screen out to the whole sample" };
+
         // ---- Header
         PushKey soundTab { "SOUND", "Level, pan, pitch, start / end, reverse" };
         PushKey playTab  { "PLAY",  "Mode, loop sync and rate, choke group, velocity, mute / solo, MIDI note" };
+        PushKey sliceTab { "SLICE", "Find hits, edit slice markers, spread slices onto pads" };
         PushKey loadKey  { "LOAD",  "Load a WAV / AIFF into the selected pad (or drag a file onto a pad)" };
         PushKey clearKey { "CLEAR", "Remove the sample from the selected pad" };
 
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
         std::array<std::unique_ptr<SliderAttachment>, kNumKnobs> knobAttachments;
-        std::unique_ptr<SliderAttachment> velAttachment;
+        std::unique_ptr<SliderAttachment> velAttachment, sliceAttachment;
         std::unique_ptr<ButtonAttachment> reverseAttachment, syncAttachment, muteAttachment, soloAttachment;
 
         std::unique_ptr<juce::FileChooser> chooser;

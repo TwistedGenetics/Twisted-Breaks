@@ -82,11 +82,39 @@ namespace tb::ui
             e.startNoteLearn (e.getNoteLearnPad() == pad ? -1 : pad);   // press again to cancel
         };
 
-        for (auto* k : { &soundTab, &playTab, &loadKey, &clearKey })
+        // ---- SLICE page
+        sensKnob.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
+        sensKnob.setTextBoxStyle (Slider::TextBoxBelow, true, 62, 16);
+        sensKnob.setRotaryParameters (MathConstants<float>::pi * 1.25f, MathConstants<float>::pi * 2.75f, true);
+        sensKnob.setRange (0.0, 100.0, 1.0);
+        sensKnob.setTextValueSuffix (" %");
+        sensKnob.setDoubleClickReturnValue (true, 50.0);
+        sensKnob.setTooltip ("AUTO SLICE sensitivity: higher finds quieter hits (ghost notes); lower keeps only the big ones");
+        sensKnob.onDragEnd = [this] { processor.getSamples().setSensitivity (pad, (float) sensKnob.getValue() / 100.0f); };
+        sensKnob.onValueChange = [this] { if (! sensKnob.isMouseButtonDown()) processor.getSamples().setSensitivity (pad, (float) sensKnob.getValue() / 100.0f); };
+
+        countSel.setTooltip ("How many slices: AUTO keeps the strongest this many hits; EQUAL cuts this many");
+        countSel.onChange = [this] (int i) { processor.getSamples().setSliceCount (pad, i == 0 ? 4 : (i == 1 ? 8 : 16)); };
+
+        styleKnob (sliceKnob, 62);
+        sliceKnob.setTooltip ("Which slice this pad plays in SLICE mode (also: click a slice on the screen)");
+
+        autoKey.onClick   = [this] { processor.getSamples().autoSlice (pad); };
+        equalKey.onClick  = [this] { processor.getSamples().equalSlice (pad); };
+        resetKey.onClick  = [this] { processor.getSamples().resetSlices (pad); };
+        unsliceKey.onClick = [this] { processor.getSamples().clearSlices (pad); };
+        spreadKey.onClick = [this] { processor.spreadSlices (pad); };
+        fitKey.onClick    = [this] { if (onFitView) onFitView(); };
+
+        for (Component* comp : sliceControls())
+            addChildComponent (comp);
+
+        for (auto* k : { &soundTab, &playTab, &sliceTab, &loadKey, &clearKey })
             addAndMakeVisible (k);
 
         soundTab.onClick = [this] { setPage (Page::sound); };
         playTab.onClick  = [this] { setPage (Page::play); };
+        sliceTab.onClick = [this] { setPage (Page::slice); };
         loadKey.onClick  = [this] { chooseFile(); };
         clearKey.onClick = [this] { processor.getSamples().clearPad (pad); };
 
@@ -98,9 +126,14 @@ namespace tb::ui
     {
         // Attachments must go before the controls they point at.
         for (auto& a : knobAttachments) a.reset();
-        velAttachment.reset();
+        velAttachment.reset(); sliceAttachment.reset();
         reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
+    }
+
+    std::vector<Component*> PadEditorPanel::sliceControls()
+    {
+        return { &autoKey, &equalKey, &sensKnob, &countSel, &sliceKnob, &resetKey, &unsliceKey, &spreadKey, &fitKey };
     }
 
     void PadEditorPanel::setPad (int newPad)
@@ -117,15 +150,20 @@ namespace tb::ui
     void PadEditorPanel::setPage (Page p)
     {
         page = p;
-        const bool sound = page == Page::sound;
+        const bool sound = page == Page::sound, play = page == Page::play, slice = page == Page::slice;
         soundTab.setToggleState (sound, dontSendNotification);
-        playTab.setToggleState (! sound, dontSendNotification);
+        playTab.setToggleState (play, dontSendNotification);
+        sliceTab.setToggleState (slice, dontSendNotification);
 
         for (auto& k : knobs) k.setVisible (sound);
         reverseSwitch.setVisible (sound);
         for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
                                                                     &velKnob, &muteKey, &soloKey, &noteSel })
-            comp->setVisible (! sound);
+            comp->setVisible (play);
+        for (Component* comp : sliceControls())
+            comp->setVisible (slice);
+
+        if (onPageChanged) onPageChanged (page);
         repaint();
     }
 
@@ -144,6 +182,10 @@ namespace tb::ui
         velAttachment.reset();
         velAttachment = std::make_unique<SliderAttachment> (apvts, id (params::padVelSens), velKnob);
         velKnob.setDoubleClickReturnValue (true, 1.0);
+
+        sliceAttachment.reset();
+        sliceAttachment = std::make_unique<SliderAttachment> (apvts, id (params::padSlice), sliceKnob);
+        sliceKnob.setDoubleClickReturnValue (true, 1.0);
 
         reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
         reverseAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padReverse), reverseSwitch);
@@ -186,6 +228,24 @@ namespace tb::ui
             repaint();
         }
 
+        // Slicer controls follow this pad's slicer settings.
+        if (page == Page::slice)
+        {
+            const auto info = processor.getSamples().getInfo (pad);
+            if (! sensKnob.isMouseButtonDown())
+                sensKnob.setValue (std::round (info.sensitivity * 100.0f), dontSendNotification);
+            countSel.setIndex (info.sliceCount <= 4 ? 0 : (info.sliceCount <= 8 ? 1 : 2));
+            const bool hasSample = info.buffer != nullptr;
+            autoKey.setEnabled (hasSample && ! info.slicing);
+            autoKey.setBlinking (info.slicing);
+            autoKey.tick();
+            equalKey.setEnabled (hasSample);
+            resetKey.setEnabled (! info.detected.isEmpty() && info.detected != info.slices);
+            unsliceKey.setEnabled (! info.slices.isEmpty());
+            spreadKey.setEnabled (hasSample && ! info.slices.isEmpty() && pad < kNumPads - 1);
+            sliceKnob.setAlpha (info.slices.isEmpty() ? 0.45f : 1.0f);
+        }
+
         auto& engine = processor.getEngine();
         noteSel.setNote (engine.getPadNote (pad));
         noteSel.setLearning (engine.getNoteLearnPad() == pad);
@@ -206,10 +266,25 @@ namespace tb::ui
     void PadEditorPanel::resized()
     {
         const int w = getWidth();
-        soundTab.setBounds (82,  0, 68, kHeaderH);
-        playTab.setBounds  (154, 0, 62, kHeaderH);
-        loadKey.setBounds  (w - 158, 0, 76, kHeaderH);
-        clearKey.setBounds (w - 78,  0, 78, kHeaderH);
+        soundTab.setBounds (80,  0, 66, kHeaderH);
+        playTab.setBounds  (148, 0, 58, kHeaderH);
+        sliceTab.setBounds (208, 0, 62, kHeaderH);
+        loadKey.setBounds  (w - 136, 0, 66, kHeaderH);
+        clearKey.setBounds (w - 68,  0, 68, kHeaderH);
+
+        {
+            const int h = getHeight() - kCtlTop;
+            const int top = kCtlTop - 14, half = (h + 14) / 2;
+            autoKey.setBounds   (0,   top,        104, half - 2);
+            equalKey.setBounds  (0,   top + half, 104, half - 2);
+            sensKnob.setBounds  (108, kCtlTop, 72, h);
+            countSel.setBounds  (182, kCtlTop - 6, 90, h + 6);
+            sliceKnob.setBounds (274, kCtlTop, 72, h);
+            resetKey.setBounds  (352, top,        92, half - 2);
+            unsliceKey.setBounds (352, top + half, 92, half - 2);
+            spreadKey.setBounds (448, top,        92, half - 2);
+            fitKey.setBounds    (448, top + half, 92, half - 2);
+        }
 
         for (int i = 0; i < kNumKnobs; ++i)
             knobs[(size_t) i].setBounds (knobCell (i).reduced (4, 0));
@@ -235,7 +310,7 @@ namespace tb::ui
                            "PAD " + String (pad + 1).paddedLeft ('0', 2), {}, paint::PlateStyle::black, rnd);
 
         // Sample readout in a recess between the tabs and LOAD.
-        auto r = Rectangle<float> (222.0f, 0.0f, (float) (getWidth() - 222 - 164), (float) kHeaderH);
+        auto r = Rectangle<float> (274.0f, 0.0f, (float) (getWidth() - 274 - 140), (float) kHeaderH);
         paint::recess (g, r, 3.0f);
         r.reduce (8.0f, 0.0f);
 
@@ -247,7 +322,8 @@ namespace tb::ui
             case SampleManager::Status::empty:   text = "EMPTY - LOAD OR DROP"; col = c::vfd.withAlpha (0.55f); break;
             case SampleManager::Status::loading: text = "LOADING " + info.name.toUpperCase(); break;
             case SampleManager::Status::ready:
-                text = info.name.toUpperCase() + "  " + String (info.buffer->getLengthSeconds(), 2) + "s";
+                text = info.name.toUpperCase();
+                if (! info.slices.isEmpty()) text << "  " << info.slices.count << " SL";
                 break;
             case SampleManager::Status::missing:
             case SampleManager::Status::unreadable:
@@ -268,6 +344,12 @@ namespace tb::ui
             for (int i = 0; i < kNumKnobs; ++i)
                 g.drawText (kKnobs[i].caption, knobCell (i).withY (kCtlTop - 16).withHeight (14).toFloat(),
                             Justification::centred, false);
+        }
+        else if (page == Page::slice)
+        {
+            g.drawText ("SENS",  Rectangle<float> (108.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
+            g.drawText ("COUNT", Rectangle<float> (182.0f, (float) kCtlTop - 18.0f, 90.0f, 14.0f), Justification::centred, false);
+            g.drawText ("SLICE", Rectangle<float> (274.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
         }
         else
         {

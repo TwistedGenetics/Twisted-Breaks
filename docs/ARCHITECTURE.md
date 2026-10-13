@@ -182,7 +182,25 @@ PadEngine (one per pad)
 * Choke groups release other pads in the group with a 3 ms fade. Mute and
   solo act as smoothed gain, so they never click.
 
-## 6. Transient slicing (Phase 4)
+## 6. Transient slicing (Phase 4, implemented)
+
+As built (refined from the plan below after testing on a synthetic break):
+
+* Spectral flux is computed in **two bands** (below ~250 Hz and above), each
+  normalised by its own loudest onset but never by less than a fixed floor,
+  and each with its own moving-median threshold. A kick under a ringing
+  snare, or under constant hat noise, still stands out in its band; a
+  recording with no hits stays below threshold instead of being scaled up.
+* Onsets are **ranked by loudness jump** (RMS 20 ms after vs before), so
+  COUNT 8 keeps kicks and snares over ghost hats.
+* Slices start ~1 ms before the attack (on a zero crossing when there is
+  one in that gap) and voices fade in over 0.5 ms, so the fade is finished
+  before the hit — the transient keeps its punch.
+* Slice tables (16 starts) travel to the audio thread by value through the
+  same lock-free command queue as samples. Pads using the same file share
+  one decoded buffer (SPREAD, or a reopened set).
+
+Original plan:
 
 Runs on the loader thread, never in `processBlock`, and never alters audio:
 
@@ -291,7 +309,7 @@ Ableton stores in the `.als` file:
 | **1 ✅** | Compiling VST3/AU, stereo out, MIDI in, host transport, master section, skin | 40/40 automated checks, pluginval strictness 7 passes (incl. editor + fuzz), CI builds universal binaries |
 | **2 ✅** | `SampleBuffer`, background `SampleLoader`, `SampleManager`, `PadVoice`; load WAV/AIFF (drag & drop / LOAD), waveform editor on the CRT, MIDI trigger, pitch, gain, pan, start/end, reverse on every pad | 90/90 automated checks incl. sample-exact output and zero allocations in `processBlock`; pluginval strictness 7 |
 | **3 ✅** | Per-pad mode (one-shot / loop), tempo-synced loops phase-locked to PPQ, rates, choke groups, mute / solo, velocity sensitivity, MIDI learn | 126/126 automated checks incl. sync locked to the grid over 6 s, re-lock after jumps / tempo changes, seam crossfade, click-free choke |
-| 4 | `TransientDetector`, `SliceEngine`, slice editing UI, equal/transient slicing | Amen slices on every hit at default sensitivity |
+| **4 ✅** | `TransientDetector` (two-band spectral flux), `SliceTable`, slice editing on the CRT, equal / transient slicing, SLICE mode, SPREAD to pads with shared audio | 158/158 checks: every kick and snare of a test break found, slices ≤ 2.5 ms before the attack, no false slices on a tone, slice playback, edits, SPREAD memory sharing, state |
 | 5 | Four `GroupBus`es, mixer view, routing | Group mute/solo/pan correct |
 | 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |
 | 7 | 32-step sequencer, live record with quantise | Sequencer sample-accurate vs. Live's metronome after loop wraps |

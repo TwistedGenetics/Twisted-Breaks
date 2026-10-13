@@ -100,6 +100,10 @@ namespace tb::params
                 ParameterID { padId (pad, padMute), kV3 }, prefix + "Mute", false));
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padSolo), kV3 }, prefix + "Solo", false));
+
+            // ---- Phase 4 ----
+            layout.add (std::make_unique<AudioParameterInt> (
+                ParameterID { padId (pad, padSlice), kV4 }, prefix + "Slice", 1, 16, 1));
         }
     }
 

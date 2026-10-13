@@ -169,16 +169,16 @@ namespace tb::ui
     void RotarySelector::choose (int newIndex)
     {
         newIndex = jlimit (0, labels.size() - 1, newIndex);
-        if (newIndex == index || attachment == nullptr) return;
+        if (newIndex == index) return;
         index = newIndex;
-        attachment->setValueAsPartOfGesture ((float) index);
+        if (attachment != nullptr) attachment->setValueAsPartOfGesture ((float) index);
+        else if (onChange)         onChange (index);
         repaint();
     }
 
     void RotarySelector::mouseDown (const MouseEvent& e)
     {
-        if (attachment == nullptr) return;
-        attachment->beginGesture();
+        if (attachment != nullptr) attachment->beginGesture();
         dragging = false;
         dragStartIndex = index;
 
@@ -195,19 +195,18 @@ namespace tb::ui
 
     void RotarySelector::mouseUp (const MouseEvent& e)
     {
-        if (attachment == nullptr) return;
         const bool onLabel = [&] { for (int i = 0; i < labels.size(); ++i) if (labelBounds (i).expanded (3.0f).contains (e.position)) return true; return false; }();
         if (! dragging && ! onLabel)
             choose ((index + 1) % labels.size());        // click the knob: next position
-        attachment->endGesture();
+        if (attachment != nullptr) attachment->endGesture();
     }
 
     void RotarySelector::mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w)
     {
-        if (attachment == nullptr || std::abs (w.deltaY) < 1.0e-4f) return;
-        attachment->beginGesture();
+        if (std::abs (w.deltaY) < 1.0e-4f) return;
+        if (attachment != nullptr) attachment->beginGesture();
         choose (index + (w.deltaY > 0.0f ? 1 : -1));
-        attachment->endGesture();
+        if (attachment != nullptr) attachment->endGesture();
     }
 
     //==========================================================================

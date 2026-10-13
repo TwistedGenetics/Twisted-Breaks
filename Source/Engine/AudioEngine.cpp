@@ -54,39 +54,41 @@ namespace tb
     }
 
     //==========================================================================
-    bool AudioEngine::postSample (int pad, SampleBuffer* buffer) noexcept
+    bool AudioEngine::postCommand (const PadCommand& cmd) noexcept
     {
-        return sampleCommands.push ({ pad, buffer });
+        return padCommands.push (cmd);
     }
 
     void AudioEngine::drainSampleQueue() noexcept
     {
         // Not the audio thread (audio has stopped), so freeing here is fine.
-        SampleCommand cmd;
-        while (sampleCommands.pop (cmd))
+        PadCommand cmd;
+        while (padCommands.pop (cmd))
             if (cmd.buffer != nullptr && cmd.buffer->decReferenceCountWithoutDeleting())
                 delete cmd.buffer;
     }
 
-    void AudioEngine::applySampleCommands() noexcept
+    void AudioEngine::applyPadCommands() noexcept
     {
-        SampleCommand cmd;
-        while (sampleCommands.pop (cmd))
+        PadCommand cmd;
+        while (padCommands.pop (cmd))
         {
-            if (! juce::isPositiveAndBelow (cmd.pad, kNumPads))
+            const bool valid = juce::isPositiveAndBelow (cmd.pad, kNumPads);
+
+            if (valid && cmd.setSlices)
+                padSlices[(size_t) cmd.pad] = cmd.slices;      // plain copy, no allocation
+
+            if (valid && cmd.setSample && padSample[(size_t) cmd.pad].get() != cmd.buffer)
             {
-                if (cmd.buffer != nullptr) cmd.buffer->decReferenceCountWithoutDeleting();
-                continue;
+                // Old voices fade out still holding the old buffer (kept alive by
+                // their own reference); new triggers use the new one.
+                for (auto& v : voices[(size_t) cmd.pad])
+                    v.release();
+                padSample[(size_t) cmd.pad] = cmd.buffer;            // +1
             }
 
-            // Old voices fade out still holding the old buffer (kept alive by
-            // their own reference); new triggers use the new one.
-            for (auto& v : voices[(size_t) cmd.pad])
-                v.release();
-
-            padSample[(size_t) cmd.pad] = cmd.buffer;            // +1
             if (cmd.buffer != nullptr)
-                cmd.buffer->decReferenceCountWithoutDeleting();   // adopt the sender's +1
+                cmd.buffer->decReferenceCountWithoutDeleting();       // adopt the sender's +1
         }
     }
 
@@ -140,12 +142,24 @@ namespace tb
 
             const int len = buf->getNumSamples();
 
-            // Region from START / END. If automation crosses them, use the span between.
-            float a = juce::jlimit (0.0f, 1.0f, pp.start);
-            float b = juce::jlimit (0.0f, 1.0f, pp.end);
-            if (b < a) std::swap (a, b);
-            int s0 = (int) std::lround ((double) a * len);
-            int s1 = (int) std::lround ((double) b * len);
+            int s0, s1;
+            const auto& slices = padSlices[(size_t) p];
+            if (pp.mode == params::modeSlice && ! slices.isEmpty())
+            {
+                // SLICE: the chosen slice is the region (START / END don't apply).
+                const auto r = slices.region (pp.slice - 1, len);
+                s0 = r.getStart();
+                s1 = r.getEnd();
+            }
+            else
+            {
+                // Region from START / END. If automation crosses them, use the span between.
+                float a = juce::jlimit (0.0f, 1.0f, pp.start);
+                float b = juce::jlimit (0.0f, 1.0f, pp.end);
+                if (b < a) std::swap (a, b);
+                s0 = (int) std::lround ((double) a * len);
+                s1 = (int) std::lround ((double) b * len);
+            }
             if (s1 - s0 < kMinRegion)
             {
                 s1 = juce::jmin (len, s0 + kMinRegion);
@@ -297,7 +311,7 @@ namespace tb
         // ---- New / cleared samples from the loader, then this block's pad settings.
         transportNow  = &transport;
         currentOffset = 0;
-        applySampleCommands();
+        applyPadCommands();
         computeVoiceSettings (params);
 
         // ---- Synced loops re-lock to the host's position at the block start.

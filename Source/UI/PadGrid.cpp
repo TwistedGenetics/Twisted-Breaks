@@ -66,8 +66,10 @@ namespace tb::ui
             // Footer tag: playback mode and choke group, e.g. "LOOP C2".
             const int mode  = juce::roundToInt (raw (params::padMode));
             const int choke = juce::roundToInt (raw (params::padChoke));
-            const juce::String tag = juce::String (mode == params::modeLoop ? "LOOP" : (mode == params::modeSlice ? "SLICE" : "ONE"))
-                                   + (choke > 0 ? " C" + juce::String (choke) : juce::String());
+            const juce::String modeTag = mode == params::modeLoop  ? juce::String ("LOOP")
+                                       : mode == params::modeSlice ? "SL " + juce::String (juce::roundToInt (raw (params::padSlice)))
+                                                                   : juce::String ("ONE");
+            const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String());
 
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);

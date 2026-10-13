@@ -23,6 +23,9 @@ namespace tb::ui
           * zoom: mouse wheel / pinch around the pointer, drag empty space to
             scroll, double-click to zoom back out
           * drop a WAV / AIFF on the screen to load it into the selected pad
+          * SLICES (SLICE page, or a pad in SLICE mode): numbered markers;
+            drag to move, double-click empty space to add, double-click a
+            marker to delete, click a slice to select it (and hear it)
 
         When the pad is empty (or its file is missing) the screen falls back
         to a live oscilloscope of the master output, with a message.
@@ -38,6 +41,10 @@ namespace tb::ui
 
         void setPad (int pad);
         void refresh();                 // ~30 Hz from MainView
+
+        /** SLICE page open: show + edit slice markers even when the pad isn't in SLICE mode. */
+        void setSliceView (bool);
+        void fitView();
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -68,6 +75,10 @@ namespace tb::ui
         float  xForFraction (double f) const;
         double fractionForX (float x) const;
         Marker markerAt (float x) const;
+        bool   editingSlices() const;
+        int    sliceMarkerAt (float x) const;      // -1 if none
+        int    sampleAt (float x) const;
+        void   syncInfo();
 
         float  paramValue (const char* name) const;
         juce::RangedAudioParameter* param (const char* name) const;
@@ -79,6 +90,7 @@ namespace tb::ui
         void rebuildLayers();
         void rebuildWaveImage();
         void paintScope (juce::Graphics&, juce::Rectangle<float>);
+        void paintSlices (juce::Graphics&, juce::Rectangle<float> area);
         void paintWave (juce::Graphics&, juce::Rectangle<float>);
         void paintLegend (juce::Graphics&);
 
@@ -100,6 +112,10 @@ namespace tb::ui
         bool   draggingView = false;
         double dragAnchorFraction = 0.0, dragAnchorViewStart = 0.0;
         bool   fileHover = false;
+        int    draggingSlice = -1;
+        bool   auditioning = false;
+        bool   sliceView = false;
+        int    lastSlice = -1;
 
         // Scope fallback
         static constexpr int historySize = 2048;

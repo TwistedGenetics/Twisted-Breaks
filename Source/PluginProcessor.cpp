@@ -40,8 +40,9 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.velSens = apvts.getRawParameterValue (padId (pad, padVelSens));
         pp.mute    = apvts.getRawParameterValue (padId (pad, padMute));
         pp.solo    = apvts.getRawParameterValue (padId (pad, padSolo));
+        pp.slice   = apvts.getRawParameterValue (padId (pad, padSlice));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
-                 && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo);
+                 && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice);
     }
 
     for (auto* param : AudioProcessor::getParameters())
@@ -64,6 +65,43 @@ void TwistedBreaksProcessor::parameterGestureChanged (int, bool gestureIsStartin
     // automation playback), so this can't flood the host.
     if (! gestureIsStarting)
         markStateChanged();
+}
+
+int TwistedBreaksProcessor::spreadSlices (int pad)
+{
+    const int filled = samples.spreadToPads (pad);
+    using namespace tb::params;
+
+    auto set = [this] (int p, const char* name, float plain)
+    {
+        if (auto* prm = apvts.getParameter (padId (p, name)))
+        {
+            prm->beginChangeGesture();
+            prm->setValueNotifyingHost (prm->convertTo0to1 (plain));
+            prm->endChangeGesture();
+        }
+    };
+    auto get = [this, pad] (const char* name) { return apvts.getRawParameterValue (padId (pad, name))->load(); };
+
+    const float gain = get (padGain), pitch = get (padPitch), rev = get (padReverse),
+                vel = get (padVelSens), choke = get (padChoke);
+
+    for (int i = 0; i < filled; ++i)
+    {
+        const int target = pad + i;
+        set (target, padMode, (float) modeSlice);
+        set (target, padSlice, (float) (i + 1));
+        if (target == pad) continue;
+        set (target, padGain, gain);
+        set (target, padPitch, pitch);
+        set (target, padReverse, rev);
+        set (target, padVelSens, vel);
+        set (target, padChoke, choke);
+        set (target, padStart, 0.0f);
+        set (target, padEnd, 1.0f);
+    }
+    markStateChanged();
+    return filled;
 }
 
 void TwistedBreaksProcessor::markStateChanged()
@@ -145,6 +183,7 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         dst.velSens = src.velSens->load (relaxed);
         dst.mute    = src.mute->load (relaxed) > 0.5f;
         dst.solo    = src.solo->load (relaxed) > 0.5f;
+        dst.slice   = juce::roundToInt (src.slice->load (relaxed));
     }
 
     engine.process (buffer, midi, ts, p);

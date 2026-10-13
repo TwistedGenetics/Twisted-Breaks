@@ -45,6 +45,8 @@ namespace tb::SampleLoader
         buf->sourceSampleRate = reader->sampleRate;
         buf->file = file;
         buf->name = file.getFileNameWithoutExtension();
+        buf->fileModTime = file.getLastModificationTime();
+        buf->fileSize = file.getSize();
 
         if (! reader->read (&buf->audio, 0, length, 0, true, channels > 1))
         {

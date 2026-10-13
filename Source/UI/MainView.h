@@ -27,7 +27,10 @@ namespace tb::ui
         int flashFrames = 0;
     };
 
-    /** Section selector key in the top rail. Only PADS exists in Phase 1. */
+    /** Highest development phase that is built (nav keys up to this are live). */
+    inline constexpr int kCurrentPhase = 4;
+
+    /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button
     {
     public:

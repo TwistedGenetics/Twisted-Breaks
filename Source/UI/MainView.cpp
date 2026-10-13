@@ -101,9 +101,9 @@ namespace tb::ui
     SelectorKey::SelectorKey (const String& latin, int phaseNumber)
         : Button (latin), phase (phaseNumber), latinName (latin)
     {
-        setEnabled (phase <= 1);
-        setTooltip (phase <= 1 ? latin + " view"
-                               : latin + " - coming online in Phase " + String (phase));
+        setEnabled (phase <= kCurrentPhase);
+        setTooltip (phase <= kCurrentPhase ? latin + " view"
+                                           : latin + " - coming online in Phase " + String (phase));
     }
 
     void SelectorKey::paintButton (Graphics& g, bool highlighted, bool)
@@ -113,14 +113,14 @@ namespace tb::ui
 
         paint::plate (g, b, active ? Colour (0xff23251f) : Colour (0xff1a1b18), 3.0f);
         paint::lamp (g, { b.getX() + 16.0f, b.getCentreY() }, 6.5f, c::amber, c::amberDim,
-                     active ? 1.0f : 0.0f);
+                     getToggleState() ? 1.0f : (active ? 0.18f : 0.0f));
 
         auto txt = b.withTrimmedLeft (30.0f).reduced (2.0f, 3.0f);
         g.setColour (c::plateText.withAlpha (active ? (highlighted ? 1.0f : 0.92f) : 0.32f));
         g.setFont (industrialFont (15.0f));
         g.drawText (latinName, txt.removeFromTop (txt.getHeight() * 0.56f), Justification::centredLeft, false);
         g.setFont (industrialFont (11.0f, false));
-        g.drawText (active ? String ("ONLINE") : "OFFLINE - PHASE " + String (phase),
+        g.drawText (getToggleState() ? String ("SELECTED") : (active ? String ("ONLINE") : "OFFLINE - PHASE " + String (phase)),
                     txt, Justification::centredLeft, false);
     }
 
@@ -225,6 +225,19 @@ namespace tb::ui
         };
         for (const auto& n : nav)
             addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, n.phase)));
+
+        // PADS and SLICER pick the pad editor's SOUND and SLICE pages; the
+        // screen shows slice markers while the SLICE page is open.
+        navKeys[0]->onClick = [this] { padEditor.setPage (PadEditorPanel::Page::sound); };
+        navKeys[1]->onClick = [this] { padEditor.setPage (PadEditorPanel::Page::slice); };
+        padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
+        {
+            waveform.setSliceView (page == PadEditorPanel::Page::slice);
+            navKeys[0]->setToggleState (page != PadEditorPanel::Page::slice, dontSendNotification);
+            navKeys[1]->setToggleState (page == PadEditorPanel::Page::slice, dontSendNotification);
+        };
+        padEditor.onFitView = [this] { waveform.fitView(); };
+        navKeys[0]->setToggleState (true, dontSendNotification);
 
         padGrid.onSelectionChanged = [this] (int pad)
         {

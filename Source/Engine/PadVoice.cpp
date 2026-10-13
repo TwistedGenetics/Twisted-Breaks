@@ -92,8 +92,10 @@ namespace tb
         // Starting exactly at the top of the file forwards keeps the attack
         // sample-exact; anywhere else gets a tiny fade so it can't click.
         const bool needsFade = reverse || regionStart > 0 || lockToHost;
+        // Short (0.5 ms): slices start just before their attack, so the fade
+        // is over before the hit and never softens it.
         fadeIn     = needsFade ? 0.0f : 1.0f;
-        fadeInStep = 1.0f / edgeFadeSamples;
+        fadeInStep = 1.0f / juce::jmax (4.0f, (float) (hostRate * 0.0005));
 
         increment.setCurrentAndTargetValue (s.increment);
         gainL.setCurrentAndTargetValue (s.gainLeft);

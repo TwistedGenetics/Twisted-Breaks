@@ -36,6 +36,8 @@ namespace tb
         double       sourceSampleRate = 44100.0;
         juce::String name;                       // file name without extension
         juce::File   file;
+        juce::Time   fileModTime;                // to tell if the file changed on disk
+        juce::int64  fileSize = 0;
 
         /** Min/max peaks per bucket of samples (all channels), for drawing. */
         static constexpr int overviewBucket = 256;

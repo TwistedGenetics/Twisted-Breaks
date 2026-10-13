@@ -9,7 +9,7 @@ in the header, English labels everywhere else): oxidised
 enamel, rust, bakelite label plates, amber annunciator pads, a green-phosphor
 CRT and a red emergency-stop panic button.
 
-![Twisted Breaks console](docs/screenshots/phase3-play.png)
+![Twisted Breaks console](docs/screenshots/phase4-slice.png)
 
 ## Install (no building needed)
 
@@ -24,9 +24,10 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 |---|---|---|
 | 1 | Plugin shell, MIDI, host transport, master section, skin | **done** |
 | 2 | Sample playback: load, waveform editor, pitch, gain, pan, start/end, reverse | **done** |
-| 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** — 126/126 automated checks |
-| 4 | Transient detection and slicing | next |
-| 5–8 | Groups, FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** |
+| 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** — 158/158 automated checks |
+| 5 | Four group buses + mixer | next |
+| 6–8 | FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -42,8 +43,8 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 211 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
-  `pad16_solo`).
+* 227 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_slice`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
@@ -60,13 +61,27 @@ Sections that aren't built yet are visibly marked offline on the panel
   * **M / S**: mute and solo.
   * **NOTE**: drag or scroll to change the pad's MIDI note, or LEARN and
     play a note on your controller.
+* **SLICE page** (or the SLICER key in the top rail):
+  * **AUTO SLICE** finds the hits in a break (kicks, snares, hats) and puts
+    a numbered marker on each, just before the attack. **SENS** sets how
+    quiet a hit it picks up; **COUNT** (4 / 8 / 16) keeps the strongest.
+  * **EQUAL** cuts COUNT equal slices instead.
+  * On the screen: drag markers, double-click to add, double-click a marker
+    to delete, click a slice to select it (and hear it in SLICE mode).
+    **RESET** undoes your edits, **UNSLICE** removes them, **FIT** zooms out.
+  * **SLICE mode** (PLAY page, MODE) plays the slice chosen by the **SLICE**
+    knob (automatable: `pad01_slice`).
+  * **SPREAD** puts each slice on its own pad from the selected pad onwards,
+    in SLICE mode, sharing one copy of the audio — drag a break in, AUTO
+    SLICE, SPREAD, and play it from your controller.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step
   playhead** from Ableton.
 * Master **level**, zero-latency **limiter**, needle **peak meter**, **PANIC**
   (red STOP button, automatable `Panic` parameter, or MIDI CC 120).
-* Saved in the Live Set: all parameters, sample paths and the MIDI note map;
+* Saved in the Live Set: all parameters, sample paths, slice markers (and
+  the RESET point), slicer settings and the MIDI note map;
   changes made in the plugin window are reported to Live, so save,
   duplicate-track and undo all pick them up (AU and VST3).
 * Resizable window (75 %-150 %).

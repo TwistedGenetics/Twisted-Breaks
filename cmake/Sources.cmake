@@ -16,6 +16,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Engine/AudioEngine.cpp
     ${TB_SRC}/Engine/PadVoice.cpp
     ${TB_SRC}/Engine/SampleLoader.cpp
+    ${TB_SRC}/Engine/TransientDetector.cpp
     ${TB_SRC}/Engine/MasterSection.cpp
 
     # UI: the reactor control-room skin

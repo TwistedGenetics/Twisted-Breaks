@@ -50,6 +50,10 @@ namespace tb::ui
         void attach (juce::RangedAudioParameter* param);
         int  getIndex() const noexcept { return index; }
 
+        /** Use without a parameter: setIndex() shows a value, onChange reports clicks. */
+        void setIndex (int i) { i = juce::jlimit (0, labels.size() - 1, i); if (i != index) { index = i; repaint(); } }
+        std::function<void (int)> onChange;
+
         void paint (juce::Graphics&) override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;

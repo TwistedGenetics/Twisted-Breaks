@@ -111,7 +111,7 @@ namespace tb::ui
             const float h = bridge.padPlayhead[(size_t) pad].load (std::memory_order_relaxed);
 
             auto moved = [] (float a, float b) { return std::abs (a - b) > 1.0e-6f; };
-            const int how = roundToInt (paramValue (params::padMode)) * 100
+            const int how = roundToInt (paramValue (params::padSlice)) * 1000 + roundToInt (paramValue (params::padMode)) * 100
                           + roundToInt (paramValue (params::padRate)) * 10 + (paramValue (params::padSync) > 0.5f ? 1 : 0);
             if (moved (s, lastStart) || moved (e, lastEnd) || r != lastReverse || moved (h, lastHead) || how != lastHow)
             {
@@ -159,34 +159,91 @@ namespace tb::ui
     }
 
     //==========================================================================
+    bool WaveformEditor::editingSlices() const
+    {
+        if (info.buffer == nullptr) return false;
+        return sliceView || (roundToInt (paramValue (params::padMode)) == params::modeSlice && ! info.slices.isEmpty());
+    }
+
+    int WaveformEditor::sliceMarkerAt (float x) const
+    {
+        if (! editingSlices()) return -1;
+        const double len = (double) info.buffer->getNumSamples();
+        int best = -1; float bestD = kMarkerGrab;
+        for (int i = 0; i < info.slices.count; ++i)
+        {
+            const float d = std::abs (x - xForFraction (info.slices.starts[(size_t) i] / len));
+            if (d <= bestD) { bestD = d; best = i; }
+        }
+        return best;
+    }
+
+    int WaveformEditor::sampleAt (float x) const
+    {
+        return jlimit (0, info.buffer->getNumSamples() - 1,
+                       (int) std::lround (fractionForX (x) * info.buffer->getNumSamples()));
+    }
+
     void WaveformEditor::mouseMove (const MouseEvent& e)
     {
-        setMouseCursor (markerAt ((float) e.x) != Marker::none ? MouseCursor::LeftRightResizeCursor
-                                                               : MouseCursor::NormalCursor);
+        const bool onMarker = editingSlices() ? sliceMarkerAt ((float) e.x) >= 0
+                                              : markerAt ((float) e.x) != Marker::none;
+        setMouseCursor (onMarker ? MouseCursor::LeftRightResizeCursor : MouseCursor::NormalCursor);
+    }
+
+    void WaveformEditor::syncInfo()
+    {
+        // Always act on the latest markers, not the last 30 Hz snapshot.
+        auto& samples = processor.getSamples();
+        if (samples.getVersion (pad) != shownVersion)
+        {
+            info = samples.getInfo (pad);
+            shownVersion = info.version;
+            waveDirty = true;
+            repaint();
+        }
     }
 
     void WaveformEditor::mouseDown (const MouseEvent& e)
     {
-        dragging = markerAt ((float) e.x);
+        syncInfo();
+        dragging = Marker::none;
+        draggingSlice = -1;
         draggingView = false;
+        auditioning = false;
 
-        if (dragging != Marker::none)
+        if (editingSlices())
         {
-            if (auto* p = param (dragging == Marker::start ? params::padStart : params::padEnd))
-                p->beginChangeGesture();
+            draggingSlice = sliceMarkerAt ((float) e.x);
+            if (draggingSlice >= 0) return;
         }
-        else if (info.buffer != nullptr && viewLength < 1.0)
+        else
+        {
+            dragging = markerAt ((float) e.x);
+            if (dragging != Marker::none)
+            {
+                if (auto* p = param (dragging == Marker::start ? params::padStart : params::padEnd))
+                    p->beginChangeGesture();
+                return;
+            }
+        }
+
+        if (info.buffer != nullptr && viewLength < 1.0)
         {
             draggingView = true;
             dragAnchorFraction  = fractionForX ((float) e.x);
             dragAnchorViewStart = viewStart;
-            setMouseCursor (MouseCursor::DraggingHandCursor);
         }
     }
 
     void WaveformEditor::mouseDrag (const MouseEvent& e)
     {
-        if (dragging != Marker::none && info.buffer != nullptr)
+        if (draggingSlice >= 0 && info.buffer != nullptr)
+        {
+            processor.getSamples().moveMarker (pad, draggingSlice, sampleAt ((float) e.x));
+            syncInfo();
+        }
+        else if (dragging != Marker::none && info.buffer != nullptr)
         {
             // Keep at least 64 samples between the markers.
             const double gap = jmin (0.5, 64.0 / jmax (1, info.buffer->getNumSamples()));
@@ -198,8 +255,9 @@ namespace tb::ui
             if (auto* p = param (isStart ? params::padStart : params::padEnd))
                 p->setValueNotifyingHost (p->convertTo0to1 ((float) jlimit (0.0, 1.0, v)));
         }
-        else if (draggingView)
+        else if (draggingView && e.getDistanceFromDragStart() > 3)
         {
+            setMouseCursor (MouseCursor::DraggingHandCursor);
             const double nowAt = (double) (((float) e.x - plotArea().getX()) / jmax (1.0f, plotArea().getWidth())) * viewLength;
             viewStart = dragAnchorFraction - nowAt;
             juce::ignoreUnused (dragAnchorViewStart);
@@ -211,20 +269,59 @@ namespace tb::ui
 
     void WaveformEditor::mouseUp (const MouseEvent& e)
     {
+        syncInfo();
         if (dragging != Marker::none)
             if (auto* p = param (dragging == Marker::start ? params::padStart : params::padEnd))
                 p->endChangeGesture();
 
+        // A plain click inside a slice selects it (and plays it when the pad is in SLICE mode).
+        const bool click = e.getDistanceFromDragStart() <= 3 && draggingSlice < 0 && dragging == Marker::none;
+        if (click && editingSlices() && ! info.slices.isEmpty() && e.getNumberOfClicks() == 1)
+        {
+            const int k = info.slices.sliceAt (sampleAt ((float) e.x));
+            if (auto* p = param (params::padSlice))
+            {
+                p->beginChangeGesture();
+                p->setValueNotifyingHost (p->convertTo0to1 ((float) (k + 1)));
+                p->endChangeGesture();
+            }
+            if (roundToInt (paramValue (params::padMode)) == params::modeSlice)
+            {
+                processor.triggerPadFromUi (pad, 0.9f, true);
+                processor.triggerPadFromUi (pad, 0.0f, false);
+            }
+        }
+
         dragging = Marker::none;
+        draggingSlice = -1;
         draggingView = false;
         mouseMove (e);
     }
 
-    void WaveformEditor::mouseDoubleClick (const MouseEvent&)
+    void WaveformEditor::mouseDoubleClick (const MouseEvent& e)
+    {
+        syncInfo();
+        if (editingSlices())
+        {
+            // Double-click a marker to delete it, empty space to add one.
+            const int m = sliceMarkerAt ((float) e.x);
+            if (m >= 0) processor.getSamples().deleteMarker (pad, m);
+            else        processor.getSamples().addMarker (pad, sampleAt ((float) e.x));
+            return;
+        }
+        fitView();
+    }
+
+    void WaveformEditor::fitView()
     {
         viewStart = 0.0; viewLength = 1.0;
         waveDirty = true;
         repaint();
+    }
+
+    void WaveformEditor::setSliceView (bool shouldShow)
+    {
+        if (shouldShow != sliceView) { sliceView = shouldShow; repaint(); }
     }
 
     void WaveformEditor::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w)
@@ -425,18 +522,30 @@ namespace tb::ui
         if (waveDirty || wave.isNull()) rebuildWaveImage();
         g.drawImage (wave, area);
 
-        const float s = jmin (paramValue (params::padStart), paramValue (params::padEnd));
-        const float e = jmax (paramValue (params::padStart), paramValue (params::padEnd));
-        const float xs = xForFraction (s), xe = xForFraction (e);
         const auto  scr = screenArea();
+        auto dimSpan = [&] (float x0, float x1)
+        {
+            x0 = jmax (x0, scr.getX()); x1 = jmin (x1, scr.getRight());
+            if (x1 > x0) g.fillRect (Rectangle<float>::leftTopRightBottom (x0, scr.getY(), x1, scr.getBottom()));
+        };
 
-        // Dim what won't play.
-        g.setColour (Colours::black.withAlpha (0.62f));
-        if (xs > scr.getX())     g.fillRect (Rectangle<float>::leftTopRightBottom (scr.getX(), scr.getY(), jmin (xs, scr.getRight()), scr.getBottom()));
-        if (xe < scr.getRight()) g.fillRect (Rectangle<float>::leftTopRightBottom (jmax (xe, scr.getX()), scr.getY(), scr.getRight(), scr.getBottom()));
+        if (editingSlices())
+        {
+            paintSlices (g, area);
+        }
+        else
+        {
+            const float s = jmin (paramValue (params::padStart), paramValue (params::padEnd));
+            const float e = jmax (paramValue (params::padStart), paramValue (params::padEnd));
+            const float xs = xForFraction (s), xe = xForFraction (e);
 
-        // Markers: amber lines with flags.
-        auto marker = [&] (float x, const String& label, bool flagRight)
+            // Dim what won't play.
+            g.setColour (Colours::black.withAlpha (0.62f));
+            dimSpan (scr.getX(), xs);
+            dimSpan (xe, scr.getRight());
+
+            // Markers: amber lines with flags.
+            auto marker = [&] (float x, const String& label, bool flagRight)
         {
             if (x < scr.getX() - 1.0f || x > scr.getRight() + 1.0f) return;
             g.setColour (c::amber.withAlpha (0.25f));
@@ -450,8 +559,9 @@ namespace tb::ui
             g.setFont (industrialFont (12.0f));
             g.drawText (label, flag, Justification::centred, false);
         };
-        marker (xs, "S", true);
-        marker (xe, "E", false);
+            marker (xs, "S", true);
+            marker (xe, "E", false);
+        }
 
         // Playback cursor.
         const float head = bridge.padPlayhead[(size_t) pad].load (std::memory_order_relaxed);
@@ -465,6 +575,44 @@ namespace tb::ui
                 g.setColour (Colour (0xffe8ffe8));
                 g.fillRect (xh - 0.75f, area.getY(), 1.5f, area.getHeight());
             }
+        }
+    }
+
+    void WaveformEditor::paintSlices (Graphics& g, Rectangle<float> area)
+    {
+        const auto scr = screenArea();
+        const auto& t  = info.slices;
+        const double len = (double) info.buffer->getNumSamples();
+        const bool sliceMode = roundToInt (paramValue (params::padMode)) == params::modeSlice;
+        const int  current   = jlimit (0, jmax (0, t.count - 1), roundToInt (paramValue (params::padSlice)) - 1);
+
+        // The slice this pad plays: everything else slightly dimmed.
+        if (! t.isEmpty())
+        {
+            const auto r = t.region (current, (int) len);
+            const float x0 = xForFraction (r.getStart() / len), x1 = xForFraction (r.getEnd() / len);
+            g.setColour (Colours::black.withAlpha (sliceMode ? 0.45f : 0.25f));
+            if (x0 > scr.getX())     g.fillRect (Rectangle<float>::leftTopRightBottom (scr.getX(), scr.getY(), jmin (x0, scr.getRight()), scr.getBottom()));
+            if (x1 < scr.getRight()) g.fillRect (Rectangle<float>::leftTopRightBottom (jmax (x1, scr.getX()), scr.getY(), scr.getRight(), scr.getBottom()));
+            g.setColour (c::amber.withAlpha (0.07f));
+            g.fillRect (Rectangle<float>::leftTopRightBottom (jmax (x0, scr.getX()), area.getY(), jmin (x1, scr.getRight()), area.getBottom()));
+        }
+
+        // Numbered markers.
+        for (int i = 0; i < t.count; ++i)
+        {
+            const float x = xForFraction (t.starts[(size_t) i] / len);
+            if (x < scr.getX() - 1.0f || x > scr.getRight() + 1.0f) continue;
+            const bool on = i == current;
+            g.setColour ((on ? c::amber : c::amber.withAlpha (0.65f)));
+            g.fillRect (x - 0.6f, area.getY() - 2.0f, on ? 1.6f : 1.2f, area.getHeight() + 6.0f);
+
+            auto flag = Rectangle<float> (i + 1 >= 10 ? 18.0f : 13.0f, 13.0f).withPosition (x, area.getY() - 2.0f);
+            g.setColour (on ? c::amber : c::amber.withAlpha (0.55f));
+            g.fillRect (flag);
+            g.setColour (Colour (0xff1a0e02));
+            g.setFont (industrialFont (11.5f));
+            g.drawText (String (i + 1), flag, Justification::centred, false);
         }
     }
 
@@ -516,8 +664,14 @@ namespace tb::ui
             g.drawText (fmt, txt, Justification::topRight, false);
 
             const double s = jmin (lastStart, lastEnd), e = jmax (lastStart, lastEnd);
-            const String region = "REGION " + String ((e - s) * buf.getLengthSeconds(), 3) + " s"
-                                + "   ZOOM " + String (1.0 / viewLength, 1) + "x";
+            String region = "REGION " + String ((e - s) * buf.getLengthSeconds(), 3) + " s";
+            if (editingSlices() && ! info.slices.isEmpty())
+            {
+                const int k = jlimit (0, info.slices.count - 1, roundToInt (paramValue (params::padSlice)) - 1);
+                const auto r = info.slices.region (k, buf.getNumSamples());
+                region = "SLICE " + String (k + 1) + "  " + String (r.getLength() / buf.sourceSampleRate, 3) + " s";
+            }
+            region << "   ZOOM " << String (1.0 / viewLength, 1) << "x";
             g.setColour (c::phosphor.withAlpha (0.6f));
             g.drawText (region, txt, Justification::bottomLeft, false);
 
@@ -541,9 +695,14 @@ namespace tb::ui
                         how = "LOOP  FREE  " + rate;
                     }
                 }
-                else if (mode == params::modeSlice)
+                if (editingSlices())
                 {
-                    how = "SLICE (PHASE 4)";
+                    if (info.slicing)                how = "SLICING...";
+                    else if (info.slices.isEmpty())  how = "NO SLICES - AUTO SLICE, EQUAL, OR DOUBLE-CLICK TO ADD";
+                    else how = (mode == params::modeSlice ? "SLICE " + String (jlimit (1, info.slices.count, roundToInt (paramValue (params::padSlice))))
+                                                              + " / " + String (info.slices.count)
+                                                          : String (info.slices.count) + " SLICES")
+                               + "   DBL-CLICK: ADD / DELETE";
                 }
                 if (lastReverse) how = "<< REVERSE   " + how;
             }

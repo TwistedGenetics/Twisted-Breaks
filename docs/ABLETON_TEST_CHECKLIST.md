@@ -35,6 +35,13 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ VEL 0%: soft and hard hits are equally loud
 - [ ] ✅ NOTE: LEARN then hit a pad on your controller: that note now plays the selected pad; save / reopen keeps it
 
+## Slicing (Phase 4)
+- [ ] ✅ Drop your favourite break on pad 1, SLICER key, AUTO SLICE: markers land on the hits (check by ear by clicking slices in SLICE mode)
+- [ ] ✅ SENS up / down then AUTO again: more / fewer slices; COUNT 8 keeps the main hits
+- [ ] ✅ Drag, add (double-click), delete (double-click a marker) markers; RESET brings back the AUTO result
+- [ ] ✅ SPREAD: pads fill with slices; play the break from your controller; attacks sound punchy (not softened)
+- [ ] ✅ Save, close, reopen: markers and spread pads all come back
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)

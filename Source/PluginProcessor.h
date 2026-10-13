@@ -74,6 +74,14 @@ public:
     */
     void markStateChanged();
 
+    /**
+        SPREAD: puts each slice of `pad` on its own pad (pad, pad+1, ...),
+        sharing the same decoded sample, each in SLICE mode playing slice
+        1, 2, 3 ... Level, pitch, reverse, velocity and choke are copied from
+        the source pad. Returns how many pads were filled.
+    */
+    int spreadSlices (int pad);
+
     static constexpr int kStateVersion = 1;
 
 private:
@@ -103,6 +111,7 @@ private:
         std::atomic<float>* velSens = nullptr;
         std::atomic<float>* mute = nullptr;
         std::atomic<float>* solo = nullptr;
+        std::atomic<float>* slice = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

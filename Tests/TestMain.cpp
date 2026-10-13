@@ -17,6 +17,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Engine/TransientDetector.h"
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -153,19 +154,25 @@ namespace
         return b;
     }
 
-    /** A synthetic two-bar break (kick / snare / hats) — for the screenshot. */
+    const char* const kBreakKick  = "x.........x.....x.x.......x.....";
+    const char* const kBreakSnare = "....x.......x..x....x.......x...";
+    const char* const kBreakHats  = "x.x.x.xxx.x.x.x.x.x.x.xxx.x.x.xx";
+    int breakStepLength (double rate) { return (int) (rate * 60.0 / 170.0 / 4.0); }
+
+    /** A synthetic two-bar break (kick / snare / hats) at 170 BPM. */
     juce::AudioBuffer<float> makeBreak (double rate)
     {
         const double bpm = 170.0;
-        const int    stepLen = (int) (rate * 60.0 / bpm / 4.0);
+        const int    stepLen = breakStepLength (rate);
+        juce::ignoreUnused (bpm);
         const int    steps = 32;
         juce::AudioBuffer<float> b (2, stepLen * steps);
         b.clear();
         juce::Random rnd (99);
 
-        const char* kick  = "x.........x.....x.x.......x.....";
-        const char* snare = "....x.......x..x....x.......x...";
-        const char* hats  = "x.x.x.xxx.x.x.x.x.x.x.xxx.x.x.xx";
+        const char* kick  = kBreakKick;
+        const char* snare = kBreakSnare;
+        const char* hats  = kBreakHats;
 
         auto add = [&] (int start, int len, auto&& fn)
         {
@@ -309,11 +316,11 @@ namespace
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
         for (int pad = 0; pad < tb::kNumPads; ++pad)
             for (auto* n : { tb::params::padMode, tb::params::padSync, tb::params::padRate, tb::params::padChoke,
-                             tb::params::padVelSens, tb::params::padMute, tb::params::padSolo })
+                             tb::params::padVelSens, tb::params::padMute, tb::params::padSolo, tb::params::padSlice })
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
-        check (allPadParams, "208 per-pad parameters exist (pad01_gain .. pad16_solo)");
+        check (allPadParams, "224 per-pad parameters exist (pad01_gain .. pad16_slice)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 211, "211 automatable parameters in total (3 master + 13 x 16 pads)");
+        check (p.getParameters().processor.getParameters().size() == 227, "227 automatable parameters in total (3 master + 14 x 16 pads)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -946,6 +953,243 @@ namespace
                  && q.getEngine().getPadNote (5) == 70, "mode, choke and learned notes are saved with the set");
     }
 
+
+    //==========================================================================
+    //  PHASE 4
+    //==========================================================================
+    void testTransientDetection()
+    {
+        std::cout << "\n== Phase 4: transient detection ==" << std::endl;
+        const double rate = 44100.0;
+        tb::SampleBuffer buf;
+        buf.audio = makeBreak (rate);
+        buf.sourceSampleRate = rate;
+        const int step = breakStepLength (rate);
+
+        std::vector<int> hits, loud;
+        for (int i = 0; i < 32; ++i)
+        {
+            const bool k = kBreakKick[i] == 'x', sn = kBreakSnare[i] == 'x', h = kBreakHats[i] == 'x';
+            if (k || sn || h) hits.push_back (i * step);
+            if (k || sn)      loud.push_back (i * step);
+        }
+
+        const auto t = tb::TransientDetector::detect (buf, 0.5f, 16);
+        check (t.count == 16 && t.starts[0] == 0, "AUTO SLICE on a 2-bar break: 16 slices, the first at the start ("
+                                                      + juce::String (t.count) + ")");
+
+        auto nearestHit = [&] (int pos)
+        {
+            int best = 1 << 30;
+            for (int h : hits) best = juce::jmin (best, std::abs (pos - h));
+            return best;
+        };
+        int worst = 0;
+        for (int i = 0; i < t.count; ++i) worst = juce::jmax (worst, nearestHit (t.starts[(size_t) i]));
+        check (worst <= (int) (rate * 0.004), "every slice starts on a real hit (worst " + juce::String (worst * 1000.0 / rate, 2) + " ms off)");
+
+        int missed = 0, late = 0;
+        for (int h : loud)
+        {
+            bool found = false;
+            for (int i = 0; i < t.count; ++i)
+            {
+                const int d = t.starts[(size_t) i] - h;
+                if (d >= -(int) (rate * 0.004) && d <= (int) (rate * 0.002)) { found = true; break; }
+                if (d > (int) (rate * 0.002) && d < (int) (rate * 0.01)) ++late;
+            }
+            if (! found) ++missed;
+        }
+        check (missed == 0, "every kick and snare gets its own slice (" + juce::String ((int) loud.size() - missed) + " / " + juce::String ((int) loud.size()) + ")");
+        check (late == 0, "no slice starts late (after the attack)");
+
+        int tooEarly = 0;
+        for (int i = 1; i < t.count; ++i)
+            if (nearestHit (t.starts[(size_t) i]) > (int) (rate * 0.0025)) ++tooEarly;
+        check (tooEarly == 0, "slices start just before the attack (<= 2.5 ms), so the hit keeps its punch");
+
+        const auto few  = tb::TransientDetector::findOnsets (buf, 0.0f).size();
+        const auto many = tb::TransientDetector::findOnsets (buf, 1.0f).size();
+        check (many >= few && many >= hits.size() - 2, "higher SENSITIVITY finds more hits (" + juce::String ((int) few) + " -> " + juce::String ((int) many) + ")");
+
+        const auto eight = tb::TransientDetector::detect (buf, 0.5f, 8);
+        int eightOnLoud = 0;
+        for (int i = 1; i < eight.count; ++i)
+            for (int h : loud) if (std::abs (eight.starts[(size_t) i] - h) < (int) (rate * 0.004)) { ++eightOnLoud; break; }
+        check (eight.count == 8 && eightOnLoud == 7, "COUNT 8 keeps the 8 strongest hits (all kicks / snares)");
+
+        tb::SampleBuffer flat;
+        flat.audio = makeTone (48000, 1);
+        flat.sourceSampleRate = 48000.0;
+        const auto none = tb::TransientDetector::detect (flat, 0.5f, 16);
+        check (none.count <= 2, "a sustained tone gives no false slices (" + juce::String (none.count) + ")");
+    }
+
+    void testSlicing (const juce::AudioBuffer<float>& src, const juce::File& tone)
+    {
+        std::cout << "\n== Phase 4: slices, edits, playback, SPREAD ==" << std::endl;
+        Rig r;
+        auto& sm = r.p.getSamples();
+        r.load (0, tone);
+        const int len = src.getNumSamples();
+
+        sm.setSliceCount (0, 4);
+        sm.equalSlice (0);
+        auto t = sm.getInfo (0).slices;
+        check (t.count == 4 && t.starts[1] == len / 4 && t.starts[3] == 3 * len / 4, "EQUAL makes 4 equal slices");
+
+        sm.moveMarker (0, 1, 2000);
+        check (sm.getInfo (0).slices.starts[1] == 2000, "drag a marker");
+        sm.moveMarker (0, 1, 999999);
+        check (sm.getInfo (0).slices.starts[1] == len / 2 - tb::SliceTable::kMinGap, "a marker can't be dragged past its neighbour");
+        sm.addMarker (0, 9500);
+        check (sm.getInfo (0).slices.count == 5 && sm.getInfo (0).slices.starts[4] == 9500, "add a marker (kept in order)");
+        sm.deleteMarker (0, 4);
+        check (sm.getInfo (0).slices.count == 4, "delete a marker");
+        sm.resetSlices (0);
+        check (sm.getInfo (0).slices == tb::SliceTable::equal (len, 4), "RESET goes back to the last AUTO / EQUAL result");
+        bool full = true;
+        sm.setSliceCount (0, 16); sm.equalSlice (0);
+        full &= ! sm.addMarker (0, 123);
+        check (full && sm.getInfo (0).slices.count == 16, "never more than 16 slices");
+        sm.setSliceCount (0, 4); sm.equalSlice (0);
+
+        // SLICE mode plays exactly the chosen slice.
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeSlice);
+        setPadParam (r.p, 0, tb::params::padSlice, 3.0f);
+        r.settle();
+        auto out = renderNote (r.p, r.host, 36, 127, (len / kBlock) + 4);
+        check (std::abs ((lastSound (out) + 1) - len / 4) <= 2, "SLICE mode plays only the chosen slice (slice 3 = a quarter of the file)");
+        check (std::abs (out.getSample (0, 300) - src.getSample (0, len / 2 + 300)) < 1.0e-5f, "...from the right place");
+        r.settle();
+
+        // Live edit while the pad plays: moving the next marker shortens it.
+        sm.moveMarker (0, 3, len / 2 + 1000);
+        r.settle();
+        out = renderNote (r.p, r.host, 36, 127, (len / kBlock) + 4);
+        check (std::abs ((lastSound (out) + 1) - 1000) <= 2, "moving a marker changes the slice immediately (non-destructive)");
+        sm.resetSlices (0);
+        r.settle();
+
+        // AUTO SLICE in the background on a real break file.
+        const auto brk = writeAudio ("autobreak", makeBreak (44100.0), 44100.0, Fmt::wav16);
+        r.load (1, brk);
+        sm.autoSlice (1);
+        check (sm.getInfo (1).slicing, "AUTO SLICE runs in the background (pad shows it's working)");
+        waitForLoads (r.p);
+        check (sm.getInfo (1).slices.count == 16 && ! sm.getInfo (1).slicing, "...and lands 16 markers on the break");
+
+        // SPREAD: slices onto pads, sharing one decoded copy.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        const int before = tb::SampleBuffer::liveInstances();
+        setPadParam (r.p, 1, tb::params::padChoke, 2.0f);
+        const int filled = r.p.spreadSlices (1);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        check (filled == 15, "SPREAD from pad 2 fills pads 2-16 with slices 1-15");
+        check (tb::SampleBuffer::liveInstances() == before, "...all sharing one decoded copy (no extra memory)");
+        auto raw = [&] (int pad, const char* n) { return r.p.getParameters().getRawParameterValue (tb::params::padId (pad, n))->load(); };
+        check (juce::roundToInt (raw (5, tb::params::padMode)) == tb::params::modeSlice && juce::roundToInt (raw (5, tb::params::padSlice)) == 5
+                 && juce::roundToInt (raw (5, tb::params::padChoke)) == 2, "...each pad in SLICE mode on its own slice, choke copied");
+
+        const auto table = sm.getInfo (1).slices;
+        r.settle();
+        {
+            // pad 5 = slice 4: after one block the read head must be inside slice 4.
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 40, (juce::uint8) 127), 0);
+            runBlock (r.p, r.host, buf, midi);
+            const int brkLen = sm.getInfo (4).buffer->getNumSamples();
+            const double expected = (table.starts[3] + kBlock * 44100.0 / 48000.0) / brkLen;
+            check (std::abs (r.p.getBridge().padPlayhead[4].load() - expected) < 2.0 / brkLen,
+                   "pad 5 plays slice 4 of the break, from its first sample");
+        }
+        r.settle();
+
+        // Save / reload: markers, detected (RESET), sensitivity, count; one decode for 15 pads.
+        sm.setSensitivity (1, 0.8f);
+        sm.moveMarker (1, 2, table.starts[2] + 500);
+        juce::MemoryBlock blob;
+        r.p.getStateInformation (blob);
+        const auto savedSlices = sm.getInfo (1).slices;
+
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        {
+            Rig q;
+            const int base = tb::SampleBuffer::liveInstances();
+            q.p.setStateInformation (blob.getData(), (int) blob.getSize());
+            waitForLoads (q.p);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+            const auto info = q.p.getSamples().getInfo (1);
+            check (info.slices == savedSlices && info.detected == table && std::abs (info.sensitivity - 0.8f) < 1e-6f,
+                   "slice markers, RESET point and SENS are saved with the set");
+            check (tb::SampleBuffer::liveInstances() - base == 2, "reopening 15 sliced pads decodes the break once ("
+                     + juce::String (tb::SampleBuffer::liveInstances() - base - 1) + " copy) + the tone");
+            check (q.p.getSamples().getInfo (15).buffer == info.buffer, "...and they share it");
+        }
+    }
+
+
+    void testSliceEditingOnScreen (const juce::File& tone)
+    {
+        std::cout << "\n== Phase 4: editing slices on the screen ==" << std::endl;
+        Rig r;
+        r.load (0, tone);
+        auto& sm = r.p.getSamples();
+        const int len = sm.getInfo (0).buffer->getNumSamples();
+
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        tb::ui::WaveformEditor* screen = nullptr;
+        tb::ui::PadEditorPanel* panel = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* w = dynamic_cast<tb::ui::WaveformEditor*> (&c)) screen = w;
+            if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) panel = pe;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (screen != nullptr && panel != nullptr, "found the screen and the pad editor");
+        if (screen == nullptr || panel == nullptr) return;
+
+        panel->setPage (tb::ui::PadEditorPanel::Page::slice);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+
+        // Same geometry the screen uses: glass = bounds.reduced (20, 18); plot = glass.reduced (14, 0).
+        const auto plot = screen->getLocalBounds().toFloat().reduced (20.0f, 18.0f).reduced (14.0f, 0.0f);
+        auto xFor = [&] (int sample) { return plot.getX() + (float) sample / (float) len * plot.getWidth(); };
+        const float y = plot.getCentreY();
+
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        const auto t0 = juce::Time::getCurrentTime();
+        int ms = 0;
+        auto ev = [&] (float x, bool down, int clicks = 1)
+        {
+            ms += 400;
+            return juce::MouseEvent (src, { x, y }, down ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(),
+                                     1.0f, 0, 0, 0, 0, screen, screen, t0 + juce::RelativeTime::milliseconds (ms),
+                                     { x, y }, t0 + juce::RelativeTime::milliseconds (ms), clicks, false);
+        };
+
+        screen->mouseDoubleClick (ev (xFor (len / 2), false, 2));
+        auto tbl = sm.getInfo (0).slices;
+        check (tbl.count == 2 && tbl.starts[0] == 0 && std::abs (tbl.starts[1] - len / 2) < len / 200,
+               "double-click on the screen adds a marker (pad gets slices 1 and 2)");
+
+        screen->mouseDown (ev (xFor (tbl.starts[1]), true));
+        screen->mouseDrag (ev (xFor (len * 3 / 4), true));
+        screen->mouseUp (ev (xFor (len * 3 / 4), false));
+        tbl = sm.getInfo (0).slices;
+        check (std::abs (tbl.starts[1] - len * 3 / 4) < len / 200, "drag a marker on the screen");
+
+        screen->mouseUp (ev (xFor (len * 7 / 8), false));      // plain click inside slice 2
+        check (juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padSlice))->load()) == 2,
+               "click a slice to select it (pad's SLICE becomes 2)");
+
+        screen->mouseDoubleClick (ev (xFor (tbl.starts[1]), false, 2));
+        check (sm.getInfo (0).slices.count == 1, "double-click a marker deletes it");
+        ed.reset();
+    }
+
     void testRealtimeSafety()
     {
         std::cout << "\n== Real-time safety ==" << std::endl;
@@ -1132,15 +1376,26 @@ namespace
         setPadParam (p, 2, tb::params::padChoke, 1.0f);
         setPadParam (p, 3, tb::params::padChoke, 1.0f);
         setPadParam (p, 4, tb::params::padMute, 1.0f);
-        const bool playPage = out.getFileName().contains ("play");
+        const bool playPage  = out.getFileName().contains ("play");
+        const bool slicePage = out.getFileName().contains ("slice");
+        if (slicePage)
+        {
+            p.getSamples().autoSlice (0);
+            waitForLoads (p);
+            setPadParam (p, 0, tb::params::padMode, (float) tb::params::modeSlice);
+            p.spreadSlices (0);
+            setPadParam (p, 0, tb::params::padSlice, 5.0f);
+            setPadParam (p, 4, tb::params::padMute, 0.0f);
+        }
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
-        if (playPage)
+        if (playPage || slicePage)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
             {
-                if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) pe->setPage (tb::ui::PadEditorPanel::Page::play);
+                if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c))
+                    pe->setPage (slicePage ? tb::ui::PadEditorPanel::Page::slice : tb::ui::PadEditorPanel::Page::play);
                 for (auto* child : c.getChildren()) find (*child);
             };
             find (*ed);
@@ -1202,6 +1457,9 @@ int main (int argc, char* argv[])
         testLoops (toneAudio, tone);
         testSync();
         testChokeMuteSolo (tone);
+        testTransientDetection();
+        testSlicing (toneAudio, tone);
+        testSliceEditingOnScreen (tone);
         testEditorDrivesState();
         testRealtimeSafety();
 

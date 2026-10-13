@@ -1,5 +1,6 @@
 #include "Core/SampleManager.h"
 #include "Engine/AudioEngine.h"
+#include "Engine/TransientDetector.h"
 
 namespace tb
 {
@@ -7,9 +8,13 @@ namespace tb
 
     namespace
     {
-        const juce::Identifier kPadId   { "PAD" };
-        const juce::Identifier kIndexId { "index" };
-        const juce::Identifier kPathId  { "path" };
+        const juce::Identifier kPadId      { "PAD" };
+        const juce::Identifier kIndexId    { "index" };
+        const juce::Identifier kPathId     { "path" };
+        const juce::Identifier kSlicesId   { "slices" };
+        const juce::Identifier kDetectedId { "detected" };
+        const juce::Identifier kSensId     { "sensitivity" };
+        const juce::Identifier kCountId    { "sliceCount" };
 
         SampleManager::Status toStatus (SampleLoader::Status s)
         {
@@ -30,13 +35,14 @@ namespace tb
           loader (juce::ThreadPoolOptions{}.withThreadName ("TwistedBreaks loader").withNumberOfThreads (1))
     {
         formats.registerBasicFormats();
+        followLeader.fill (-1);
         startTimerHz (20);
     }
 
     SampleManager::~SampleManager()
     {
         stopTimer();
-        loader.removeAllJobs (true, 10000);   // let any running decode finish
+        loader.removeAllJobs (true, 10000);   // let any running decode / analysis finish
         pending.clear();
     }
 
@@ -65,6 +71,15 @@ namespace tb
         if (onStateChanged) onStateChanged();
     }
 
+    void SampleManager::modify (int pad, const std::function<void (PadInfo&)>& change, bool slicesChanged)
+    {
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+        auto info = getInfo (pad);
+        change (info);
+        if (slicesChanged) sendSlices (pad, info.slices);
+        setInfo (pad, std::move (info));
+    }
+
     SampleManager::PadInfo SampleManager::getInfo (int pad) const
     {
         const juce::ScopedLock sl (lock);
@@ -81,32 +96,65 @@ namespace tb
     {
         const juce::ScopedLock sl (lock);
         for (const auto& p : pads)
-            if (p.status == Status::loading) return true;
+            if (p.status == Status::loading || p.slicing) return true;
         return false;
     }
 
     //==========================================================================
+    SampleBuffer::Ptr SampleManager::findLoaded (const juce::File& file) const
+    {
+        // Same file, unchanged on disk since it was decoded -> share it.
+        const auto modTime = file.getLastModificationTime();
+        const auto size    = file.getSize();
+        for (auto* b : keepAlive)
+            if (b->file == file && b->fileModTime == modTime && b->fileSize == size)
+                return b;
+        return nullptr;
+    }
+
     void SampleManager::loadFile (int pad, const juce::File& file)
     {
         JUCE_ASSERT_MESSAGE_THREAD
+        hasRestoreSlices[(size_t) pad] = false;
+        startLoad (pad, file, nullptr);
+    }
+
+    void SampleManager::startLoad (int pad, const juce::File& file, const SliceTable* keepSlices)
+    {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
         const auto gen = ++generation[(size_t) pad];
+        followLeader[(size_t) pad] = -1;
 
-        PadInfo info;
+        // Already decoded (another pad has it): share instantly.
+        if (auto shared = findLoaded (file))
+        {
+            installBuffer (pad, shared, keepSlices);
+            hasRestoreSlices[(size_t) pad] = false;
+            return;
+        }
+
+        PadInfo info = getInfo (pad);
         info.status = Status::loading;
         info.name   = file.getFileNameWithoutExtension();
-        info.file   = file;
-        {
-            // Keep playing the old sample until the new one is ready.
-            const juce::ScopedLock sl (lock);
-            info.buffer = pads[(size_t) pad].buffer;
-        }
+        info.file   = file;       // keep playing the old sample until the new one is ready
         setInfo (pad, std::move (info));
+
+        // Another pad is decoding this very file right now: wait for it.
+        for (int q = 0; q < kNumPads; ++q)
+        {
+            if (q == pad) continue;
+            const auto other = getInfo (q);
+            if (other.status == Status::loading && other.file == file && followLeader[(size_t) q] < 0)
+            {
+                followLeader[(size_t) pad] = q;
+                followGen[(size_t) pad]    = gen;
+                return;
+            }
+        }
 
         juce::WeakReference<SampleManager> weak (this);
         auto* fm = &formats;
-
         loader.addJob ([weak, pad, gen, file, fm]
         {
             auto result = SampleLoader::loadFile (file, *fm);
@@ -123,37 +171,218 @@ namespace tb
         JUCE_ASSERT_MESSAGE_THREAD
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
         ++generation[(size_t) pad];          // cancels an in-flight load
+        ++sliceGeneration[(size_t) pad];
+        followLeader[(size_t) pad] = -1;
+        hasRestoreSlices[(size_t) pad] = false;
         setInfo (pad, {});
-        queueForEngine (pad, nullptr);
+        sendSample (pad, nullptr);
+        sendSlices (pad, {});
+    }
+
+    void SampleManager::installBuffer (int pad, const SampleBuffer::Ptr& buffer, const SliceTable* keepSlices)
+    {
+        PadInfo info = getInfo (pad);
+        info.status   = Status::ready;
+        info.buffer   = buffer;
+        info.name     = buffer->name;
+        info.file     = buffer->file;
+        info.slicing  = false;
+        info.slices   = {};
+        info.detected = {};
+
+        if (keepSlices != nullptr)
+        {
+            // Restored / spread markers are only valid if they fit this audio.
+            auto t = *keepSlices;
+            t.normalise (buffer->getNumSamples());
+            info.slices = t;
+            info.detected = t;
+            if (hasRestoreSlices[(size_t) pad] && ! restoreDetected[(size_t) pad].isEmpty())
+            {
+                auto d = restoreDetected[(size_t) pad];
+                d.normalise (buffer->getNumSamples());
+                info.detected = d;
+            }
+        }
+
+        if (! keepAlive.contains (buffer.get())) keepAlive.add (buffer.get());
+        sendSample (pad, buffer);
+        sendSlices (pad, info.slices);
+        setInfo (pad, std::move (info));
     }
 
     void SampleManager::install (int pad, uint32_t gen, const SampleLoader::Result& result)
     {
         if (gen != generation[(size_t) pad]) return;   // superseded by a newer request
 
-        PadInfo info = getInfo (pad);
-        info.status = toStatus (result.status);
+        const SliceTable* keep = hasRestoreSlices[(size_t) pad] ? &restoreSlices[(size_t) pad] : nullptr;
 
         if (result.status == SampleLoader::Status::ok)
         {
-            info.buffer = result.buffer;
-            info.name   = result.buffer->name;
-            keepAlive.add (result.buffer.get());
-            queueForEngine (pad, result.buffer);
+            installBuffer (pad, result.buffer, keep);
         }
         else
         {
+            PadInfo info = getInfo (pad);
+            info.status = toStatus (result.status);
             info.buffer = nullptr;       // pad goes silent and shows the problem
-            queueForEngine (pad, nullptr);
+            if (keep != nullptr) info.slices = *keep;   // keep markers so re-saving doesn't lose them
+            sendSample (pad, nullptr);
+            sendSlices (pad, {});
+            setInfo (pad, std::move (info));
         }
+        hasRestoreSlices[(size_t) pad] = false;
 
-        setInfo (pad, std::move (info));
+        // Pads that were waiting on this decode get the same result.
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            if (followLeader[(size_t) p] != pad || followGen[(size_t) p] != generation[(size_t) p]) continue;
+            followLeader[(size_t) p] = -1;
+            install (p, generation[(size_t) p], result);
+        }
     }
 
     //==========================================================================
-    void SampleManager::queueForEngine (int pad, const SampleBuffer::Ptr& buffer)
+    void SampleManager::autoSlice (int pad)
     {
-        pending.push_back ({ pad, buffer });
+        const auto info = getInfo (pad);
+        if (info.buffer == nullptr || info.slicing) return;
+
+        const auto gen  = ++sliceGeneration[(size_t) pad];
+        const auto buf  = info.buffer;
+        const auto sens = info.sensitivity;
+        const auto max  = info.sliceCount;
+        modify (pad, [] (PadInfo& i) { i.slicing = true; }, false);
+
+        juce::WeakReference<SampleManager> weak (this);
+        loader.addJob ([weak, pad, gen, buf, sens, max]
+        {
+            const auto table = TransientDetector::detect (*buf, sens, max);
+            juce::MessageManager::callAsync ([weak, pad, gen, buf, table]
+            {
+                auto* self = weak.get();
+                if (self == nullptr) return;
+                const bool current = gen == self->sliceGeneration[(size_t) pad]
+                                  && self->getInfo (pad).buffer == buf;
+                self->modify (pad, [&] (PadInfo& i)
+                {
+                    i.slicing = false;
+                    if (current) { i.slices = table; i.detected = table; }
+                }, current);
+            });
+        });
+    }
+
+    void SampleManager::equalSlice (int pad)
+    {
+        const auto info = getInfo (pad);
+        if (info.buffer == nullptr) return;
+        const auto t = SliceTable::equal (info.buffer->getNumSamples(), info.sliceCount);
+        modify (pad, [&] (PadInfo& i) { i.slices = t; i.detected = t; }, true);
+    }
+
+    void SampleManager::resetSlices (int pad)
+    {
+        modify (pad, [] (PadInfo& i) { i.slices = i.detected; }, true);
+    }
+
+    void SampleManager::clearSlices (int pad)
+    {
+        modify (pad, [] (PadInfo& i) { i.slices = {}; i.detected = {}; }, true);
+    }
+
+    void SampleManager::setSlices (int pad, SliceTable t)
+    {
+        const auto info = getInfo (pad);
+        if (info.buffer == nullptr) return;
+        t.normalise (info.buffer->getNumSamples());
+        if (t == info.slices) return;
+        modify (pad, [&] (PadInfo& i) { i.slices = t; }, true);
+    }
+
+    bool SampleManager::addMarker (int pad, int position)
+    {
+        auto t = getInfo (pad).slices;
+        if (t.count >= SliceTable::kMax) return false;
+        if (t.count == 0) t.starts[(size_t) t.count++] = 0;       // first marker on an unsliced pad also marks the start
+        t.starts[(size_t) t.count++] = position;
+        setSlices (pad, t);
+        return true;
+    }
+
+    void SampleManager::moveMarker (int pad, int index, int position)
+    {
+        const auto info = getInfo (pad);
+        auto t = info.slices;
+        if (info.buffer == nullptr || ! juce::isPositiveAndBelow (index, t.count)) return;
+
+        // A marker can't cross its neighbours.
+        const int lo = index > 0 ? t.starts[(size_t) index - 1] + SliceTable::kMinGap : 0;
+        const int hi = index + 1 < t.count ? t.starts[(size_t) index + 1] - SliceTable::kMinGap
+                                           : info.buffer->getNumSamples() - SliceTable::kMinGap;
+        if (hi < lo) return;
+        t.starts[(size_t) index] = juce::jlimit (lo, hi, position);
+        setSlices (pad, t);
+    }
+
+    void SampleManager::deleteMarker (int pad, int index)
+    {
+        auto t = getInfo (pad).slices;
+        if (! juce::isPositiveAndBelow (index, t.count)) return;
+        for (int i = index; i + 1 < t.count; ++i) t.starts[(size_t) i] = t.starts[(size_t) i + 1];
+        --t.count;
+        modify (pad, [&] (PadInfo& i) { i.slices = t; }, true);
+    }
+
+    void SampleManager::setSensitivity (int pad, float s)
+    {
+        modify (pad, [s] (PadInfo& i) { i.sensitivity = juce::jlimit (0.0f, 1.0f, s); }, false);
+    }
+
+    void SampleManager::setSliceCount (int pad, int n)
+    {
+        modify (pad, [n] (PadInfo& i) { i.sliceCount = juce::jlimit (1, SliceTable::kMax, n); }, false);
+    }
+
+    int SampleManager::spreadToPads (int source)
+    {
+        const auto src = getInfo (source);
+        if (src.buffer == nullptr || src.slices.isEmpty()) return 0;
+
+        int filled = 0;
+        for (int i = 0; i < src.slices.count && source + i < kNumPads; ++i)
+        {
+            const int target = source + i;
+            if (target != source)
+            {
+                ++generation[(size_t) target];        // cancel anything loading there
+                followLeader[(size_t) target] = -1;
+                hasRestoreSlices[(size_t) target] = false;
+                installBuffer (target, src.buffer, &src.slices);
+                modify (target, [&] (PadInfo& p)
+                {
+                    p.detected = src.detected;
+                    p.sensitivity = src.sensitivity;
+                    p.sliceCount = src.sliceCount;
+                }, false);
+            }
+            ++filled;
+        }
+        return filled;
+    }
+
+    //==========================================================================
+    void SampleManager::sendSample (int pad, const SampleBuffer::Ptr& buffer)
+    {
+        Pending p; p.pad = pad; p.setSample = true; p.buffer = buffer;
+        pending.push_back (std::move (p));
+        flushPending();
+    }
+
+    void SampleManager::sendSlices (int pad, const SliceTable& t)
+    {
+        Pending p; p.pad = pad; p.setSlices = true; p.slices = t;
+        pending.push_back (std::move (p));
         flushPending();
     }
 
@@ -162,13 +391,19 @@ namespace tb
         size_t sent = 0;
         for (; sent < pending.size(); ++sent)
         {
-            auto* raw = pending[sent].buffer.get();
-            if (raw != nullptr) raw->incReferenceCount();          // reference handed to the engine
+            auto& item = pending[sent];
+            AudioEngine::PadCommand cmd;
+            cmd.pad       = item.pad;
+            cmd.setSample = item.setSample;
+            cmd.setSlices = item.setSlices;
+            cmd.slices    = item.slices;
+            cmd.buffer    = item.buffer.get();
+            if (cmd.buffer != nullptr) cmd.buffer->incReferenceCount();      // reference handed to the engine
 
-            if (! engine.postSample (pending[sent].pad, raw))
+            if (! engine.postCommand (cmd))
             {
-                if (raw != nullptr) raw->decReferenceCountWithoutDeleting();
-                break;                                              // queue full: retry on the timer
+                if (cmd.buffer != nullptr) cmd.buffer->decReferenceCountWithoutDeleting();
+                break;                                                       // queue full: retry on the timer
             }
         }
         pending.erase (pending.begin(), pending.begin() + (std::ptrdiff_t) sent);
@@ -198,6 +433,10 @@ namespace tb
             juce::ValueTree pad (kPadId);
             pad.setProperty (kIndexId, p, nullptr);
             pad.setProperty (kPathId, info.file.getFullPathName(), nullptr);
+            if (! info.slices.isEmpty())   pad.setProperty (kSlicesId,   info.slices.toString(), nullptr);
+            if (! info.detected.isEmpty()) pad.setProperty (kDetectedId, info.detected.toString(), nullptr);
+            pad.setProperty (kSensId,  info.sensitivity, nullptr);
+            pad.setProperty (kCountId, info.sliceCount, nullptr);
             tree.appendChild (pad, nullptr);
         }
         return tree;
@@ -215,25 +454,36 @@ namespace tb
             return;
         }
 
-        std::array<juce::String, kNumPads> paths;
+        std::array<juce::ValueTree, kNumPads> entries;
         for (const auto& pad : tree)
         {
             const int index = (int) pad.getProperty (kIndexId, -1);
             if (juce::isPositiveAndBelow (index, kNumPads))
-                paths[(size_t) index] = pad.getProperty (kPathId).toString();
+                entries[(size_t) index] = pad;
         }
 
         for (int p = 0; p < kNumPads; ++p)
         {
-            const auto& path = paths[(size_t) p];
+            const auto& e = entries[(size_t) p];
+            const auto path = e.isValid() ? e.getProperty (kPathId).toString() : juce::String();
             if (path.isEmpty() || ! juce::File::isAbsolutePath (path))
             {
                 if (getInfo (p).status != Status::empty) clearPad (p);
+                continue;
             }
-            else
+
+            // Slicer settings first, then the sample; markers re-apply when it arrives.
+            const auto detected = SliceTable::fromString (e.getProperty (kDetectedId).toString());
+            modify (p, [&] (PadInfo& i)
             {
-                loadFile (p, juce::File (path));
-            }
+                i.sensitivity = (float) e.getProperty (kSensId, 0.5f);
+                i.sliceCount  = juce::jlimit (1, SliceTable::kMax, (int) e.getProperty (kCountId, 16));
+            }, false);
+
+            restoreSlices[(size_t) p]    = SliceTable::fromString (e.getProperty (kSlicesId).toString());
+            restoreDetected[(size_t) p]  = detected;
+            hasRestoreSlices[(size_t) p] = true;
+            startLoad (p, juce::File (path), &restoreSlices[(size_t) p]);
         }
     }
 }

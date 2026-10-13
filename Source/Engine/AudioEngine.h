@@ -8,6 +8,7 @@
 #include "Core/TransportSync.h"
 #include "Engine/PadVoice.h"
 #include "Engine/SampleBuffer.h"
+#include "Engine/SliceTable.h"
 #include "Engine/MasterSection.h"
 
 namespace tb
@@ -26,7 +27,7 @@ namespace tb
         Real-time rules enforced here:
           * every buffer is allocated in prepare(), never in process()
           * no locks; UI communication only through EngineBridge
-          * samples arrive through a lock-free queue (postSample) already
+          * samples and slice tables arrive through a lock-free queue (postCommand) already
             decoded; the engine never touches files
           * MIDI is rendered sample-accurately by splitting the block at
             each event's sample position
@@ -57,6 +58,7 @@ namespace tb
             float velSens = 1.0f;
             bool  mute    = false;
             bool  solo    = false;
+            int   slice   = 1;       // 1..16, SLICE mode
         };
 
         struct BlockParams
@@ -77,11 +79,20 @@ namespace tb
 
         // ---- Sample hand-off (message thread -> audio thread) ----------------
         /**
-            Queues `buffer` (may be nullptr = clear) as pad's new sample. The
-            caller must have added one reference that the engine adopts.
-            Returns false if the queue is full (caller retries later).
+            One change to a pad's content. `buffer` (may be nullptr = clear)
+            must carry one extra reference that the engine adopts.
         */
-        bool postSample (int pad, SampleBuffer* bufferWithExtraRef) noexcept;
+        struct PadCommand
+        {
+            int pad = 0;
+            bool setSample = false;
+            SampleBuffer* buffer = nullptr;
+            bool setSlices = false;
+            SliceTable slices;
+        };
+
+        /** Returns false if the queue is full (caller retries later). */
+        bool postCommand (const PadCommand&) noexcept;
 
         /** Message thread, audio stopped: drop anything still queued. */
         void drainSampleQueue() noexcept;
@@ -105,14 +116,14 @@ namespace tb
         void releasePad (int pad) noexcept;
         void handleMidi (const juce::MidiMessage& m) noexcept;
         void renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
-        void applySampleCommands() noexcept;
+        void applyPadCommands() noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
 
         EngineBridge& bridge;
         MasterSection master;
 
-        struct SampleCommand { int pad = 0; SampleBuffer* buffer = nullptr; };
-        SpscQueue<SampleCommand, 64> sampleCommands;
+        SpscQueue<PadCommand, 128> padCommands;
+        std::array<SliceTable, kNumPads> padSlices {};
 
         std::array<SampleBuffer::Ptr, kNumPads> padSample;           // audio-thread owned
         std::array<PadVoice::Settings, kNumPads> padSettings {};     // this block's settings

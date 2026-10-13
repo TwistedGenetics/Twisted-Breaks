@@ -29,6 +29,7 @@ namespace tb::params
     inline constexpr int kV1 = 1;   // parameters introduced in 0.1.x
     inline constexpr int kV2 = 2;   // parameters introduced in 0.2.x
     inline constexpr int kV3 = 3;   // parameters introduced in 0.3.x
+    inline constexpr int kV4 = 4;   // parameters introduced in 0.4.x
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
@@ -54,6 +55,9 @@ namespace tb::params
     inline constexpr const char* padVelSens = "velsens";   // 0..1
     inline constexpr const char* padMute    = "mute";      // bool
     inline constexpr const char* padSolo    = "solo";      // bool
+
+    // ---- Per pad (Phase 4) ---------------------------------------------------
+    inline constexpr const char* padSlice   = "slice";     // int 1..16: slice played in SLICE mode
 
     enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2 };
     inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
