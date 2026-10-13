@@ -758,7 +758,9 @@ namespace
         for (int k = 0; k < 400; ++k)
             maxErr = juce::jmax (maxErr, std::abs (out.getSample (0, len + k) - src.getSample (0, k)),
                                          std::abs (out.getSample (0, 2 * len + 100 + k) - src.getSample (0, 100 + k)));
-        check (maxErr < 1.0e-5f, "region starting at the top of the file loops sample-exactly");
+        check (maxErr < 1.0e-5f, "region starting at the top of the file loops sample-exactly (err " + juce::String (maxErr, 8)
+                                    + ", out[len]=" + juce::String (out.getSample (0, len), 6) + " src[0]=" + juce::String (src.getSample (0, 0), 6)
+                                    + ", out[len-1]=" + juce::String (out.getSample (0, len - 1), 6) + " src[len-1]=" + juce::String (src.getSample (0, len - 1), 6) + ")");
 
         out = renderHeld (r, 36, 6, 3);
         check (isSilent (peakOf (out, 4 * kBlock)), "note-off stops the loop (with a short fade)");
@@ -878,7 +880,8 @@ namespace
         midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
         runBlock (r.p, r.host, buf, midi);
         check (isSilent (buf.getMagnitude (0, 200, kBlock - 200)) && buf.getMagnitude (1, 0, kBlock) > 0.05f,
-               "pads in the same choke group cut each other (within 3 ms)");
+               "pads in the same choke group cut each other (within 3 ms) (L " + juce::String (buf.getMagnitude (0, 200, kBlock - 200), 10)
+                 + " R " + juce::String (buf.getMagnitude (1, 0, kBlock), 4) + ")");
         check (maxStepIn (buf, 0, 0, 200) < 0.05f, "...with a click-free fade");
         r.settle();
 
@@ -896,7 +899,8 @@ namespace
         midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
         midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
         runBlock (r.p, r.host, buf, midi);
-        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "MUTE silences the pad");
+        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "MUTE silences the pad (L "
+                 + juce::String (buf.getMagnitude (0, 0, kBlock), 10) + " R " + juce::String (buf.getMagnitude (1, 0, kBlock), 4) + ")");
         setPadParam (r.p, 0, tb::params::padMute, 0.0f);
         r.settle();
 
@@ -904,7 +908,8 @@ namespace
         midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
         midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
         runBlock (r.p, r.host, buf, midi);
-        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "SOLO on pad 2 silences pad 1");
+        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "SOLO on pad 2 silences pad 1 (L "
+                 + juce::String (buf.getMagnitude (0, 0, kBlock), 10) + " R " + juce::String (buf.getMagnitude (1, 0, kBlock), 4) + ")");
         setPadParam (r.p, 1, tb::params::padSolo, 0.0f);
         r.settle();
 
