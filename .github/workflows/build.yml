@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write   # lets the build publish a GitHub Release
+
 jobs:
   macos:
     name: macOS universal (VST3 + AU)
@@ -71,6 +74,23 @@ jobs:
         with:
           name: TwistedBreaks-macOS
           path: TwistedBreaks-macOS.zip
+
+      # Every green build of main becomes a downloadable Release
+      # (repo front page -> Releases), so there's no digging in Actions.
+      - name: Publish release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^project(TwistedBreaks VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          TAG="v${VERSION}-build.${{ github.run_number }}"
+          gh release create "$TAG" TwistedBreaks-macOS.zip \
+            --target "${{ github.sha }}" \
+            --title "Twisted Breaks ${VERSION} (build ${{ github.run_number }})" \
+            --latest \
+            --notes "$(git log -1 --pretty=%B)
+
+          Install: unzip, then follow INSTALL.txt (copy the .vst3 and .component into your plug-in folders, clear quarantine, rescan in Ableton)."
 
   linux-tests:
     name: Linux (VST3 build + tests)
