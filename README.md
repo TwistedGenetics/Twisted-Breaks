@@ -9,34 +9,51 @@ in the header, English labels everywhere else): oxidised
 enamel, rust, bakelite label plates, amber annunciator pads, a green-phosphor
 CRT and a red emergency-stop panic button.
 
-![Phase 1 console](docs/screenshots/phase1.png)
+![Twisted Breaks console](docs/screenshots/phase2.png)
+
+## Install (no building needed)
+
+Every green build publishes a release. Open **Releases** on the right of the
+repo page, download **TwistedBreaks-macOS.zip** from the newest one, and
+follow the `INSTALL.txt` inside: copy the `.vst3` and `.component` into your
+plug-in folders, clear macOS quarantine, rescan in Ableton.
 
 ## Status
 
 | Phase | What | State |
 |---|---|---|
-| 1 | Plugin shell, MIDI, host transport, master section, skin | **done** — 40/40 automated checks |
-| 2 | One fully working sample pad | next |
-| 3–8 | 16 pads, slicing, groups, FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 1 | Plugin shell, MIDI, host transport, master section, skin | **done** |
+| 2 | Sample playback: load, waveform editor, pitch, gain, pan, start/end, reverse | **done** — 90/90 automated checks |
+| 3 | Per-pad modes (one-shot / loop / host-sync), choke groups, mute / solo | next |
+| 4–8 | Slicing, groups, FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
-In Phase 1 each pad plays a built-in **calibration voice** (row 1 sub kicks,
-row 2 snares, row 3 hats, row 4 ticks) so the whole signal path can be tested
-in Ableton before sample loading exists. Sections that aren't built yet are
-visibly marked offline on the panel (dark lamps + taped-on tags).
+Sections that aren't built yet are visibly marked offline on the panel
+(dark lamps and taped-on tags).
 
 ### What works now
-* 16 pads, triggered by mouse (click higher = harder) or MIDI notes **36–51**
-  (C1–D#2, i.e. an Ableton Drum Rack layout)
-* Sample-accurate MIDI timing, retrigger crossfades, click-free voice stops
+* **Load samples** (WAV / AIFF, also FLAC) onto any of the 16 pads: drag a
+  file onto a pad, onto the screen, or press **LOAD**. Decoding happens in the
+  background, so loading never glitches audio. **CLEAR** empties a pad.
+* Pads show the sample name, length and channels; a missing file shows
+  **MISSING** in red and keeps its path.
+* **Waveform editor** on the CRT for the selected pad: drag the **S** / **E**
+  markers to set start and end, wheel or pinch to zoom, drag to scroll,
+  double-click to zoom out, with a live playback cursor. Non-destructive.
+* Per-pad **GAIN, PAN, PITCH** (+/-12 semitones), **START, END, REVERSE**. All
+  96 are Ableton-automatable (`pad01_gain` ... `pad16_reverse`).
+* Sample-exact playback with Hermite interpolation, velocity sensitivity,
+  automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
+  48 kHz set), click-free starts, ends, retriggers and panic.
+* Triggered by mouse (click higher = harder) or MIDI notes **36–51**
+  (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step
-  playhead** read from Ableton
-* Master **level** (automatable), zero-latency **limiter** (-0.3 dBFS ceiling),
-  moving-needle **peak meter** with limit/clip lamps, output **oscilloscope**
-* **PANIC** (red STOP button) — button, automatable `Panic` parameter, or MIDI CC 120
-* State (parameters + MIDI note map) saved in the Live Set
-* Resizable window (75 %–150 %)
+  playhead** from Ableton.
+* Master **level**, zero-latency **limiter**, needle **peak meter**, **PANIC**
+  (red STOP button, automatable `Panic` parameter, or MIDI CC 120).
+* Saved in the Live Set: all parameters, sample paths and the MIDI note map.
+* Resizable window (75 %-150 %).
 
-## Build on macOS
+## Build it yourself (optional)
 
 One-time setup:
 

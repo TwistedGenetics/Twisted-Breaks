@@ -73,6 +73,7 @@ namespace tb
         // ---- audio -> UI -----------------------------------------------------
         std::array<std::atomic<float>, kNumPads>    padActivity {};  // 0..1 envelope for lamps
         std::array<std::atomic<uint32_t>, kNumPads> padTriggerCount {};
+        std::array<std::atomic<float>, kNumPads>    padPlayhead {};  // 0..1 of sample, < 0 = idle
 
         std::atomic<int>      lastMidiNote     { -1 };
         std::atomic<int>      lastMidiVelocity { 0 };

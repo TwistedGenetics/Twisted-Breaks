@@ -17,9 +17,11 @@ namespace tb::ui
           * mouse down  -> trigger (velocity from click height: top = hard)
           * mouse up    -> release (used by gate/loop modes from Phase 2)
           * any click also selects the pad for the editor sections
+          * drop a WAV / AIFF on the pad to load it
     */
     class PadComponent final : public juce::Component,
-                                 public juce::SettableTooltipClient
+                                 public juce::SettableTooltipClient,
+                                 public juce::FileDragAndDropTarget
     {
     public:
         explicit PadComponent (int padIndex);
@@ -28,11 +30,17 @@ namespace tb::ui
         std::function<void (int pad, float velocity)> onPress;
         std::function<void (int pad)>                 onRelease;
         std::function<void (int pad)>                 onSelect;
+        std::function<void (int pad, const juce::File&)> onFileDropped;
 
         void setActivity (float level);          // 0..1 from the audio engine
         void setSelected (bool shouldBeSelected);
         void setLabels (const juce::String& upper, const juce::String& name,
-                        int midiNote, char group);
+                        int midiNote, char group, bool warning, bool hasSample);
+
+        bool isInterestedInFileDrag (const juce::StringArray&) override;
+        void fileDragEnter (const juce::StringArray&, int, int) override;
+        void fileDragExit (const juce::StringArray&) override;
+        void filesDropped (const juce::StringArray&, int, int) override;
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -47,6 +55,9 @@ namespace tb::ui
         float activity  = 0.0f;
         bool  selected  = false;
         bool  pressed   = false;
+        bool  warning   = false;   // missing / unreadable sample
+        bool  hasSample = false;
+        bool  fileHover = false;
 
         juce::String upperLabel, nameLabel;
         int  note  = 36;

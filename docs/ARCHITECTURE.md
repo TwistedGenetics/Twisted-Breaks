@@ -100,11 +100,16 @@ group buses, all 16 effects, master section, meter/scope publishing.
 snapshot capture, user edits to slices/patterns (published as new immutable
 objects).
 
-**Background thread (Phase 2):** `SampleLoader` — file reading, format
-decoding, sample-rate conversion, peak (waveform overview) generation and
-transient analysis. Results are handed to the audio thread as a fully built
-`SampleBuffer` through an atomic pointer swap; the audio thread hands the old
-buffer back through a queue so it is destroyed on the message thread.
+**Background thread (Phase 2, implemented):** `SampleLoader` — file reading,
+format decoding and waveform-overview generation (transient analysis joins it
+in Phase 4). `SampleManager` hands the finished, immutable `SampleBuffer` to
+the audio thread through a lock-free queue. Every buffer is also held in a
+message-thread keep-alive list, so reference counts can rise and fall on the
+audio thread but never reach zero there; the list frees a buffer only when
+nothing else holds it. A test counts heap allocations and frees made inside
+`processBlock` across the whole suite: zero. Audio stays at the file's own
+sample rate and voices compensate in their playback increment, so loading
+never resamples.
 
 Allocation happens only in `prepareToPlay` (voices, scratch buffers, FX delay
 lines and beat-repeat/reverse capture buffers sized for the longest synced
@@ -265,7 +270,7 @@ Ableton stores in the `.als` file:
 | Phase | Scope | Exit test |
 |---|---|---|
 | **1 ✅** | Compiling VST3/AU, stereo out, MIDI in, host transport, master section, skin | 40/40 automated checks, pluginval strictness 7 passes (incl. editor + fuzz), CI builds universal binaries |
-| 2 | `SampleBuffer`, background `SampleLoader`, `PadVoice`, one fully working pad: load WAV/AIFF (drag & drop), waveform on the CRT, MIDI trigger, pitch, gain, start/end, reverse | Load an Amen, trigger from Live, all controls audible, state survives reload |
+| **2 ✅** | `SampleBuffer`, background `SampleLoader`, `SampleManager`, `PadVoice`; load WAV/AIFF (drag & drop / LOAD), waveform editor on the CRT, MIDI trigger, pitch, gain, pan, start/end, reverse on every pad | 90/90 automated checks incl. sample-exact output and zero allocations in `processBlock`; pluginval strictness 7 |
 | 3 | 16 pads, per-pad params, mute/solo, choke groups, loop mode + host-sync ratios | Choke click-free, loop stays in time over 64 bars |
 | 4 | `TransientDetector`, `SliceEngine`, slice editing UI, equal/transient slicing | Amen slices on every hit at default sensitivity |
 | 5 | Four `GroupBus`es, mixer view, routing | Group mute/solo/pan correct |

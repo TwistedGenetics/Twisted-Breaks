@@ -21,6 +21,19 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     masterLimiterParam = apvts.getRawParameterValue (tb::params::masterLimiter);
     masterPanicParam   = apvts.getRawParameterValue (tb::params::masterPanic);
     jassert (masterGainParam && masterLimiterParam && masterPanicParam);
+
+    for (int pad = 0; pad < tb::kNumPads; ++pad)
+    {
+        auto& pp = padParams[(size_t) pad];
+        using namespace tb::params;
+        pp.gain    = apvts.getRawParameterValue (padId (pad, padGain));
+        pp.pan     = apvts.getRawParameterValue (padId (pad, padPan));
+        pp.pitch   = apvts.getRawParameterValue (padId (pad, padPitch));
+        pp.start   = apvts.getRawParameterValue (padId (pad, padStart));
+        pp.end     = apvts.getRawParameterValue (padId (pad, padEnd));
+        pp.reverse = apvts.getRawParameterValue (padId (pad, padReverse));
+        jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse);
+    }
 }
 
 //==============================================================================
@@ -51,6 +64,19 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     p.limiterEnabled = masterLimiterParam->load (std::memory_order_relaxed) > 0.5f;
     p.panicParam     = masterPanicParam->load (std::memory_order_relaxed) > 0.5f;
 
+    constexpr auto relaxed = std::memory_order_relaxed;
+    for (size_t pad = 0; pad < (size_t) tb::kNumPads; ++pad)
+    {
+        const auto& src = padParams[pad];
+        auto& dst = p.pads[pad];
+        dst.gainDb  = src.gain->load (relaxed);
+        dst.pan     = src.pan->load (relaxed);
+        dst.pitch   = src.pitch->load (relaxed);
+        dst.start   = src.start->load (relaxed);
+        dst.end     = src.end->load (relaxed);
+        dst.reverse = src.reverse->load (relaxed) > 0.5f;
+    }
+
     engine.process (buffer, midi, ts, p);
 
     midi.clear();   // instrument: nothing passes through
@@ -76,7 +102,12 @@ juce::AudioProcessorEditor* TwistedBreaksProcessor::createEditor()
       ...
       <META stateVersion="1"/>
       <MIDI_MAP> <PAD index="0" note="36"/> ... </MIDI_MAP>
-      (Phase 2+: PADS / SAMPLES, Phase 7: PATTERNS, Phase 8: SNAPSHOTS)
+      <PADS> <PAD index="0" path="/Users/.../amen.wav"/> ... </PADS>
+      (Phase 4: slices, Phase 7: PATTERNS, Phase 8: SNAPSHOTS)
+
+    Per-pad gain / pan / pitch / start / end / reverse are parameters, so
+    they're already in the APVTS part. A missing sample file never stops
+    a set from opening: the pad shows MISSING and keeps its path.
     </TWISTED_BREAKS>
 
     stateVersion lets future builds migrate old sets instead of failing.
@@ -87,6 +118,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     state.removeChild (state.getChildWithName (kMetaId), nullptr);
     state.removeChild (state.getChildWithName (kMidiMapId), nullptr);
+    state.removeChild (state.getChildWithName (tb::SampleManager::padsId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -102,6 +134,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
         midiMap.appendChild (pad, nullptr);
     }
     state.appendChild (midiMap, nullptr);
+    state.appendChild (samples.toValueTree(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -123,6 +156,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
             engine.setPadNote ((int) pad.getProperty (kIndexId, -1),
                                (int) pad.getProperty (kNoteId, -1));
 
+    samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     apvts.replaceState (state);
 }
 

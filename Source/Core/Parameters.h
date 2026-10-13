@@ -20,22 +20,40 @@
 
     Only the parameters a performer would genuinely automate are exposed.
     Things like slice marker positions, sample paths and sequencer steps are
-    *state*, not parameters, and live in the ValueTree (see StateManager in
-    later phases) so Ableton's automation list stays usable.
+    *state*, not parameters, and live in the ValueTree so Ableton's
+    automation list stays usable.
 */
 namespace tb::params
 {
     // ---- Version hints -----------------------------------------------------
     inline constexpr int kV1 = 1;   // parameters introduced in 0.1.x
+    inline constexpr int kV2 = 2;   // parameters introduced in 0.2.x
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
     inline constexpr const char* masterLimiter = "master_limiter";  // bool
     inline constexpr const char* masterPanic   = "master_panic";    // bool, rising edge = panic
 
-    // Range constants shared by the processor and the UI.
     inline constexpr float masterGainMinDb = -60.0f;
     inline constexpr float masterGainMaxDb =   6.0f;
+
+    // ---- Per pad (Phase 2) ---------------------------------------------------
+    inline constexpr const char* padGain    = "gain";      // dB
+    inline constexpr const char* padPan     = "pan";       // -1 .. +1
+    inline constexpr const char* padPitch   = "pitch";     // semitones
+    inline constexpr const char* padStart   = "start";     // 0 .. 1 of the sample
+    inline constexpr const char* padEnd     = "end";       // 0 .. 1 of the sample
+    inline constexpr const char* padReverse = "reverse";   // bool
+
+    inline constexpr float padGainMinDb  = -48.0f;
+    inline constexpr float padGainMaxDb  =  12.0f;
+    inline constexpr float padPitchRange =  12.0f;     // ± semitones
+
+    /** "pad01_gain" etc. pad is 0-based. */
+    inline juce::String padId (int pad, const char* name)
+    {
+        return "pad" + juce::String (pad + 1).paddedLeft ('0', 2) + "_" + name;
+    }
 
     /** Builds the full parameter layout for the AudioProcessorValueTreeState. */
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

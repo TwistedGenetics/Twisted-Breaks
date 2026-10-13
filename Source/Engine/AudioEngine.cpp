@@ -1,25 +1,35 @@
 #include "Engine/AudioEngine.h"
+#include "Core/Parameters.h"
 #include <cmath>
 
 namespace tb
 {
+    namespace
+    {
+        constexpr int kMinRegion = 32;   // source samples
+    }
+
     AudioEngine::AudioEngine (EngineBridge& b) : bridge (b)
     {
         for (int p = 0; p < kNumPads; ++p)
+        {
             padNote[(size_t) p].store (kDefaultFirstNote + p);
+            bridge.padPlayhead[(size_t) p].store (-1.0f);
+        }
+    }
+
+    AudioEngine::~AudioEngine()
+    {
+        drainSampleQueue();
     }
 
     void AudioEngine::prepare (double newSampleRate, int maxBlockSize)
     {
         sampleRate = newSampleRate;
 
-        for (int p = 0; p < kNumPads; ++p)
-            for (auto& v : voices[(size_t) p])
-            {
+        for (auto& padVoices : voices)
+            for (auto& v : padVoices)
                 v.prepare (sampleRate);
-                v.configureForPad (p);
-                v.kill();
-            }
 
         master.prepare (sampleRate, maxBlockSize);
 
@@ -38,8 +48,46 @@ namespace tb
 
         currentVoice.fill (0);
         padPeak.fill (0.0f);
+        padFlash.fill (false);
         master.reset();
         scopeCounter = 0;
+    }
+
+    //==========================================================================
+    bool AudioEngine::postSample (int pad, SampleBuffer* buffer) noexcept
+    {
+        return sampleCommands.push ({ pad, buffer });
+    }
+
+    void AudioEngine::drainSampleQueue() noexcept
+    {
+        // Not the audio thread (audio has stopped), so freeing here is fine.
+        SampleCommand cmd;
+        while (sampleCommands.pop (cmd))
+            if (cmd.buffer != nullptr && cmd.buffer->decReferenceCountWithoutDeleting())
+                delete cmd.buffer;
+    }
+
+    void AudioEngine::applySampleCommands() noexcept
+    {
+        SampleCommand cmd;
+        while (sampleCommands.pop (cmd))
+        {
+            if (! juce::isPositiveAndBelow (cmd.pad, kNumPads))
+            {
+                if (cmd.buffer != nullptr) cmd.buffer->decReferenceCountWithoutDeleting();
+                continue;
+            }
+
+            // Old voices fade out still holding the old buffer (kept alive by
+            // their own reference); new triggers use the new one.
+            for (auto& v : voices[(size_t) cmd.pad])
+                v.release();
+
+            padSample[(size_t) cmd.pad] = cmd.buffer;            // +1
+            if (cmd.buffer != nullptr)
+                cmd.buffer->decReferenceCountWithoutDeleting();   // adopt the sender's +1
+        }
     }
 
     //==========================================================================
@@ -63,26 +111,72 @@ namespace tb
     }
 
     //==========================================================================
+    void AudioEngine::computeVoiceSettings (const BlockParams& bp) noexcept
+    {
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const auto& pp = bp.pads[(size_t) p];
+            auto& s = padSettings[(size_t) p];
+            const auto* buf = padSample[(size_t) p].get();
+            if (buf == nullptr) continue;
+
+            const int len = buf->getNumSamples();
+
+            // Region from START / END. If automation crosses them, use the span between.
+            float a = juce::jlimit (0.0f, 1.0f, pp.start);
+            float b = juce::jlimit (0.0f, 1.0f, pp.end);
+            if (b < a) std::swap (a, b);
+            int s0 = (int) std::lround ((double) a * len);
+            int s1 = (int) std::lround ((double) b * len);
+            if (s1 - s0 < kMinRegion)
+            {
+                s1 = juce::jmin (len, s0 + kMinRegion);
+                s0 = juce::jmax (0, s1 - kMinRegion);
+            }
+            s.regionStart = s0;
+            s.regionEnd   = s1;
+            s.reverse     = pp.reverse;
+
+            // Pitch: file-rate compensation x semitone ratio.
+            s.increment = (buf->sourceSampleRate / sampleRate) * std::pow (2.0, (double) pp.pitch / 12.0);
+
+            // Gain + balance-style pan (centre = unity on both sides).
+            const float g = pp.gainDb <= params::padGainMinDb + 0.01f ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
+            const float pan = juce::jlimit (-1.0f, 1.0f, pp.pan);
+            s.gainLeft  = g * (pan > 0.0f ? 1.0f - pan : 1.0f);
+            s.gainRight = g * (pan < 0.0f ? 1.0f + pan : 1.0f);
+
+            for (auto& v : voices[(size_t) p])
+                if (v.isActive() && v.getBuffer() == buf)
+                    v.update (s);
+        }
+    }
+
     void AudioEngine::triggerPad (int pad, float velocity) noexcept
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
-        // Retrigger: the sounding voice fades out over 5 ms while the next
-        // slot starts fresh — no click, no cut-off tail artefact.
+        bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
+        padFlash[(size_t) pad] = true;     // lamp blinks even on an empty pad
+
+        const auto& sample = padSample[(size_t) pad];
+        if (sample == nullptr) return;
+
+        // Retrigger: the sounding voice fades out over 5 ms while the other
+        // slot starts fresh. If that slot is still fading from an earlier hit
+        // it is cut — at most a few ms of an already-fading tail.
         auto& slots = voices[(size_t) pad];
         auto& cur   = currentVoice[(size_t) pad];
 
         slots[(size_t) cur].release();
         cur = (cur + 1) % kVoicesPerPad;
-        slots[(size_t) cur].start (velocity);
-
-        bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
+        slots[(size_t) cur].kill();
+        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], velocity);
     }
 
     void AudioEngine::releasePad (int) noexcept
     {
-        // One-shot calibration voices ignore note-off. From Phase 2 the
-        // pad's playback mode decides (gate/loop modes release here).
+        // One-shot pads ignore note-off. Phase 3's loop / gate modes release here.
     }
 
     void AudioEngine::panic() noexcept
@@ -136,9 +230,14 @@ namespace tb
         const int numSamples = buffer.getNumSamples();
         buffer.clear();
         padPeak.fill (0.0f);
+        padFlash.fill (false);
 
-        // ---- Panic: UI button, automatable parameter rising edge, or the
-        //      host stopping isn't a panic (tails ring out naturally).
+        // ---- New / cleared samples from the loader, then this block's pad settings.
+        applySampleCommands();
+        computeVoiceSettings (params);
+
+        // ---- Panic: UI button or automatable parameter rising edge.
+        //      (Transport stop is not a panic: tails ring out naturally.)
         const bool panicEdge = params.panicParam && ! lastPanicParam;
         lastPanicParam = params.panicParam;
         if (bridge.panicRequested.exchange (false) || panicEdge)
@@ -163,7 +262,7 @@ namespace tb
         }
         renderVoices (buffer, pos, numSamples - pos);
 
-        juce::ignoreUnused (transport);   // consumed by the sequencer from Phase 7
+        juce::ignoreUnused (transport);   // consumed by loop sync (Phase 3) and the sequencer (Phase 7)
 
         // ---- Master
         master.setGainDb (params.masterGainDb);
@@ -186,9 +285,16 @@ namespace tb
         for (int p = 0; p < kNumPads; ++p)
         {
             auto& a = bridge.padActivity[(size_t) p];
-            const float decayed = a.load (std::memory_order_relaxed) * decay;
-            a.store (juce::jmax (decayed, juce::jmin (1.0f, padPeak[(size_t) p] * 2.5f)),
-                     std::memory_order_relaxed);
+            float level = juce::jmin (1.0f, padPeak[(size_t) p] * 2.5f);
+            if (padFlash[(size_t) p]) level = juce::jmax (level, 0.45f);
+            a.store (juce::jmax (a.load (std::memory_order_relaxed) * decay, level), std::memory_order_relaxed);
+
+            // Playhead of the most recently started voice, for the waveform cursor.
+            const auto& v = voices[(size_t) p][(size_t) currentVoice[(size_t) p]];
+            float head = -1.0f;
+            if (v.isActive() && ! v.isReleasing() && v.getBuffer() != nullptr)
+                head = (float) (v.getPosition() / (double) v.getBuffer()->getNumSamples());
+            bridge.padPlayhead[(size_t) p].store (head, std::memory_order_relaxed);
         }
 
         // ---- Scope tap: decimated mono sum of the master output

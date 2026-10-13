@@ -10,10 +10,12 @@ set(TB_PLUGIN_SOURCES
     # Core: parameters, transport, lock-free bridges between threads
     ${TB_SRC}/Core/Parameters.cpp
     ${TB_SRC}/Core/TransportSync.cpp
+    ${TB_SRC}/Core/SampleManager.cpp
 
     # Engine: everything that runs inside processBlock()
     ${TB_SRC}/Engine/AudioEngine.cpp
-    ${TB_SRC}/Engine/CalibrationVoice.cpp
+    ${TB_SRC}/Engine/PadVoice.cpp
+    ${TB_SRC}/Engine/SampleLoader.cpp
     ${TB_SRC}/Engine/MasterSection.cpp
 
     # UI: the reactor control-room skin
@@ -23,7 +25,9 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/PadGrid.cpp
     ${TB_SRC}/UI/TransportDisplay.cpp
     ${TB_SRC}/UI/NeedleMeter.cpp
-    ${TB_SRC}/UI/ScopeDisplay.cpp
+    ${TB_SRC}/UI/WaveformEditor.cpp
+    ${TB_SRC}/UI/PadEditorPanel.cpp
+    ${TB_SRC}/UI/Controls.cpp
     ${TB_SRC}/UI/FXGrid.cpp
     ${TB_SRC}/UI/MainView.cpp
 )

@@ -4,7 +4,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "UI/PadGrid.h"
 #include "UI/TransportDisplay.h"
-#include "UI/ScopeDisplay.h"
+#include "UI/WaveformEditor.h"
+#include "UI/PadEditorPanel.h"
+#include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
 
@@ -13,14 +15,6 @@ class TwistedBreaksProcessor;
 namespace tb::ui
 {
     //==========================================================================
-    /** Bat-handle toggle switch on an ON / OFF plate. */
-    class ToggleSwitch final : public juce::Button
-    {
-    public:
-        ToggleSwitch();
-        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-    };
-
     /** Emergency stop: red mushroom button in a hazard-striped collar. */
     class PanicButton final : public juce::Button
     {
@@ -90,13 +84,14 @@ namespace tb::ui
 
         PadGrid          padGrid;
         TransportDisplay transportDisplay;
-        ScopeDisplay     scope;
+        WaveformEditor   waveform;
+        PadEditorPanel   padEditor;
         NeedleMeter      meter;
         FXGrid           fxGrid;
         StatusStrip      status;
 
         juce::Slider  masterKnob;
-        ToggleSwitch  limiterSwitch;
+        ToggleSwitch  limiterSwitch { "LIMITER", "Master limiter (zero latency, -0.3 dBFS ceiling)" };
         PanicButton   panicButton;
         juce::OwnedArray<SelectorKey> navKeys;
 

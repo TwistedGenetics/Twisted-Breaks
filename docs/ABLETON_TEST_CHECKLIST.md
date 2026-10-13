@@ -12,6 +12,19 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Loads as an **instrument** (MIDI track, not audio effect); window opens at 1200×800, resizes 75–150 % keeping aspect
 - [ ] ✅ Open and close the editor 20× quickly — no crash, no leak warnings
 
+## Samples (Phase 2)
+- [ ] ✅ Drag a WAV from Finder / Live's browser onto a pad: name + length appear, it plays from MIDI and mouse
+- [ ] ✅ Drag a file onto the green screen: loads into the selected pad
+- [ ] ✅ LOAD opens a file chooser; CLEAR empties the pad
+- [ ] ✅ AIFF and 24-bit / 44.1 kHz files load and play at the right pitch in a 48 kHz set
+- [ ] ✅ Loading a long break while the transport plays causes no dropout
+- [ ] ✅ Waveform shows on the screen for the selected pad; playback cursor moves while it plays
+- [ ] ✅ Drag S / E markers: the START / END knobs follow, and vice versa; region outside is dimmed
+- [ ] ✅ Wheel / pinch zooms around the pointer, drag scrolls, double-click zooms out
+- [ ] ✅ PITCH +/-12 st, GAIN, PAN, REVERSE all audible; knobs automatable (pad01_pitch etc.)
+- [ ] ✅ Move END while a long sample plays: playback stops at the new end without a click
+- [ ] ✅ Retrigger fast (1/32 at 174 BPM): no clicks
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)
@@ -46,11 +59,13 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Duplicate the track: the copy has identical settings
 - [ ] ✅ Undo/redo a Master Level change works
 - [ ] ✅ Save the set with the VST3 and with the AU version on separate tracks; both reload
-- [ ] Phase 2+: samples, slices, patterns, FX states and snapshots all restored
+- [ ] ✅ Load samples on several pads, change pitch / start / end / reverse, save, reopen: all restored
+- [ ] Phase 4+: slices, patterns, FX states and snapshots all restored
 
-## Sample recovery (Phase 2/8)
-- [ ] Rename a sample on disk, reopen the set: pad shows **MISSING** (red), set opens, other pads fine
-- [ ] Relocate the file from the pad: plays again; saving fixes the path
+## Sample recovery
+- [ ] ✅ Rename a sample on disk, reopen the set: pad shows **MISSING** (red), set opens, other pads fine
+- [ ] ✅ Load the file again onto that pad (drag or LOAD): plays again; saving fixes the path
+- [ ] Phase 8: relocate missing files in one go
 - [ ] Collect All and Save: set reopens on another machine with samples
 
 ## Snapshot switching (Phase 8)

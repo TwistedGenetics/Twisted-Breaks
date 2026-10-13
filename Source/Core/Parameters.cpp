@@ -1,7 +1,78 @@
 #include "Core/Parameters.h"
+#include "Core/EngineBridge.h"
 
 namespace tb::params
 {
+    namespace
+    {
+        using namespace juce;
+
+        String dbText (float v, float minDb)
+        {
+            return v <= minDb + 0.01f ? String ("-inf dB") : String (v, 1) + " dB";
+        }
+
+        String panText (float v)
+        {
+            const int amount = roundToInt (std::abs (v) * 100.0f);
+            if (amount == 0) return "C";
+            return (v < 0.0f ? "L" : "R") + String (amount);
+        }
+
+        float panFromText (const String& t)
+        {
+            const auto s = t.trim().toUpperCase();
+            if (s.startsWith ("L")) return -s.substring (1).getFloatValue() / 100.0f;
+            if (s.startsWith ("R")) return  s.substring (1).getFloatValue() / 100.0f;
+            return 0.0f;
+        }
+
+        void addPadParameters (AudioProcessorValueTreeState::ParameterLayout& layout, int pad)
+        {
+            const String prefix = "Pad " + String (pad + 1).paddedLeft ('0', 2) + " ";
+
+            NormalisableRange<float> gainRange (padGainMinDb, padGainMaxDb, 0.01f);
+            gainRange.setSkewForCentre (-9.0f);
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padGain), kV2 }, prefix + "Gain", gainRange, 0.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int) { return dbText (v, padGainMinDb); })
+                    .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue(); })));
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padPan), kV2 }, prefix + "Pan",
+                NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int) { return panText (v); })
+                    .withValueFromStringFunction (panFromText)));
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padPitch), kV2 }, prefix + "Pitch",
+                NormalisableRange<float> (-padPitchRange, padPitchRange, 0.01f), 0.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int)
+                    {
+                        return (v >= 0.0f ? "+" : "") + String (v, 2) + " st";
+                    })
+                    .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue(); })));
+
+            auto percentAttrs = AudioParameterFloatAttributes()
+                .withStringFromValueFunction ([] (float v, int) { return String (v * 100.0f, 1) + " %"; })
+                .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue() / 100.0f; });
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padStart), kV2 }, prefix + "Start",
+                NormalisableRange<float> (0.0f, 1.0f, 0.0f), 0.0f, percentAttrs));
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padEnd), kV2 }, prefix + "End",
+                NormalisableRange<float> (0.0f, 1.0f, 0.0f), 1.0f, percentAttrs));
+
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padReverse), kV2 }, prefix + "Reverse", false));
+        }
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     {
         using namespace juce;
@@ -29,6 +100,9 @@ namespace tb::params
         // automation in Ableton. Any off->on transition stops everything.
         layout.add (std::make_unique<AudioParameterBool> (
             ParameterID { masterPanic, kV1 }, "Panic", false));
+
+        for (int p = 0; p < kNumPads; ++p)
+            addPadParameters (layout, p);
 
         return layout;
     }

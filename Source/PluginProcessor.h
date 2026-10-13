@@ -5,6 +5,7 @@
 #include "Core/Parameters.h"
 #include "Core/TransportSync.h"
 #include "Engine/AudioEngine.h"
+#include "Core/SampleManager.h"
 
 /*
     TwistedBreaksProcessor
@@ -13,6 +14,7 @@
       * owns the parameter tree (APVTS), the TransportSync and the AudioEngine
       * processBlock() reads the host playhead, snapshots parameters and hands
         everything to AudioEngine::process()
+      * owns the SampleManager (sample loading + hand-off to the engine)
       * get/setStateInformation() serialise parameters + non-parameter state
         (from Phase 8, StateManager takes over the non-parameter part)
 */
@@ -54,6 +56,7 @@ public:
     juce::AudioProcessorValueTreeState& getParameters() noexcept { return apvts; }
     tb::EngineBridge& getBridge() noexcept { return bridge; }
     tb::AudioEngine&  getEngine() noexcept { return engine; }
+    tb::SampleManager& getSamples() noexcept { return samples; }
 
     /** UI pad press: queued lock-free to the audio thread. */
     void triggerPadFromUi (int pad, float velocity, bool noteOn);
@@ -66,11 +69,23 @@ private:
     juce::AudioProcessorValueTreeState  apvts;
     tb::TransportSync                   transport;
     tb::AudioEngine                     engine { bridge };
+    tb::SampleManager                   samples { engine };   // after engine: destroyed first
 
     // Cached raw parameter pointers: atomic loads only in processBlock().
     std::atomic<float>* masterGainParam    = nullptr;
     std::atomic<float>* masterLimiterParam = nullptr;
     std::atomic<float>* masterPanicParam   = nullptr;
+
+    struct PadParamPointers
+    {
+        std::atomic<float>* gain = nullptr;
+        std::atomic<float>* pan = nullptr;
+        std::atomic<float>* pitch = nullptr;
+        std::atomic<float>* start = nullptr;
+        std::atomic<float>* end = nullptr;
+        std::atomic<float>* reverse = nullptr;
+    };
+    std::array<PadParamPointers, tb::kNumPads> padParams {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TwistedBreaksProcessor)
 };

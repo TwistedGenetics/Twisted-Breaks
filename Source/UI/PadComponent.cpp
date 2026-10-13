@@ -1,6 +1,7 @@
 #include "UI/PadComponent.h"
 #include "UI/PanelPainter.h"
 #include "UI/Palette.h"
+#include "Core/SampleManager.h"
 
 namespace tb::ui
 {
@@ -10,7 +11,7 @@ namespace tb::ui
     PadComponent::PadComponent (int padIndex) : index (padIndex)
     {
         setRepaintsOnMouseActivity (false);
-        setTooltip ("Pad " + String (index + 1) + " - click to fire (higher on the pad = harder hit)");
+        setTooltip ("Pad " + String (index + 1) + " - click to fire (higher = harder). Drop a WAV / AIFF here to load it.");
     }
 
     void PadComponent::setActivity (float level)
@@ -28,10 +29,35 @@ namespace tb::ui
         if (s != selected) { selected = s; repaint(); }
     }
 
-    void PadComponent::setLabels (const String& upper, const String& name, int midiNote, char grp)
+    void PadComponent::setLabels (const String& upper, const String& name, int midiNote, char grp,
+                                  bool isWarning, bool sampleLoaded)
     {
         upperLabel = upper; nameLabel = name; note = midiNote; group = grp;
+        warning = isWarning; hasSample = sampleLoaded;
         repaint();
+    }
+
+    bool PadComponent::isInterestedInFileDrag (const StringArray& files)
+    {
+        for (auto& f : files)
+            if (SampleManager::isSupportedFile (File (f))) return true;
+        return false;
+    }
+
+    void PadComponent::fileDragEnter (const StringArray&, int, int) { fileHover = true;  repaint(); }
+    void PadComponent::fileDragExit  (const StringArray&)           { fileHover = false; repaint(); }
+
+    void PadComponent::filesDropped (const StringArray& files, int, int)
+    {
+        fileHover = false;
+        repaint();
+        for (auto& f : files)
+            if (SampleManager::isSupportedFile (File (f)))
+            {
+                if (onSelect)      onSelect (index);
+                if (onFileDropped) onFileDropped (index, File (f));
+                return;
+            }
     }
 
     Rectangle<float> PadComponent::glassArea() const
@@ -141,14 +167,17 @@ namespace tb::ui
         auto t = glass.reduced (8.0f, 5.0f);
 
         g.setColour (ink);
-        g.setFont (industrialFont (t.getHeight() * 0.36f));
-        g.drawText (String (index + 1).paddedLeft ('0', 2), t.removeFromTop (t.getHeight() * 0.42f),
+        g.setFont (industrialFont (22.0f));
+        g.drawText (String (index + 1).paddedLeft ('0', 2), t.removeFromTop (22.0f),
                     Justification::centredLeft, false);
 
+        g.setColour (warning ? (lit > 0.25f ? Colour (0xff7a0c02) : c::red.withAlpha (0.9f)) : ink);
         g.setFont (industrialFont (11.0f, false));
-        g.drawText (upperLabel, t.removeFromTop (13.0f), Justification::centredLeft, true);
+        g.drawText (upperLabel, t.removeFromTop (12.0f), Justification::centredLeft, true);
+        g.setColour (ink.withMultipliedAlpha (hasSample || lit > 0.25f ? 1.6f : 1.0f));
         g.setFont (industrialFont (15.0f));
-        g.drawText (nameLabel, t.removeFromTop (17.0f), Justification::centredLeft, true);
+        g.drawText (nameLabel, t.removeFromTop (16.0f), Justification::centredLeft, true);
+        g.setColour (ink);
 
         auto footer = t.removeFromBottom (14.0f);
         g.setFont (monoFont (11.0f));
@@ -165,7 +194,14 @@ namespace tb::ui
         paint::lamp (g, { (float) getWidth() - 18.0f, 18.0f }, 4.2f,
                      c::green, c::greenDim, selected ? 1.0f : 0.0f);
 
-        // 5. Pressed: the whole tile sinks a little.
+        // 5. A file is being dragged over this pad: amber outline.
+        if (fileHover)
+        {
+            g.setColour (c::amber);
+            g.drawRoundedRectangle (glass.expanded (2.0f), 3.0f, 3.0f);
+        }
+
+        // 6. Pressed: the whole tile sinks a little.
         if (pressed)
         {
             g.setColour (Colours::black.withAlpha (0.18f));

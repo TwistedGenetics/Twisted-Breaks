@@ -38,6 +38,7 @@ namespace tb::ui
         TwistedBreaksProcessor& processor;
         std::array<std::unique_ptr<PadComponent>, kNumPads> pads;
         std::array<int, kNumPads> shownNotes {};
+        std::array<uint32_t, kNumPads> shownVersions {};
         int selectedPad = 0;
     };
 }

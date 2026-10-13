@@ -1,4 +1,5 @@
 #include "UI/MainView.h"
+#include "UI/Controls.h"
 #include "UI/PanelPainter.h"
 #include "UI/Palette.h"
 #include "PluginProcessor.h"
@@ -18,9 +19,9 @@ namespace tb::ui
         const Rectangle<int> navRail     {  16,  80, 1168,  42 };
 
         const Rectangle<int> padPanel    {  16, 132,  580, 652 };
-        const Rectangle<int> pads        {  36, 178,  540, 468 };
-        const Rectangle<int> groupRow    {  36, 660,  540,  46 };
-        const Rectangle<int> statusStrip {  36, 718,  540,  52 };
+        const Rectangle<int> pads        {  36, 172,  540, 418 };
+        const Rectangle<int> padEditor   {  36, 606,  540, 128 };
+        const Rectangle<int> statusStrip {  36, 740,  540,  38 };
 
         const Rectangle<int> transPanel  { 612, 132,  572, 150 };
         const Rectangle<int> transport   { 626, 166,  544, 108 };
@@ -35,50 +36,6 @@ namespace tb::ui
         const Rectangle<int> masterKnob  { 910, 694,   76,  72 };
         const Rectangle<int> limiter     { 1006, 698,  58,  80 };
         const Rectangle<int> panic       { 1084, 692,  88,  88 };
-    }
-
-    //==========================================================================
-    //  ToggleSwitch
-    //==========================================================================
-    ToggleSwitch::ToggleSwitch() : Button ("Limiter")
-    {
-        setClickingTogglesState (true);
-        setTooltip ("Master limiter (zero latency, -0.3 dBFS ceiling)");
-    }
-
-    void ToggleSwitch::paintButton (Graphics& g, bool, bool)
-    {
-        const auto b   = getLocalBounds().toFloat();
-        const bool on  = getToggleState();
-        auto plateR    = b.withSizeKeepingCentre (b.getWidth() - 6.0f, b.getHeight() - 22.0f).withY (b.getY() + 2.0f);
-
-        paint::plate (g, plateR, c::plateBlack, 3.0f);
-        g.setColour (c::plateText);
-        g.setFont (industrialFont (11.0f));
-        g.drawText (String ("ON"),  plateR.removeFromTop (14.0f), Justification::centred, false);
-        g.drawText (String ("OFF"), plateR.removeFromBottom (14.0f), Justification::centred, false);
-
-        // Nut and bat handle.
-        const auto ctr = plateR.getCentre();
-        auto nut = Rectangle<float> (18.0f, 18.0f).withCentre (ctr);
-        ColourGradient nutG (c::bareMetal.brighter (0.4f), nut.getX(), nut.getY(),
-                             c::bareMetal.darker (0.7f), nut.getRight(), nut.getBottom(), false);
-        g.setGradientFill (nutG);
-        g.fillEllipse (nut);
-
-        const float dir = on ? -1.0f : 1.0f;
-        const auto tip  = ctr.translated (0.0f, dir * 16.0f);
-        g.setColour (Colours::black.withAlpha (0.5f));
-        g.drawLine ({ ctr.translated (2.0f, 2.0f), tip.translated (2.0f, 2.0f) }, 6.0f);
-        ColourGradient bat (Colours::white.withAlpha (0.9f), ctr.x - 3.0f, ctr.y,
-                            c::bareMetal.darker (0.5f), ctr.x + 3.0f, ctr.y, false);
-        g.setGradientFill (bat);
-        g.drawLine ({ ctr, tip }, 5.5f);
-        g.fillEllipse (Rectangle<float> (8.0f, 8.0f).withCentre (tip));
-
-        g.setColour (c::bakelite.withAlpha (0.85f));
-        g.setFont (industrialFont (11.5f));
-        g.drawText (String ("LIMITER"), b.withTop (b.getBottom() - 16.0f), Justification::centred, false);
     }
 
     //==========================================================================
@@ -199,7 +156,7 @@ namespace tb::ui
     {
         auto b = getLocalBounds().toFloat();
         paint::recess (g, b, 4.0f);
-        b.reduce (12.0f, 6.0f);
+        b.reduce (12.0f, 2.0f);
 
         // MIDI activity lamp.
         paint::lamp (g, { b.getX() + 12.0f, b.getCentreY() }, 9.0f, c::green, c::greenDim, midiLamp);
@@ -230,7 +187,8 @@ namespace tb::ui
         : processor (p),
           padGrid (p),
           transportDisplay (p.getBridge().transport),
-          scope (p.getBridge()),
+          waveform (p),
+          padEditor (p),
           meter (p.getBridge()),
           status (p)
     {
@@ -238,7 +196,8 @@ namespace tb::ui
 
         addAndMakeVisible (padGrid);
         addAndMakeVisible (transportDisplay);
-        addAndMakeVisible (scope);
+        addAndMakeVisible (waveform);
+        addAndMakeVisible (padEditor);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -267,7 +226,12 @@ namespace tb::ui
         for (const auto& n : nav)
             addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, n.phase)));
 
-        padGrid.onSelectionChanged = [this] (int) { status.refresh (padGrid.getSelectedPad()); };
+        padGrid.onSelectionChanged = [this] (int pad)
+        {
+            waveform.setPad (pad);
+            padEditor.setPad (pad);
+            status.refresh (pad);
+        };
 
         // Size last: resized() lays out the children created above.
         setSize (kWidth, kHeight);
@@ -284,7 +248,8 @@ namespace tb::ui
         padGrid.setBounds (layout::pads);
         status.setBounds (layout::statusStrip);
         transportDisplay.setBounds (layout::transport);
-        scope.setBounds (layout::scope);
+        waveform.setBounds (layout::scope);
+        padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
         masterKnob.setBounds (layout::masterKnob);
@@ -303,7 +268,8 @@ namespace tb::ui
     {
         padGrid.refresh();
         transportDisplay.refresh();
-        scope.refresh();
+        waveform.refresh();
+        padEditor.refresh();
         meter.refresh();
         status.refresh (padGrid.getSelectedPad());
         panicButton.tick();
@@ -450,25 +416,11 @@ namespace tb::ui
         caption (layout::fxPanel,     "PERFORMANCE FX", 190.0f);
         caption (layout::masterPanel, "MASTER",         120.0f);
 
-        // 7. Group selector A-D (future: Phase 5) — dead keys + tag.
-        {
-            const auto row = layout::groupRow.toFloat();
-            paint::stencilText (g, "GROUP", row.withWidth (120.0f), 15.0f,
-                                Justification::centredLeft, c::bakelite, rnd);
-            auto keys = row.withTrimmedLeft (130.0f).withWidth (250.0f);
-            const char* letters[] = { "A", "B", "C", "D" };
-            for (int i = 0; i < 4; ++i)
-            {
-                auto k = keys.removeFromLeft (62.5f).reduced (4.0f, 2.0f);
-                paint::plate (g, k, Colour (0xff1c1d1a), 3.0f);
-                paint::lamp (g, { k.getX() + 13.0f, k.getCentreY() }, 5.5f, c::amber, c::amberDim, 0.0f);
-                g.setColour (c::plateText.withAlpha (0.35f));
-                g.setFont (industrialFont (22.0f));
-                g.drawText (letters[i], k.withTrimmedLeft (22.0f), Justification::centred, false);
-            }
-            paint::paperTag (g, { row.getRight() - 150.0f, row.getY() + 2.0f, 148.0f, 42.0f }, 0.05f,
-                             { "PHASE 5", "GROUP BUSES OFFLINE" }, rnd);
-        }
+        // 7. Engraved seam between the pad matrix and the selected-pad controls.
+        g.setColour (Colours::black.withAlpha (0.5f));
+        g.drawHorizontalLine (layout::padEditor.getY() - 9, 30.0f, 582.0f);
+        g.setColour (Colours::white.withAlpha (0.06f));
+        g.drawHorizontalLine (layout::padEditor.getY() - 8, 30.0f, 582.0f);
 
         // 8. Master section legends.
         g.setColour (c::bakelite.withAlpha (0.85f));
