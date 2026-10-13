@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath>
 
 namespace
 {
@@ -91,6 +92,24 @@ void TwistedBreaksProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     setLatencySamples (0);
 }
 
+namespace
+{
+    /** Rounds away float noise smaller than `resolution`. */
+    float cleanValue (float v, float resolution) noexcept
+    {
+        return std::round (v / resolution) * resolution;
+    }
+
+    /** Pan: exact centre and exact hard left / right. */
+    float cleanPan (float v) noexcept
+    {
+        if (std::abs (v) < 1.0e-4f)        return 0.0f;
+        if (v >  1.0f - 1.0e-4f)           return 1.0f;
+        if (v < -1.0f + 1.0e-4f)           return -1.0f;
+        return v;
+    }
+}
+
 void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -108,9 +127,14 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     {
         const auto& src = padParams[pad];
         auto& dst = p.pads[pad];
-        dst.gainDb  = src.gain->load (relaxed);
-        dst.pan     = src.pan->load (relaxed);
-        dst.pitch   = src.pitch->load (relaxed);
+        // Parameter hygiene: snapping a value to its step (e.g. 0.01) can
+        // leave float rounding noise, and it differs between CPUs (Apple
+        // Silicon fuses the multiply-add). Clean it so "pitch 0" is exactly
+        // unity speed (loops stay sample-exact) and "pan hard right" is
+        // exactly silent on the left.
+        dst.gainDb  = cleanValue (src.gain->load (relaxed), 1.0e-3f);
+        dst.pan     = cleanPan (src.pan->load (relaxed));
+        dst.pitch   = cleanValue (src.pitch->load (relaxed), 1.0e-4f);
         dst.start   = src.start->load (relaxed);
         dst.end     = src.end->load (relaxed);
         dst.reverse = src.reverse->load (relaxed) > 0.5f;
