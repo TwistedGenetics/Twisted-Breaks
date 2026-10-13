@@ -28,7 +28,14 @@ jobs:
         run: cmake --build build --config Release -j 4
 
       - name: Run tests
-        run: ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests
+        run: |
+          set +e
+          ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests > tests.log 2>&1
+          code=$?
+          cat tests.log
+          grep -F "[FAIL]" tests.log | while IFS= read -r line; do echo "::error title=Unit test::$line"; done
+          tail -1 tests.log | sed 's/^/::notice title=Unit tests::/'
+          exit $code
 
       - name: Render UI snapshot
         run: ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests --snapshot ui-snapshot.png
