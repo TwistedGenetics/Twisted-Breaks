@@ -166,9 +166,9 @@ namespace tb::ui
         auto txt = screenArea().reduced (18.0f, 12.0f);
         g.setColour (c::phosphor.withAlpha (0.8f));
         g.setFont (monoFont (12.0f));
-        g.drawText (cyr ("КАНАЛ 1 · ВЫХОД / MASTER OUT"), txt, Justification::topLeft, false);
+        g.drawText ("CH 1 - MASTER OUT", txt, Justification::topLeft, false);
         g.drawText ("16 ms/DIV", txt, Justification::topRight, false);
         g.setColour (c::phosphor.withAlpha (0.45f));
-        g.drawText (cyr ("РЕДАКТОР ВОЛНЫ — ФАЗА 2 / WAVEFORM EDITOR: PHASE 2"), txt, Justification::bottomLeft, false);
+        g.drawText ("WAVEFORM EDITOR: PHASE 2", txt, Justification::bottomLeft, false);
     }
 }

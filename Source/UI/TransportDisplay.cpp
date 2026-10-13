@@ -61,18 +61,18 @@ namespace tb::ui
         auto posArea  = top.removeFromLeft (w * 0.42f).reduced (4.0f, 0.0f);
         auto lampArea = top.reduced (6.0f, 0.0f);
 
-        window (bpmArea, String (bpm, 1), 4, cyr ("ТЕМП / BPM"));
+        window (bpmArea, String (bpm, 1), 4, "TEMPO / BPM");
 
         // Bar . beat . 16th, all 1-based like Ableton's own display.
         const double beatLen   = 4.0 / (double) jmax (1, den);
         const int    sixteenth = (int) std::floor (std::fmod (std::max (0.0, ppq), beatLen) / 0.25 + 1.0e-6) + 1;
         const String pos = String (bar + 1).paddedLeft ('0', 3) + "." + String (beat + 1) + "." + String (sixteenth);
-        window (posArea, pos, 5, cyr ("ТАКТ / BAR . BEAT . 16"));
+        window (posArea, pos, 5, "BAR . BEAT . 16TH");
 
         // ---- Lamps: RUN / HOST, and the time signature on a plate -------------
         g.setColour (c::bakelite.withAlpha (0.75f));
         g.setFont (industrialFont (12.0f));
-        g.drawText (cyr ("СОСТОЯНИЕ"), lampArea.removeFromTop (15.0f), Justification::centredLeft, false);
+        g.drawText ("STATUS", lampArea.removeFromTop (15.0f), Justification::centredLeft, false);
 
         auto lamps = lampArea.reduced (2.0f, 4.0f);
         auto runCell  = lamps.removeFromLeft (lamps.getWidth() / 3.0f);
@@ -86,8 +86,8 @@ namespace tb::ui
             g.setFont (industrialFont (12.0f));
             g.drawText (cap, cell.withTrimmedTop (32.0f), Justification::centredTop, false);
         };
-        lampWithCaption (runCell,  c::green, c::greenDim, playing ? 1.0f : 0.0f, cyr ("ХОД"));
-        lampWithCaption (hostCell, c::amber, c::amberDim, host ? 0.8f : 0.0f, cyr ("СИНХР"));
+        lampWithCaption (runCell,  c::green, c::greenDim, playing ? 1.0f : 0.0f, "RUN");
+        lampWithCaption (hostCell, c::amber, c::amberDim, host ? 0.8f : 0.0f, "SYNC");
 
         paint::recess (g, sigCell.withSizeKeepingCentre (sigCell.getWidth() - 6.0f, 34.0f).translated (0, -2), 3.0f);
         g.setColour (c::vfd);
@@ -96,7 +96,7 @@ namespace tb::ui
                     Justification::centred, false);
         g.setColour (c::bakelite.withAlpha (0.8f));
         g.setFont (industrialFont (12.0f));
-        g.drawText (cyr ("МЕТР"), sigCell.withTrimmedTop (32.0f), Justification::centredTop, false);
+        g.drawText ("METER", sigCell.withTrimmedTop (32.0f), Justification::centredTop, false);
 
         // ---- 32-step playhead lamp row ------------------------------------------
         area.removeFromTop (6.0f);

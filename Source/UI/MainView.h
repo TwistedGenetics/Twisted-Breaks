@@ -13,7 +13,7 @@ class TwistedBreaksProcessor;
 namespace tb::ui
 {
     //==========================================================================
-    /** Bat-handle toggle switch on a ВКЛ / ОТКЛ (on/off) plate. */
+    /** Bat-handle toggle switch on an ON / OFF plate. */
     class ToggleSwitch final : public juce::Button
     {
     public:
@@ -21,7 +21,7 @@ namespace tb::ui
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     };
 
-    /** The AZ-5 style emergency button: red mushroom in a hazard collar. */
+    /** Emergency stop: red mushroom button in a hazard-striped collar. */
     class PanicButton final : public juce::Button
     {
     public:
@@ -37,11 +37,11 @@ namespace tb::ui
     class SelectorKey final : public juce::Button
     {
     public:
-        SelectorKey (const juce::String& latin, const juce::String& cyrillic, int phase);
+        SelectorKey (const juce::String& name, int phase);
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
         const int phase;
     private:
-        juce::String latinName, cyrName;
+        juce::String latinName;
     };
 
     /** MIDI input lamp, last note received and the selected pad's mapping. */

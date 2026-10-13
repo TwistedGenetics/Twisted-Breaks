@@ -155,8 +155,8 @@ namespace tb::ui
         const String noteText = note >= 0 ? MidiMessage::getMidiNoteName (note, true, true, 3) + " " + String (note)
                                           : String ("--");
         g.drawText (noteText, footer, Justification::centredLeft, false);
-        g.drawText (cyr ("ГР-") + String::charToString ((juce_wchar) group),
-                    footer, Justification::centredRight, false);   // ГР = группа (group)
+        g.drawText ("GRP " + String::charToString ((juce_wchar) group),
+                    footer, Justification::centredRight, false);
 
         // 3. Static overlay (bezel, grime, cracks).
         g.drawImage (overlay, getLocalBounds().toFloat());

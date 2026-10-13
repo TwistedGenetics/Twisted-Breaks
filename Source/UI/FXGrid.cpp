@@ -64,7 +64,7 @@ namespace tb::ui
         // The tag that says it all.
         paint::paperTag (g, area.withSizeKeepingCentre (area.getWidth() * 0.78f, 58.0f).translated (0.0f, -6.0f),
                          -0.06f,
-                         { cyr ("НЕ ПОДКЛЮЧЕНО"), "OFFLINE - PHASE 6" }, rnd);
+                         { "NOT CONNECTED", "OFFLINE - PHASE 6" }, rnd);
     }
 
     void FXGrid::paint (Graphics& g)

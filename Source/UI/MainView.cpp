@@ -55,8 +55,8 @@ namespace tb::ui
         paint::plate (g, plateR, c::plateBlack, 3.0f);
         g.setColour (c::plateText);
         g.setFont (industrialFont (11.0f));
-        g.drawText (cyr ("ВКЛ"),  plateR.removeFromTop (14.0f), Justification::centred, false);
-        g.drawText (cyr ("ОТКЛ"), plateR.removeFromBottom (14.0f), Justification::centred, false);
+        g.drawText (String ("ON"),  plateR.removeFromTop (14.0f), Justification::centred, false);
+        g.drawText (String ("OFF"), plateR.removeFromBottom (14.0f), Justification::centred, false);
 
         // Nut and bat handle.
         const auto ctr = plateR.getCentre();
@@ -78,7 +78,7 @@ namespace tb::ui
 
         g.setColour (c::bakelite.withAlpha (0.85f));
         g.setFont (industrialFont (11.5f));
-        g.drawText (cyr ("ОГРАНИЧ."), b.withTop (b.getBottom() - 16.0f), Justification::centred, false);
+        g.drawText (String ("LIMITER"), b.withTop (b.getBottom() - 16.0f), Justification::centred, false);
     }
 
     //==========================================================================
@@ -86,7 +86,7 @@ namespace tb::ui
     //==========================================================================
     PanicButton::PanicButton() : Button ("Panic")
     {
-        setTooltip ("AZ-5 / PANIC: stop every voice with a short fade (also MIDI CC 120)");
+        setTooltip ("PANIC: stop every voice with a short fade (also MIDI CC 120)");
     }
 
     void PanicButton::paintButton (Graphics& g, bool highlighted, bool down)
@@ -131,7 +131,7 @@ namespace tb::ui
 
         g.setColour (Colour (0xff2a0602).withAlpha (0.85f));
         g.setFont (industrialFont (capR * 0.62f));
-        g.drawText (cyr ("АЗ-5"), cap, Justification::centred, false);
+        g.drawText (String ("STOP"), cap, Justification::centred, false);
 
         g.setColour (c::bakelite.withAlpha (0.9f));
         g.setFont (industrialFont (11.5f));
@@ -141,8 +141,8 @@ namespace tb::ui
     //==========================================================================
     //  SelectorKey
     //==========================================================================
-    SelectorKey::SelectorKey (const String& latin, const String& cyrillic, int phaseNumber)
-        : Button (latin), phase (phaseNumber), latinName (latin), cyrName (cyrillic)
+    SelectorKey::SelectorKey (const String& latin, int phaseNumber)
+        : Button (latin), phase (phaseNumber), latinName (latin)
     {
         setEnabled (phase <= 1);
         setTooltip (phase <= 1 ? latin + " view"
@@ -163,7 +163,7 @@ namespace tb::ui
         g.setFont (industrialFont (15.0f));
         g.drawText (latinName, txt.removeFromTop (txt.getHeight() * 0.56f), Justification::centredLeft, false);
         g.setFont (industrialFont (11.0f, false));
-        g.drawText (active ? cyrName : cyrName + cyr ("  · ФАЗА ") + String (phase),
+        g.drawText (active ? String ("ONLINE") : "OFFLINE - PHASE " + String (phase),
                     txt, Justification::centredLeft, false);
     }
 
@@ -217,9 +217,9 @@ namespace tb::ui
 
         auto noteName = [] (int n) { return n < 0 ? String ("---") : MidiMessage::getMidiNoteName (n, true, true, 3) + " (" + String (n) + ")"; };
 
-        readout (b.removeFromLeft (b.getWidth() * 0.5f), cyr ("MIDI ВХОД / LAST NOTE IN"),
+        readout (b.removeFromLeft (b.getWidth() * 0.5f), "LAST MIDI NOTE IN",
                  lastNote < 0 ? String ("--- waiting ---") : noteName (lastNote) + "  v" + String (lastVel));
-        readout (b, cyr ("ВЫБРАН / SELECTED PAD"),
+        readout (b, "SELECTED PAD",
                  "PAD " + String (selPad + 1).paddedLeft ('0', 2) + "  <-  " + noteName (selNote));
     }
 
@@ -259,17 +259,13 @@ namespace tb::ui
         addAndMakeVisible (panicButton);
         panicButton.onClick = [this] { processor.requestPanic(); panicButton.flash(); };
 
-        struct NavDef { const char* latin; const char* cyrillic; int phase; };
+        struct NavDef { const char* latin; int phase; };
         const NavDef nav[] = {
-            { "PADS",      "ПАДЫ",       1 },
-            { "SLICER",    "НАРЕЗКА",    4 },
-            { "SEQUENCER", "СЕКВЕНСОР",  7 },
-            { "FX",        "ЭФФЕКТЫ",    6 },
-            { "MIXER",     "МИКШЕР",     5 },
-            { "SNAPSHOTS", "СНИМКИ",     8 },
+            { "PADS", 1 }, { "SLICER", 4 }, { "SEQUENCER", 7 },
+            { "FX",   6 }, { "MIXER",  5 }, { "SNAPSHOTS", 8 },
         };
         for (const auto& n : nav)
-            addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, cyr (n.cyrillic), n.phase)));
+            addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, n.phase)));
 
         padGrid.onSelectionChanged = [this] (int) { status.refresh (padGrid.getSelectedPad()); };
 
@@ -444,20 +440,20 @@ namespace tb::ui
                             Justification::centred, c::hazardYellow.withAlpha (0.55f), rnd);
 
         // 6. Section captions.
-        auto caption = [&] (Rectangle<int> panel, const String& ru, const String& en, float width)
+        auto caption = [&] (Rectangle<int> panel, const String& text, float width)
         {
             paint::labelPlate (g, { (float) panel.getX() + 22.0f, (float) panel.getY() + 9.0f, width, 22.0f },
-                               ru + "  ·  " + en, {}, paint::PlateStyle::bakelite, rnd);
+                               text, {}, paint::PlateStyle::bakelite, rnd);
         };
-        caption (layout::padPanel,    cyr ("МАТРИЦА"),  "PAD MATRIX",     260.0f);
-        caption (layout::transPanel,  cyr ("СИНХРОНИЗАЦИЯ"), "HOST TRANSPORT", 300.0f);
-        caption (layout::fxPanel,     cyr ("ЭФФЕКТЫ"),  "PERFORMANCE FX", 224.0f);
-        caption (layout::masterPanel, cyr ("ВЫХОД"),    "MASTER",         170.0f);
+        caption (layout::padPanel,    "PAD MATRIX",     170.0f);
+        caption (layout::transPanel,  "HOST TRANSPORT", 190.0f);
+        caption (layout::fxPanel,     "PERFORMANCE FX", 190.0f);
+        caption (layout::masterPanel, "MASTER",         120.0f);
 
         // 7. Group selector A-D (future: Phase 5) — dead keys + tag.
         {
             const auto row = layout::groupRow.toFloat();
-            paint::stencilText (g, cyr ("ГРУППА / GROUP"), row.withWidth (120.0f), 15.0f,
+            paint::stencilText (g, "GROUP", row.withWidth (120.0f), 15.0f,
                                 Justification::centredLeft, c::bakelite, rnd);
             auto keys = row.withTrimmedLeft (130.0f).withWidth (250.0f);
             const char* letters[] = { "A", "B", "C", "D" };
@@ -471,13 +467,13 @@ namespace tb::ui
                 g.drawText (letters[i], k.withTrimmedLeft (22.0f), Justification::centred, false);
             }
             paint::paperTag (g, { row.getRight() - 150.0f, row.getY() + 2.0f, 148.0f, 42.0f }, 0.05f,
-                             { cyr ("ФАЗА 5"), "GROUP BUSES OFFLINE" }, rnd);
+                             { "PHASE 5", "GROUP BUSES OFFLINE" }, rnd);
         }
 
         // 8. Master section legends.
         g.setColour (c::bakelite.withAlpha (0.85f));
         g.setFont (industrialFont (11.5f));
-        g.drawText (cyr ("УРОВЕНЬ / LEVEL"), layout::masterKnob.toFloat().withY ((float) layout::masterKnob.getBottom()).withHeight (14.0f).expanded (14.0f, 0.0f),
+        g.drawText ("LEVEL", layout::masterKnob.toFloat().withY ((float) layout::masterKnob.getBottom()).withHeight (14.0f).expanded (14.0f, 0.0f),
                     Justification::centred, false);
 
         // 9. Panel seams between cabinet sections.

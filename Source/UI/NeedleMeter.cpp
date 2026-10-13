@@ -131,10 +131,10 @@ namespace tb::ui
 
         g.setColour (c::engraving);
         g.setFont (industrialFont (13.0f));
-        g.drawText (cyr ("УРОВЕНЬ  дБ"), dial.withTrimmedTop (dial.getHeight() * 0.5f).withTrimmedBottom (4.0f),
+        g.drawText ("LEVEL  dB", dial.withTrimmedTop (dial.getHeight() * 0.5f).withTrimmedBottom (4.0f),
                     Justification::centredBottom, false);
         g.setFont (monoFont (8.0f));
-        g.drawText (cyr ("М4200  ГОСТ 8711"), dial.reduced (6.0f, 4.0f), Justification::bottomLeft, false);
+        g.drawText ("MODEL M4200", dial.reduced (6.0f, 4.0f), Justification::bottomLeft, false);
     }
 
     void NeedleMeter::paint (Graphics& g)
@@ -177,7 +177,7 @@ namespace tb::ui
             g.setFont (industrialFont (12.5f));
             g.drawText (cap, r.withTrimmedLeft (30.0f), Justification::centredLeft, false);
         };
-        lampRow (left,  c::amber, c::amberDim, limiting ? 1.0f : 0.0f,                    cyr ("ОГРАН / LIMIT"));
-        lampRow (lamps, c::red,   c::redDim,   overloadHold > 0.0f ? 1.0f : 0.0f, cyr ("ПЕРЕГРУЗ / CLIP"));
+        lampRow (left,  c::amber, c::amberDim, limiting ? 1.0f : 0.0f,                    "LIMIT");
+        lampRow (lamps, c::red,   c::redDim,   overloadHold > 0.0f ? 1.0f : 0.0f, "CLIP");
     }
 }

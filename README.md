@@ -4,9 +4,10 @@ A jungle / drum & bass performance sampler, break slicer, sequencer and
 multi-FX instrument for Ableton Live — built in C++ with JUCE 8 as a real
 **VST3** and **Audio Unit** plugin.
 
-Skinned as a forty-year-old Soviet power-plant control console: oxidised
+Skinned as a forty-year-old Soviet power-plant control console (Russian
+in the header, English labels everywhere else): oxidised
 enamel, rust, bakelite label plates, amber annunciator pads, a green-phosphor
-CRT and an AZ-5 panic button.
+CRT and a red emergency-stop panic button.
 
 ![Phase 1 console](docs/screenshots/phase1.png)
 
@@ -31,7 +32,7 @@ visibly marked offline on the panel (dark lamps + taped-on tags).
   playhead** read from Ableton
 * Master **level** (automatable), zero-latency **limiter** (-0.3 dBFS ceiling),
   moving-needle **peak meter** with limit/clip lamps, output **oscilloscope**
-* **AZ-5 / PANIC** — button, automatable `Panic` parameter, or MIDI CC 120
+* **PANIC** (red STOP button) — button, automatable `Panic` parameter, or MIDI CC 120
 * State (parameters + MIDI note map) saved in the Live Set
 * Resizable window (75 %–150 %)
 

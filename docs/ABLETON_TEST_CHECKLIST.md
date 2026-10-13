@@ -58,7 +58,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] No dropouts, clicks or CPU spike while switching every beat for 2 minutes
 
 ## Panic
-- [ ] ✅ AZ-5 button: all sound stops within ~5 ms, no click, button flashes
+- [ ] ✅ PANIC (red STOP) button: all sound stops within ~5 ms, no click, button flashes
 - [ ] ✅ MIDI CC 120 (All Sound Off) acts as panic
 - [ ] Phase 6/7: panic also kills stutter, beat repeat, delay/reverb tails and sequencer-triggered voices
 

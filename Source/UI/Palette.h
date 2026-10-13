@@ -9,7 +9,10 @@
     forty years. Oxidised blue-green enamel over steel, worn through to red
     primer and bare metal at the edges; rust blooms and drips under every
     rivet; yellowed bakelite label plates with engraved Cyrillic; amber
-    incandescent lamps; a green-phosphor CRT; an AZ-5 style emergency button.
+    incandescent lamps; a green-phosphor CRT; a red emergency-stop button.
+
+    Russian text appears only in the header strip (subtitle, warning
+    stencil, maker's plate); every other label is English.
 
     Everything stays high-contrast enough to read on a dark stage.
 */

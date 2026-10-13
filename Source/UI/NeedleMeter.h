@@ -11,8 +11,8 @@ namespace tb::ui
         Master peak meter as a moving-coil panel meter: yellowed paper scale
         in dBFS, black needle with mechanical-feeling ballistics, red zone
         from 0 dB, plus two lamps:
-            ОГРАН (limiting)  — the master limiter is reducing gain
-            ПЕРЕГРУЗ (overload) — a sample hit 0 dBFS (latched ~1.5 s)
+            LIMIT — the master limiter is reducing gain
+            CLIP  — a sample hit 0 dBFS (latched ~1.5 s)
     */
     class NeedleMeter final : public juce::Component
     {
