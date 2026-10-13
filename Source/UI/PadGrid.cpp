@@ -49,18 +49,34 @@ namespace tb::ui
         auto& engine  = processor.getEngine();
         auto& samples = processor.getSamples();
 
+        bool anySolo = false;
+        for (int i = 0; i < kNumPads; ++i)
+            anySolo = anySolo || processor.getParameters().getRawParameterValue (params::padId (i, params::padSolo))->load() > 0.5f;
+
         for (int i = 0; i < kNumPads; ++i)
         {
             auto& pad = *pads[(size_t) i];
             pad.setActivity (bridge.padActivity[(size_t) i].load (std::memory_order_relaxed));
 
+            auto raw = [&] (const char* name) { return processor.getParameters().getRawParameterValue (params::padId (i, name))->load(); };
+            const bool muted  = raw (params::padMute) > 0.5f;
+            const bool soloed = raw (params::padSolo) > 0.5f;
+            pad.setMuteSolo (muted, soloed, muted || (anySolo && ! soloed));
+
+            // Footer tag: playback mode and choke group, e.g. "LOOP C2".
+            const int mode  = juce::roundToInt (raw (params::padMode));
+            const int choke = juce::roundToInt (raw (params::padChoke));
+            const juce::String tag = juce::String (mode == params::modeLoop ? "LOOP" : (mode == params::modeSlice ? "SLICE" : "ONE"))
+                                   + (choke > 0 ? " C" + juce::String (choke) : juce::String());
+
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);
-            if (note == shownNotes[(size_t) i] && version == shownVersions[(size_t) i])
+            if (note == shownNotes[(size_t) i] && version == shownVersions[(size_t) i] && tag == shownTags[(size_t) i])
                 continue;
 
             shownNotes[(size_t) i]    = note;
             shownVersions[(size_t) i] = version;
+            shownTags[(size_t) i]     = tag;
 
             const auto info = samples.getInfo (i);
             using S = SampleManager::Status;
@@ -85,7 +101,7 @@ namespace tb::ui
                     break;
             }
 
-            pad.setLabels (upper, name.toUpperCase(), note, 'A', warn, info.buffer != nullptr);
+            pad.setLabels (upper, name.toUpperCase(), note, tag, warn, info.buffer != nullptr);
         }
     }
 }

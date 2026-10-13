@@ -25,6 +25,16 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Move END while a long sample plays: playback stops at the new end without a click
 - [ ] ✅ Retrigger fast (1/32 at 174 BPM): no clicks
 
+## Pad modes (Phase 3)
+- [ ] ✅ PLAY page: set a break pad to LOOP; holding the pad / MIDI note loops it, releasing stops it without a click
+- [ ] ✅ LOOP + SYNC with Live playing: the break stays locked to Live's metronome for 64 bars; start it mid-bar and it enters in time
+- [ ] ✅ Change Live's tempo while it loops: it follows; loop-brace wraps keep it on the grid
+- [ ] ✅ RATE 1/2 and 2x: half / double speed, still on the grid
+- [ ] ✅ Put open + closed hat pads in CHOKE 1: the closed hat cuts the open one cleanly
+- [ ] ✅ M / S keys mute / solo pads (tiles darken, red / green lamps)
+- [ ] ✅ VEL 0%: soft and hard hits are equally loud
+- [ ] ✅ NOTE: LEARN then hit a pad on your controller: that note now plays the selected pad; save / reopen keeps it
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)

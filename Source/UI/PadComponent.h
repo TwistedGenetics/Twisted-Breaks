@@ -35,7 +35,10 @@ namespace tb::ui
         void setActivity (float level);          // 0..1 from the audio engine
         void setSelected (bool shouldBeSelected);
         void setLabels (const juce::String& upper, const juce::String& name,
-                        int midiNote, char group, bool warning, bool hasSample);
+                        int midiNote, const juce::String& tag, bool warning, bool hasSample);
+
+        /** muted: pad's own mute. silenced: muted or another pad is soloed. */
+        void setMuteSolo (bool muted, bool soloed, bool silenced);
 
         bool isInterestedInFileDrag (const juce::StringArray&) override;
         void fileDragEnter (const juce::StringArray&, int, int) override;
@@ -61,7 +64,8 @@ namespace tb::ui
 
         juce::String upperLabel, nameLabel;
         int  note  = 36;
-        char group = 'A';
+        juce::String tag;            // e.g. "LOOP C2"
+        bool muted = false, soloed = false, silenced = false;
 
         juce::Image overlay;     // bezel, screws, grime, cracks — baked on resize
 

@@ -32,7 +32,15 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.start   = apvts.getRawParameterValue (padId (pad, padStart));
         pp.end     = apvts.getRawParameterValue (padId (pad, padEnd));
         pp.reverse = apvts.getRawParameterValue (padId (pad, padReverse));
-        jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse);
+        pp.mode    = apvts.getRawParameterValue (padId (pad, padMode));
+        pp.sync    = apvts.getRawParameterValue (padId (pad, padSync));
+        pp.rate    = apvts.getRawParameterValue (padId (pad, padRate));
+        pp.choke   = apvts.getRawParameterValue (padId (pad, padChoke));
+        pp.velSens = apvts.getRawParameterValue (padId (pad, padVelSens));
+        pp.mute    = apvts.getRawParameterValue (padId (pad, padMute));
+        pp.solo    = apvts.getRawParameterValue (padId (pad, padSolo));
+        jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
+                 && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo);
     }
 
     for (auto* param : AudioProcessor::getParameters())
@@ -106,6 +114,13 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         dst.start   = src.start->load (relaxed);
         dst.end     = src.end->load (relaxed);
         dst.reverse = src.reverse->load (relaxed) > 0.5f;
+        dst.mode    = juce::roundToInt (src.mode->load (relaxed));
+        dst.sync    = src.sync->load (relaxed) > 0.5f;
+        dst.rate    = juce::roundToInt (src.rate->load (relaxed));
+        dst.choke   = juce::roundToInt (src.choke->load (relaxed));
+        dst.velSens = src.velSens->load (relaxed);
+        dst.mute    = src.mute->load (relaxed) > 0.5f;
+        dst.solo    = src.solo->load (relaxed) > 0.5f;
     }
 
     engine.process (buffer, midi, ts, p);

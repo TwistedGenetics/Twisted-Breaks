@@ -39,6 +39,7 @@ namespace tb::ui
         std::array<std::unique_ptr<PadComponent>, kNumPads> pads;
         std::array<int, kNumPads> shownNotes {};
         std::array<uint32_t, kNumPads> shownVersions {};
+        std::array<juce::String, kNumPads> shownTags;
         int selectedPad = 0;
     };
 }

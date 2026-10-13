@@ -29,10 +29,19 @@ namespace tb::ui
         if (s != selected) { selected = s; repaint(); }
     }
 
-    void PadComponent::setLabels (const String& upper, const String& name, int midiNote, char grp,
+    void PadComponent::setMuteSolo (bool m, bool s, bool sil)
+    {
+        if (m != muted || s != soloed || sil != silenced)
+        {
+            muted = m; soloed = s; silenced = sil;
+            repaint();
+        }
+    }
+
+    void PadComponent::setLabels (const String& upper, const String& name, int midiNote, const String& newTag,
                                   bool isWarning, bool sampleLoaded)
     {
-        upperLabel = upper; nameLabel = name; note = midiNote; group = grp;
+        upperLabel = upper; nameLabel = name; note = midiNote; tag = newTag;
         warning = isWarning; hasSample = sampleLoaded;
         repaint();
     }
@@ -184,8 +193,7 @@ namespace tb::ui
         const String noteText = note >= 0 ? MidiMessage::getMidiNoteName (note, true, true, 3) + " " + String (note)
                                           : String ("--");
         g.drawText (noteText, footer, Justification::centredLeft, false);
-        g.drawText ("GRP " + String::charToString ((juce_wchar) group),
-                    footer, Justification::centredRight, false);
+        g.drawText (tag, footer, Justification::centredRight, false);
 
         // 3. Static overlay (bezel, grime, cracks).
         g.drawImage (overlay, getLocalBounds().toFloat());
@@ -194,14 +202,24 @@ namespace tb::ui
         paint::lamp (g, { (float) getWidth() - 18.0f, 18.0f }, 4.2f,
                      c::green, c::greenDim, selected ? 1.0f : 0.0f);
 
-        // 5. A file is being dragged over this pad: amber outline.
+        // 5. Mute / solo: muted or solo-silenced pads go dark behind smoked
+        //    glass; small M / S lamps on the bezel show which is which.
+        if (silenced)
+        {
+            g.setColour (Colours::black.withAlpha (0.5f));
+            g.fillRect (glass);
+        }
+        if (muted)  paint::lamp (g, { 18.0f, (float) getHeight() - 18.0f }, 4.2f, c::red,   c::redDim,   1.0f);
+        if (soloed) paint::lamp (g, { (float) getWidth() - 18.0f, (float) getHeight() - 18.0f }, 4.2f, c::green, c::greenDim, 1.0f);
+
+        // 6. A file is being dragged over this pad: amber outline.
         if (fileHover)
         {
             g.setColour (c::amber);
             g.drawRoundedRectangle (glass.expanded (2.0f), 3.0f, 3.0f);
         }
 
-        // 6. Pressed: the whole tile sinks a little.
+        // 7. Pressed: the whole tile sinks a little.
         if (pressed)
         {
             g.setColour (Colours::black.withAlpha (0.18f));

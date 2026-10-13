@@ -164,6 +164,24 @@ PadEngine (one per pad)
   a steal policy (oldest / quietest) gives polyphonic one-shots; layers and
   velocity layers become arrays of `SampleBuffer` refs per pad.
 
+### Loops and tempo sync (Phase 3, implemented)
+
+* LOOP pads repeat their START..END region while held (note-off / mouse-up
+  releases with a 5 ms fade). The seam is crossfaded over up to 256 samples
+  using audio just outside the region, so the join is inaudible; a region
+  starting at the top of the file loops sample-exact.
+* With SYNC on, the region's length in beats comes from the audio itself:
+  the power-of-two beat count that puts its own tempo in 90-180 BPM. It does
+  not depend on the current Live tempo, so it never flips between half and
+  double time while you change tempo.
+* The voice is phase-locked: each block it is told the host PPQ and checks
+  its read position against `phase = (ppq / period) mod 1`. The increment is
+  exact, so it normally never corrects; after a loop-brace wrap, relocate or
+  tempo change it snaps back onto the grid. A loop triggered mid-bar enters
+  at the matching point of the break.
+* Choke groups release other pads in the group with a 3 ms fade. Mute and
+  solo act as smoothed gain, so they never click.
+
 ## 6. Transient slicing (Phase 4)
 
 Runs on the loader thread, never in `processBlock`, and never alters audio:
@@ -262,6 +280,7 @@ Ableton stores in the `.als` file:
 | Unsigned/quarantined plugins blocked on macOS | Ad-hoc signing in CI; `xattr -dr com.apple.quarantine` for downloaded builds |
 | Denormals in filters/reverb tails | `ScopedNoDenormals` in `processBlock` |
 | Plugin window too large on laptops | Editor resizes 75–150 % with locked aspect |
+| Live caches AU state and ignores plugin-window edits on save / duplicate / undo | Plugin calls `updateHostDisplay (nonParameterStateChanged)` after every UI gesture and sample / note-map change (debounced; never for automation) |
 | Note numbering confusion (C1 vs C3) | UI shows names in Ableton's convention (36 = C1) |
 | Sample rate change between sets | Everything re-prepared in `prepareToPlay`; samples resampled in background |
 
@@ -271,7 +290,7 @@ Ableton stores in the `.als` file:
 |---|---|---|
 | **1 ✅** | Compiling VST3/AU, stereo out, MIDI in, host transport, master section, skin | 40/40 automated checks, pluginval strictness 7 passes (incl. editor + fuzz), CI builds universal binaries |
 | **2 ✅** | `SampleBuffer`, background `SampleLoader`, `SampleManager`, `PadVoice`; load WAV/AIFF (drag & drop / LOAD), waveform editor on the CRT, MIDI trigger, pitch, gain, pan, start/end, reverse on every pad | 90/90 automated checks incl. sample-exact output and zero allocations in `processBlock`; pluginval strictness 7 |
-| 3 | 16 pads, per-pad params, mute/solo, choke groups, loop mode + host-sync ratios | Choke click-free, loop stays in time over 64 bars |
+| **3 ✅** | Per-pad mode (one-shot / loop), tempo-synced loops phase-locked to PPQ, rates, choke groups, mute / solo, velocity sensitivity, MIDI learn | 126/126 automated checks incl. sync locked to the grid over 6 s, re-lock after jumps / tempo changes, seam crossfade, click-free choke |
 | 4 | `TransientDetector`, `SliceEngine`, slice editing UI, equal/transient slicing | Amen slices on every hit at default sensitivity |
 | 5 | Four `GroupBus`es, mixer view, routing | Group mute/solo/pan correct |
 | 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |

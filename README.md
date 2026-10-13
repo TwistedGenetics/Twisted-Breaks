@@ -9,7 +9,7 @@ in the header, English labels everywhere else): oxidised
 enamel, rust, bakelite label plates, amber annunciator pads, a green-phosphor
 CRT and a red emergency-stop panic button.
 
-![Twisted Breaks console](docs/screenshots/phase2.png)
+![Twisted Breaks console](docs/screenshots/phase3-play.png)
 
 ## Install (no building needed)
 
@@ -23,9 +23,10 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | Phase | What | State |
 |---|---|---|
 | 1 | Plugin shell, MIDI, host transport, master section, skin | **done** |
-| 2 | Sample playback: load, waveform editor, pitch, gain, pan, start/end, reverse | **done** — 90/90 automated checks |
-| 3 | Per-pad modes (one-shot / loop / host-sync), choke groups, mute / solo | next |
-| 4–8 | Slicing, groups, FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 2 | Sample playback: load, waveform editor, pitch, gain, pan, start/end, reverse | **done** |
+| 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** — 126/126 automated checks |
+| 4 | Transient detection and slicing | next |
+| 5–8 | Groups, FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -39,18 +40,35 @@ Sections that aren't built yet are visibly marked offline on the panel
 * **Waveform editor** on the CRT for the selected pad: drag the **S** / **E**
   markers to set start and end, wheel or pinch to zoom, drag to scroll,
   double-click to zoom out, with a live playback cursor. Non-destructive.
-* Per-pad **GAIN, PAN, PITCH** (+/-12 semitones), **START, END, REVERSE**. All
-  96 are Ableton-automatable (`pad01_gain` ... `pad16_reverse`).
+* **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
+  END, REVERSE**.
+* 211 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_solo`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
+* **PLAY page** per pad (the SOUND / PLAY keys switch pages):
+  * **MODE**: ONE (plays once) or LOOP (repeats while the pad / note is
+    held, with a crossfaded loop point). SLICE arrives in Phase 4.
+  * **SYNC**: loops lock to Ableton's tempo and bar grid. The loop length
+    in beats is worked out from the audio (a 4-beat break stays 4 beats),
+    triggering mid-bar enters at the right point, and it re-locks after
+    loop-brace jumps and tempo changes.
+  * **RATE**: 1/4, 1/2, 1x, 2x loop speed.
+  * **CHOKE** 1-4: a hit stops the other pads in the same group (3 ms fade).
+  * **VEL**: velocity sensitivity, 0% (always full) to 100%.
+  * **M / S**: mute and solo.
+  * **NOTE**: drag or scroll to change the pad's MIDI note, or LEARN and
+    play a note on your controller.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step
   playhead** from Ableton.
 * Master **level**, zero-latency **limiter**, needle **peak meter**, **PANIC**
   (red STOP button, automatable `Panic` parameter, or MIDI CC 120).
-* Saved in the Live Set: all parameters, sample paths and the MIDI note map.
+* Saved in the Live Set: all parameters, sample paths and the MIDI note map;
+  changes made in the plugin window are reported to Live, so save,
+  duplicate-track and undo all pick them up (AU and VST3).
 * Resizable window (75 %-150 %).
 
 ## Build it yourself (optional)

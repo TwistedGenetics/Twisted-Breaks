@@ -96,6 +96,13 @@ private:
         std::atomic<float>* start = nullptr;
         std::atomic<float>* end = nullptr;
         std::atomic<float>* reverse = nullptr;
+        std::atomic<float>* mode = nullptr;
+        std::atomic<float>* sync = nullptr;
+        std::atomic<float>* rate = nullptr;
+        std::atomic<float>* choke = nullptr;
+        std::atomic<float>* velSens = nullptr;
+        std::atomic<float>* mute = nullptr;
+        std::atomic<float>* solo = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

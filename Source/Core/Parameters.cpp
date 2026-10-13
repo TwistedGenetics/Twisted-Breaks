@@ -70,6 +70,36 @@ namespace tb::params
 
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padReverse), kV2 }, prefix + "Reverse", false));
+
+            // ---- Phase 3 ----
+            // NOTE: choice lists are part of the saved/automation format. Never
+            // reorder or remove entries; only append.
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padMode), kV3 }, prefix + "Mode",
+                StringArray { "One-shot", "Loop", "Slice" }, modeOneShot));
+
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padSync), kV3 }, prefix + "Loop Sync", true));
+
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padRate), kV3 }, prefix + "Loop Rate",
+                StringArray { "0.25x", "0.5x", "1x", "2x" }, 2));
+
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padChoke), kV3 }, prefix + "Choke",
+                StringArray { "Off", "1", "2", "3", "4" }, 0));
+
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padVelSens), kV3 }, prefix + "Velocity Sens",
+                NormalisableRange<float> (0.0f, 1.0f, 0.01f), 1.0f,
+                AudioParameterFloatAttributes()
+                    .withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100.0f)) + " %"; })
+                    .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue() / 100.0f; })));
+
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padMute), kV3 }, prefix + "Mute", false));
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padSolo), kV3 }, prefix + "Solo", false));
         }
     }
 

@@ -28,6 +28,7 @@ namespace tb::params
     // ---- Version hints -----------------------------------------------------
     inline constexpr int kV1 = 1;   // parameters introduced in 0.1.x
     inline constexpr int kV2 = 2;   // parameters introduced in 0.2.x
+    inline constexpr int kV3 = 3;   // parameters introduced in 0.3.x
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
@@ -44,6 +45,18 @@ namespace tb::params
     inline constexpr const char* padStart   = "start";     // 0 .. 1 of the sample
     inline constexpr const char* padEnd     = "end";       // 0 .. 1 of the sample
     inline constexpr const char* padReverse = "reverse";   // bool
+
+    // ---- Per pad (Phase 3) ---------------------------------------------------
+    inline constexpr const char* padMode    = "mode";      // choice: One-shot / Loop / Slice
+    inline constexpr const char* padSync    = "sync";      // bool: loops follow host tempo
+    inline constexpr const char* padRate    = "rate";      // choice: 0.25x / 0.5x / 1x / 2x
+    inline constexpr const char* padChoke   = "choke";     // choice: Off / 1..4
+    inline constexpr const char* padVelSens = "velsens";   // 0..1
+    inline constexpr const char* padMute    = "mute";      // bool
+    inline constexpr const char* padSolo    = "solo";      // bool
+
+    enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2 };
+    inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
 
     inline constexpr float padGainMinDb  = -48.0f;
     inline constexpr float padGainMaxDb  =  12.0f;

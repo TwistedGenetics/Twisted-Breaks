@@ -94,6 +94,7 @@ namespace tb::ui
         // Last values drawn, to repaint only when something changes.
         float lastStart = -1.0f, lastEnd = -1.0f, lastHead = -2.0f;
         bool  lastReverse = false;
+        int   lastHow = -1;
 
         Marker dragging = Marker::none;
         bool   draggingView = false;

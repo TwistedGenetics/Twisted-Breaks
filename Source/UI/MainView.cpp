@@ -233,6 +233,8 @@ namespace tb::ui
             status.refresh (pad);
         };
 
+        shownNoteMapVersion = p.getEngine().getNoteMapVersion();
+
         // Size last: resized() lays out the children created above.
         setSize (kWidth, kHeight);
         startTimerHz (30);
@@ -270,6 +272,14 @@ namespace tb::ui
         transportDisplay.refresh();
         waveform.refresh();
         padEditor.refresh();
+
+        // MIDI-learn / note edits change saved state: tell the host.
+        const auto nmv = processor.getEngine().getNoteMapVersion();
+        if (nmv != shownNoteMapVersion)
+        {
+            shownNoteMapVersion = nmv;
+            processor.markStateChanged();
+        }
         meter.refresh();
         status.refresh (padGrid.getSelectedPad());
         panicButton.tick();

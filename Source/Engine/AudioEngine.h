@@ -50,6 +50,13 @@ namespace tb
             float start   = 0.0f;
             float end     = 1.0f;
             bool  reverse = false;
+            int   mode    = 0;       // params::PadMode
+            bool  sync    = true;
+            int   rate    = 2;       // index into params::loopRates
+            int   choke   = 0;       // 0 = off, 1..4
+            float velSens = 1.0f;
+            bool  mute    = false;
+            bool  solo    = false;
         };
 
         struct BlockParams
@@ -84,10 +91,17 @@ namespace tb
         int  getPadNote (int pad) const noexcept;
         int  padForNote (int note) const noexcept;   // -1 if unmapped
 
+        /** MIDI learn: the next note-on received is assigned to `pad` (-1 cancels). */
+        void startNoteLearn (int pad) noexcept    { learnPad.store (pad); }
+        int  getNoteLearnPad() const noexcept     { return learnPad.load(); }
+        /** Bumps whenever the note map changes (UI polls it to mark the state dirty). */
+        uint32_t getNoteMapVersion() const noexcept { return noteMapVersion.load(); }
+
         static constexpr int kDefaultFirstNote = 36;  // C1 in Ableton = Drum Rack pad 1
 
     private:
-        void triggerPad (int pad, float velocity) noexcept;
+        void triggerPad (int pad, float velocity, int sampleOffset) noexcept;
+        void chokeOthers (int pad, int chokeGroup) noexcept;
         void releasePad (int pad) noexcept;
         void handleMidi (const juce::MidiMessage& m) noexcept;
         void renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept;
@@ -107,6 +121,13 @@ namespace tb
         std::array<float, kNumPads> padPeak {};       // per-block peak for lamps
         std::array<bool, kNumPads>  padFlash {};      // triggered this block
         std::array<std::atomic<int>, kNumPads> padNote {};
+        std::array<int,  kNumPads>  padMode {};       // this block's mode per pad
+        std::array<int,  kNumPads>  padChoke {};
+        std::array<float, kNumPads> padVelSens {};
+        std::atomic<int>      learnPad { -1 };
+        std::atomic<uint32_t> noteMapVersion { 0 };
+        const TransportState* transportNow = nullptr; // valid during process()
+        int currentOffset = 0;                         // sample offset of the event being handled
 
         bool   lastPanicParam = false;
         double sampleRate     = 44100.0;

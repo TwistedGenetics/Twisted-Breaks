@@ -307,9 +307,13 @@ namespace
             for (auto* n : { tb::params::padGain, tb::params::padPan, tb::params::padPitch,
                              tb::params::padStart, tb::params::padEnd, tb::params::padReverse })
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
-        check (allPadParams, "96 per-pad parameters exist (pad01_gain .. pad16_reverse)");
+        for (int pad = 0; pad < tb::kNumPads; ++pad)
+            for (auto* n : { tb::params::padMode, tb::params::padSync, tb::params::padRate, tb::params::padChoke,
+                             tb::params::padVelSens, tb::params::padMute, tb::params::padSolo })
+                allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
+        check (allPadParams, "208 per-pad parameters exist (pad01_gain .. pad16_solo)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 99, "99 automatable parameters in total");
+        check (p.getParameters().processor.getParameters().size() == 211, "211 automatable parameters in total (3 master + 13 x 16 pads)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -711,6 +715,232 @@ namespace
         check (tb::SampleBuffer::liveInstances() == 0, "swapped-out and cleared samples are freed (no leaks)");
     }
 
+
+    //==========================================================================
+    //  PHASE 3
+    //==========================================================================
+    juce::AudioBuffer<float> renderHeld (Rig& r, int note, int blocks, int releaseAfterBlock = -1)
+    {
+        juce::AudioBuffer<float> out (2, blocks * kBlock), buf (2, kBlock);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 127), 0);
+        for (int b = 0; b < blocks; ++b)
+        {
+            if (b == releaseAfterBlock) midi.addEvent (juce::MidiMessage::noteOff (1, note), 0);
+            runBlock (r.p, r.host, buf, midi);
+            for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+        }
+        return out;
+    }
+
+    float maxStepIn (const juce::AudioBuffer<float>& b, int ch, int from, int to)
+    {
+        float m = 0.0f;
+        for (int i = juce::jmax (1, from); i < juce::jmin (to, b.getNumSamples()); ++i)
+            m = juce::jmax (m, std::abs (b.getSample (ch, i) - b.getSample (ch, i - 1)));
+        return m;
+    }
+
+    void testLoops (const juce::AudioBuffer<float>& src, const juce::File& tone)
+    {
+        std::cout << "\n== Phase 3: loops ==" << std::endl;
+        Rig r;
+        r.load (0, tone);
+        const int len = src.getNumSamples();
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+        setPadParam (r.p, 0, tb::params::padSync, 0.0f);
+        r.settle();
+
+        const int blocks = (len * 4) / kBlock;
+        auto out = renderHeld (r, 36, blocks);
+        check (peakOf (out, out.getNumSamples() - kBlock) > 0.05f, "LOOP keeps playing past the end of the sample while held");
+        float maxErr = 0.0f;
+        for (int k = 0; k < 400; ++k)
+            maxErr = juce::jmax (maxErr, std::abs (out.getSample (0, len + k) - src.getSample (0, k)),
+                                         std::abs (out.getSample (0, 2 * len + 100 + k) - src.getSample (0, 100 + k)));
+        check (maxErr < 1.0e-5f, "region starting at the top of the file loops sample-exactly");
+
+        out = renderHeld (r, 36, 6, 3);
+        check (isSilent (peakOf (out, 4 * kBlock)), "note-off stops the loop (with a short fade)");
+        check (maxStepIn (out, 0, 3 * kBlock - 2, 3 * kBlock + 300) < 0.05f, "...without a click");
+
+        // Seam crossfade: a mid-file region whose ends don't match.
+        setPadParam (r.p, 0, tb::params::padStart, 0.2f);
+        setPadParam (r.p, 0, tb::params::padEnd, 0.55f);
+        r.settle();
+        out = renderHeld (r, 36, (len * 2) / kBlock);
+        const float natural = maxStepIn (src.getNumChannels() > 0 ? out : out, 0, 300, (int) (len * 0.3));
+        const int seam = (int) std::lround (len * 0.35);
+        check (maxStepIn (out, 0, seam - 300, seam + 300) <= natural * 1.25f,
+               "loop seam is crossfaded (no click where the end joins the start)");
+
+        setPadParam (r.p, 0, tb::params::padStart, 0.0f);
+        setPadParam (r.p, 0, tb::params::padEnd, 1.0f);
+        setPadParam (r.p, 0, tb::params::padRate, 3.0f);   // 2x
+        r.settle();
+        {
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            for (int b = 0; b < 10; ++b) runBlock (r.p, r.host, buf, midi);
+            const float head = r.p.getBridge().padPlayhead[0].load();
+            const float expected = std::fmod (10.0f * kBlock * 2.0f, (float) len) / (float) len;
+            check (std::abs (head - expected) < 0.002f, "free loop at 2x runs twice as fast");
+        }
+        setPadParam (r.p, 0, tb::params::padRate, 2.0f);
+        r.settle();
+
+        // One-shots ignore note-off; the mouse release stops loops.
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeOneShot);
+        r.settle();
+        out = renderHeld (r, 36, 6, 1);
+        check (peakOf (out, 3 * kBlock) > 0.05f, "ONE-SHOT ignores note-off");
+
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+        r.settle();
+        {
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            r.p.triggerPadFromUi (0, 1.0f, true);
+            runBlock (r.p, r.host, buf, midi);
+            r.p.triggerPadFromUi (0, 0.0f, false);
+            runBlock (r.p, r.host, buf, midi);
+            runBlock (r.p, r.host, buf, midi);
+            check (isSilent (peakOf (buf)), "releasing the mouse stops a LOOP pad");
+        }
+    }
+
+    void testSync()
+    {
+        std::cout << "\n== Phase 3: tempo-synced loops ==" << std::endl;
+        check (std::abs (tb::PadVoice::loopBeatsFor (4.0 * 60.0 / 140.0) - 4.0) < 1e-9, "a 4-beat break at 140 BPM is read as 4 beats");
+        check (std::abs (tb::PadVoice::loopBeatsFor (4.0 * 60.0 / 85.0) - 8.0) < 1e-9, "an 85 BPM break is read in double time (8 beats, 170)");
+        check (std::abs (tb::PadVoice::loopBeatsFor (1.0 * 60.0 / 165.0) - 1.0) < 1e-9, "a one-beat hit at 165 BPM is 1 beat");
+
+        Rig r;
+        const int len = (int) std::lround (4.0 * 60.0 / 140.0 * 48000.0);   // 4 beats at 140
+        r.load (0, writeAudio ("break140", makeTone (len, 1), 48000.0, Fmt::wavFloat));
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+        setPadParam (r.p, 0, tb::params::padSync, 1.0f);
+        r.settle();
+
+        r.host.bpm = 170.0; r.host.ppq = 1.0; r.host.playing = true;   // start mid-bar, beat 2
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        auto phaseError = [&]
+        {
+            const double expected = std::fmod (r.host.ppq, 4.0) / 4.0;
+            double err = std::abs (r.p.getBridge().padPlayhead[0].load() - expected);
+            return juce::jmin (err, 1.0 - err);
+        };
+        check (phaseError() < 0.003, "triggered on beat 2, a synced loop enters at beat 2 of the break (on the grid)");
+
+        double worst = 0.0;
+        for (int b = 0; b < 600; ++b) { runBlock (r.p, r.host, buf, midi); worst = juce::jmax (worst, phaseError()); }
+        check (worst < 0.002, "after ~6 s (4+ loops at 170 BPM) it is still locked to Ableton's bar grid (max err "
+                                  + juce::String (worst, 5) + ")");
+
+        r.host.ppq = 0.0;     // loop brace wraps back
+        runBlock (r.p, r.host, buf, midi);
+        check (phaseError() < 0.003, "re-locks instantly after a loop-brace jump");
+
+        r.host.bpm = 120.0;   // tempo change
+        for (int b = 0; b < 20; ++b) runBlock (r.p, r.host, buf, midi);
+        check (phaseError() < 0.003, "follows a tempo change");
+
+        setPadParam (r.p, 0, tb::params::padRate, 3.0f);   // 2x -> one cycle per 2 beats
+        for (int b = 0; b < 20; ++b) runBlock (r.p, r.host, buf, midi);
+        const double exp2 = std::fmod (r.host.ppq, 2.0) / 2.0;
+        double err2 = std::abs (r.p.getBridge().padPlayhead[0].load() - exp2);
+        err2 = juce::jmin (err2, 1.0 - err2);
+        check (err2 < 0.003, "rate 2x: the break cycles every 2 beats, still on the grid");
+        r.host.playing = false;
+    }
+
+    void testChokeMuteSolo (const juce::File& tone)
+    {
+        std::cout << "\n== Phase 3: choke, mute, solo, velocity, MIDI learn ==" << std::endl;
+        Rig r;
+        r.load (0, tone);
+        r.load (1, tone);
+        setPadParam (r.p, 0, tb::params::padPan, -1.0f);   // pad 1 left, pad 2 right
+        setPadParam (r.p, 1, tb::params::padPan,  1.0f);
+        setPadParam (r.p, 0, tb::params::padChoke, 1.0f);
+        setPadParam (r.p, 1, tb::params::padChoke, 1.0f);
+        r.settle();
+
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (isSilent (buf.getMagnitude (0, 200, kBlock - 200)) && buf.getMagnitude (1, 0, kBlock) > 0.05f,
+               "pads in the same choke group cut each other (within 3 ms)");
+        check (maxStepIn (buf, 0, 0, 200) < 0.05f, "...with a click-free fade");
+        r.settle();
+
+        setPadParam (r.p, 1, tb::params::padChoke, 2.0f);
+        r.settle();
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (buf.getMagnitude (0, 0, kBlock) > 0.05f && buf.getMagnitude (1, 0, kBlock) > 0.05f,
+               "different choke groups play together");
+        r.settle();
+
+        setPadParam (r.p, 0, tb::params::padMute, 1.0f);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "MUTE silences the pad");
+        setPadParam (r.p, 0, tb::params::padMute, 0.0f);
+        r.settle();
+
+        setPadParam (r.p, 1, tb::params::padSolo, 1.0f);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (isSilent (buf.getMagnitude (0, 0, kBlock)) && buf.getMagnitude (1, 0, kBlock) > 0.05f, "SOLO on pad 2 silences pad 1");
+        setPadParam (r.p, 1, tb::params::padSolo, 0.0f);
+        r.settle();
+
+        setPadParam (r.p, 0, tb::params::padVelSens, 0.0f);
+        r.settle();
+        auto out = renderNote (r.p, r.host, 36, 20, 2);
+        check (std::abs (out.getSample (0, 500) - out.getSample (0, 500) / (20.0f / 127.0f) * (20.0f / 127.0f)) < 1e-6f
+                 && out.getMagnitude (0, 0, kBlock * 2) > 0.5f, "velocity sensitivity 0%: a soft hit plays at full level");
+        setPadParam (r.p, 0, tb::params::padVelSens, 1.0f);
+        r.settle();
+
+        auto& e = r.p.getEngine();
+        const auto v0 = e.getNoteMapVersion();
+        e.startNoteLearn (5);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 70, (juce::uint8) 100), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (e.getPadNote (5) == 70 && e.getNoteLearnPad() == -1, "MIDI learn: next note played (70) is assigned to pad 6");
+        check (r.p.getBridge().padTriggerCount[5].load() == 1, "...and the learning note plays the pad");
+        check (e.getNoteMapVersion() != v0, "...and the change is flagged so the host saves it");
+
+        e.startNoteLearn (2);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (e.getPadNote (2) == 36 && e.getPadNote (0) == 38, "learning a note another pad uses swaps their notes (no duplicates)");
+
+        juce::MemoryBlock blob;
+        setPadParam (r.p, 3, tb::params::padMode, (float) tb::params::modeLoop);
+        setPadParam (r.p, 3, tb::params::padChoke, 4.0f);
+        r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        auto raw = [&] (int pad, const char* n) { return q.getParameters().getRawParameterValue (tb::params::padId (pad, n))->load(); };
+        check (juce::roundToInt (raw (3, tb::params::padMode)) == tb::params::modeLoop && juce::roundToInt (raw (3, tb::params::padChoke)) == 4
+                 && q.getEngine().getPadNote (5) == 70, "mode, choke and learned notes are saved with the set");
+    }
+
     void testRealtimeSafety()
     {
         std::cout << "\n== Real-time safety ==" << std::endl;
@@ -892,9 +1122,24 @@ namespace
 
         setPadParam (p, 0, tb::params::padStart, 0.06f);
         setPadParam (p, 0, tb::params::padEnd, 0.94f);
+        setPadParam (p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+        setPadParam (p, 1, tb::params::padChoke, 1.0f);
+        setPadParam (p, 2, tb::params::padChoke, 1.0f);
+        setPadParam (p, 3, tb::params::padChoke, 1.0f);
+        setPadParam (p, 4, tb::params::padMute, 1.0f);
+        const bool playPage = out.getFileName().contains ("play");
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (playPage)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) pe->setPage (tb::ui::PadEditorPanel::Page::play);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+        }
 
         juce::AudioBuffer<float> buf (2, kBlock);
         juce::MidiBuffer midi;
@@ -904,7 +1149,7 @@ namespace
         {
             if (i % 5 == 0)
                 midi.addEvent (juce::MidiMessage::noteOn (1, 36 + pattern[(i / 5) % 8], (juce::uint8) 120), 0);
-            if (i == 22) midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+            if (i == 22) midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);   // loop, held
             for (int k = 0; k < 3; ++k) runBlock (p, host, buf, midi);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         }
@@ -949,6 +1194,9 @@ int main (int argc, char* argv[])
         testRateConversionAndStereo();
         testLiveEditsAndLifetime (tone, other);
         testState (tone);
+        testLoops (toneAudio, tone);
+        testSync();
+        testChokeMuteSolo (tone);
         testEditorDrivesState();
         testRealtimeSafety();
 

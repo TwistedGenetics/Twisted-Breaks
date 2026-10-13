@@ -93,8 +93,19 @@ namespace tb
     //==========================================================================
     void AudioEngine::setPadNote (int pad, int note) noexcept
     {
-        if (juce::isPositiveAndBelow (pad, kNumPads))
-            padNote[(size_t) pad].store (juce::jlimit (-1, 127, note));
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+        note = juce::jlimit (-1, 127, note);
+        const int old = padNote[(size_t) pad].load();
+        if (old == note) return;
+
+        // One note -> one pad: whoever had this note gets this pad's old one.
+        if (note >= 0)
+            for (int p = 0; p < kNumPads; ++p)
+                if (p != pad && padNote[(size_t) p].load() == note)
+                    padNote[(size_t) p].store (old);
+
+        padNote[(size_t) pad].store (note);
+        noteMapVersion.fetch_add (1);
     }
 
     int AudioEngine::getPadNote (int pad) const noexcept
@@ -113,9 +124,16 @@ namespace tb
     //==========================================================================
     void AudioEngine::computeVoiceSettings (const BlockParams& bp) noexcept
     {
+        bool anySolo = false;
+        for (const auto& pp : bp.pads) anySolo = anySolo || pp.solo;
+
         for (int p = 0; p < kNumPads; ++p)
         {
             const auto& pp = bp.pads[(size_t) p];
+            padMode[(size_t) p]    = pp.mode;
+            padChoke[(size_t) p]   = pp.choke;
+            padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
+
             auto& s = padSettings[(size_t) p];
             const auto* buf = padSample[(size_t) p].get();
             if (buf == nullptr) continue;
@@ -136,12 +154,31 @@ namespace tb
             s.regionStart = s0;
             s.regionEnd   = s1;
             s.reverse     = pp.reverse;
+            s.loop        = pp.mode == params::modeLoop;
 
-            // Pitch: file-rate compensation x semitone ratio.
-            s.increment = (buf->sourceSampleRate / sampleRate) * std::pow (2.0, (double) pp.pitch / 12.0);
+            const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
+            const double fileRate = buf->sourceSampleRate / sampleRate;
 
-            // Gain + balance-style pan (centre = unity on both sides).
-            const float g = pp.gainDb <= params::padGainMinDb + 0.01f ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
+            if (s.loop && pp.sync)
+            {
+                // Tempo-synced loop: the region spans N beats (from its own
+                // length), played at the host tempo x rate. Pitch follows speed.
+                const double beats  = PadVoice::loopBeatsFor ((double) (s1 - s0) / buf->sourceSampleRate);
+                s.syncPeriodBeats   = beats / rate;
+                const double bpm    = transportNow != nullptr ? transportNow->bpm : 120.0;
+                s.increment         = (double) (s1 - s0) * (bpm / 60.0) / (s.syncPeriodBeats * sampleRate);
+            }
+            else
+            {
+                // Free-running: file-rate compensation x semitones (x loop rate).
+                s.syncPeriodBeats = 0.0;
+                s.increment = fileRate * std::pow (2.0, (double) pp.pitch / 12.0) * (s.loop ? rate : 1.0);
+            }
+
+            // Gain + balance-style pan (centre = unity on both sides); mute / solo.
+            const bool audible = ! pp.mute && (! anySolo || pp.solo);
+            const float g = (! audible || pp.gainDb <= params::padGainMinDb + 0.01f)
+                              ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
             const float pan = juce::jlimit (-1.0f, 1.0f, pp.pan);
             s.gainLeft  = g * (pan > 0.0f ? 1.0f - pan : 1.0f);
             s.gainRight = g * (pan < 0.0f ? 1.0f + pan : 1.0f);
@@ -152,15 +189,33 @@ namespace tb
         }
     }
 
-    void AudioEngine::triggerPad (int pad, float velocity) noexcept
+    void AudioEngine::chokeOthers (int pad, int group) noexcept
+    {
+        if (group <= 0) return;
+        for (int p = 0; p < kNumPads; ++p)
+            if (p != pad && padChoke[(size_t) p] == group)
+                for (auto& v : voices[(size_t) p])
+                    v.release (3.0f);           // very short, still click-free
+    }
+
+    void AudioEngine::triggerPad (int pad, float velocity, int sampleOffset) noexcept
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
         bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
         padFlash[(size_t) pad] = true;     // lamp blinks even on an empty pad
 
+        chokeOthers (pad, padChoke[(size_t) pad]);
+
         const auto& sample = padSample[(size_t) pad];
         if (sample == nullptr) return;
+
+        // Velocity sensitivity: 0 = every hit at full level, 1 = level follows velocity.
+        const float sens  = padVelSens[(size_t) pad];
+        const float level = 1.0f - sens + sens * velocity;
+
+        const bool   playing  = transportNow != nullptr && transportNow->isPlaying;
+        const double ppqHere  = transportNow != nullptr ? transportNow->ppqAt (sampleOffset) : 0.0;
 
         // Retrigger: the sounding voice fades out over 5 ms while the other
         // slot starts fresh. If that slot is still fading from an earlier hit
@@ -171,12 +226,15 @@ namespace tb
         slots[(size_t) cur].release();
         cur = (cur + 1) % kVoicesPerPad;
         slots[(size_t) cur].kill();
-        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], velocity);
+        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], level, ppqHere, playing);
     }
 
-    void AudioEngine::releasePad (int) noexcept
+    void AudioEngine::releasePad (int pad) noexcept
     {
-        // One-shot pads ignore note-off. Phase 3's loop / gate modes release here.
+        // One-shots (and slices) ignore note-off; loops play while held.
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || padMode[(size_t) pad] != params::modeLoop) return;
+        for (auto& v : voices[(size_t) pad])
+            if (v.isLooping()) v.release();
     }
 
     void AudioEngine::panic() noexcept
@@ -197,8 +255,12 @@ namespace tb
             bridge.lastMidiVelocity.store (m.getVelocity(), std::memory_order_relaxed);
             bridge.midiEventCount.fetch_add (1, std::memory_order_relaxed);
 
+            // MIDI learn: this note now belongs to the pad being learned.
+            const int learning = learnPad.exchange (-1);
+            if (learning >= 0) setPadNote (learning, m.getNoteNumber());
+
             const int pad = padForNote (m.getNoteNumber());
-            if (pad >= 0) triggerPad (pad, m.getFloatVelocity());
+            if (pad >= 0) triggerPad (pad, m.getFloatVelocity(), currentOffset);
         }
         else if (m.isNoteOff())
         {
@@ -233,8 +295,16 @@ namespace tb
         padFlash.fill (false);
 
         // ---- New / cleared samples from the loader, then this block's pad settings.
+        transportNow  = &transport;
+        currentOffset = 0;
         applySampleCommands();
         computeVoiceSettings (params);
+
+        // ---- Synced loops re-lock to the host's position at the block start.
+        if (transport.isPlaying)
+            for (auto& padVoices : voices)
+                for (auto& v : padVoices)
+                    v.syncTo (transport.ppqAtBlockStart);
 
         // ---- Panic: UI button or automatable parameter rising edge.
         //      (Transport stop is not a panic: tails ring out naturally.)
@@ -247,7 +317,7 @@ namespace tb
         PadUiEvent ev;
         while (bridge.padEvents.pop (ev))
         {
-            if (ev.noteOn) triggerPad (ev.pad, ev.velocity);
+            if (ev.noteOn) triggerPad (ev.pad, ev.velocity, 0);
             else           releasePad (ev.pad);
         }
 
@@ -258,11 +328,12 @@ namespace tb
             const int eventPos = juce::jlimit (0, numSamples, meta.samplePosition);
             renderVoices (buffer, pos, eventPos - pos);
             pos = eventPos;
+            currentOffset = eventPos;
             handleMidi (meta.getMessage());
         }
         renderVoices (buffer, pos, numSamples - pos);
 
-        juce::ignoreUnused (transport);   // consumed by loop sync (Phase 3) and the sequencer (Phase 7)
+        transportNow = nullptr;
 
         // ---- Master
         master.setGainDb (params.masterGainDb);

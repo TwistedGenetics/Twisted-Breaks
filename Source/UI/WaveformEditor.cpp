@@ -2,6 +2,7 @@
 #include "UI/PanelPainter.h"
 #include "UI/Palette.h"
 #include "PluginProcessor.h"
+#include "Engine/PadVoice.h"
 #include <cmath>
 
 namespace tb::ui
@@ -110,9 +111,11 @@ namespace tb::ui
             const float h = bridge.padPlayhead[(size_t) pad].load (std::memory_order_relaxed);
 
             auto moved = [] (float a, float b) { return std::abs (a - b) > 1.0e-6f; };
-            if (moved (s, lastStart) || moved (e, lastEnd) || r != lastReverse || moved (h, lastHead))
+            const int how = roundToInt (paramValue (params::padMode)) * 100
+                          + roundToInt (paramValue (params::padRate)) * 10 + (paramValue (params::padSync) > 0.5f ? 1 : 0);
+            if (moved (s, lastStart) || moved (e, lastEnd) || r != lastReverse || moved (h, lastHead) || how != lastHow)
             {
-                lastStart = s; lastEnd = e; lastReverse = r; lastHead = h;
+                lastStart = s; lastEnd = e; lastReverse = r; lastHead = h; lastHow = how;
                 repaint();
             }
         }
@@ -518,16 +521,34 @@ namespace tb::ui
             g.setColour (c::phosphor.withAlpha (0.6f));
             g.drawText (region, txt, Justification::bottomLeft, false);
 
-            if (lastReverse)
+            // Bottom right: how this pad plays.
+            String how;
+            if (info.status == SampleManager::Status::loading)
+                how = "LOADING...";
+            else
             {
-                g.setColour (c::amber);
-                g.drawText ("<< REVERSE", txt, Justification::bottomRight, false);
+                const int mode = roundToInt (paramValue (params::padMode));
+                if (mode == params::modeLoop)
+                {
+                    const String rate = String (params::loopRates[jlimit (0, 3, roundToInt (paramValue (params::padRate)))]) + "x";
+                    if (paramValue (params::padSync) > 0.5f)
+                    {
+                        const double beats = PadVoice::loopBeatsFor ((e - s) * buf.getLengthSeconds());
+                        how = "LOOP  SYNC " + String (beats, beats < 1.0 ? 2 : 0) + (beats < 1.5 && beats > 0.75 ? " BEAT  " : " BEATS  ") + rate;
+                    }
+                    else
+                    {
+                        how = "LOOP  FREE  " + rate;
+                    }
+                }
+                else if (mode == params::modeSlice)
+                {
+                    how = "SLICE (PHASE 4)";
+                }
+                if (lastReverse) how = "<< REVERSE   " + how;
             }
-            else if (info.status == SampleManager::Status::loading)
-            {
-                g.setColour (c::amber);
-                g.drawText ("LOADING...", txt, Justification::bottomRight, false);
-            }
+            g.setColour (c::amber);
+            g.drawText (how, txt, Justification::bottomRight, false);
         }
         else
         {

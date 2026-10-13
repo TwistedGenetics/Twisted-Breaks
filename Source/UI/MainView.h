@@ -101,6 +101,7 @@ namespace tb::ui
         std::unique_ptr<ButtonAttachment> limiterAttachment;
 
         juce::Image background;
+        uint32_t shownNoteMapVersion = 0;
         juce::TooltipWindow tooltips { this, 600 };
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainView)
