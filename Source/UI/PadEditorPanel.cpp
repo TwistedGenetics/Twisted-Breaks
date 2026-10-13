@@ -61,7 +61,7 @@ namespace tb::ui
 
         styleKnob (velKnob, 62);
         velKnob.setTooltip ("Velocity sensitivity: 0% = every hit at full level, 100% = level follows how hard you play");
-        modeSel.setTooltip ("ONE: plays once.  LOOP: repeats while the pad / note is held.  SLICE: arrives in Phase 4 (plays as ONE until then).");
+        modeSel.setTooltip ("ONE: plays once.  LOOP: repeats while the pad / note is held (latched in a SWAP group).  SLICE: plays one slice (SLICE knob).");
         rateSel.setTooltip ("Loop speed: 1/4, 1/2, 1x or 2x");
         chokeSel.setTooltip ("Choke group: hitting a pad stops the other pads in the same group");
         muteKey.setClickingTogglesState (true);
@@ -109,12 +109,19 @@ namespace tb::ui
         for (Component* comp : sliceControls())
             addChildComponent (comp);
 
-        for (auto* k : { &soundTab, &playTab, &sliceTab, &loadKey, &clearKey })
+        // ---- SWAP page
+        swapSel.setTooltip ("SWAP group: pads in the same group take turns. One plays (latched); hit another and it takes over at the next slice point, from the same place in its own break. Hit the playing pad again to stop.");
+        swapAtSel.setTooltip ("When a swap onto this pad lands: the next SLICE marker of the playing break, or the next 1/16, beat or bar of Live's grid");
+        addChildComponent (swapSel);
+        addChildComponent (swapAtSel);
+
+        for (auto* k : { &soundTab, &playTab, &sliceTab, &swapTab, &loadKey, &clearKey })
             addAndMakeVisible (k);
 
         soundTab.onClick = [this] { setPage (Page::sound); };
         playTab.onClick  = [this] { setPage (Page::play); };
         sliceTab.onClick = [this] { setPage (Page::slice); };
+        swapTab.onClick  = [this] { setPage (Page::swap); };
         loadKey.onClick  = [this] { chooseFile(); };
         clearKey.onClick = [this] { processor.getSamples().clearPad (pad); };
 
@@ -129,6 +136,7 @@ namespace tb::ui
         velAttachment.reset(); sliceAttachment.reset();
         reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
+        swapSel.attach (nullptr); swapAtSel.attach (nullptr);
     }
 
     std::vector<Component*> PadEditorPanel::sliceControls()
@@ -150,10 +158,14 @@ namespace tb::ui
     void PadEditorPanel::setPage (Page p)
     {
         page = p;
-        const bool sound = page == Page::sound, play = page == Page::play, slice = page == Page::slice;
+        const bool sound = page == Page::sound, play = page == Page::play, slice = page == Page::slice,
+                   swap = page == Page::swap;
         soundTab.setToggleState (sound, dontSendNotification);
         playTab.setToggleState (play, dontSendNotification);
         sliceTab.setToggleState (slice, dontSendNotification);
+        swapTab.setToggleState (swap, dontSendNotification);
+        swapSel.setVisible (swap);
+        swapAtSel.setVisible (swap);
 
         for (auto& k : knobs) k.setVisible (sound);
         reverseSwitch.setVisible (sound);
@@ -196,6 +208,8 @@ namespace tb::ui
         modeSel.attach  (apvts.getParameter (id (params::padMode)));
         rateSel.attach  (apvts.getParameter (id (params::padRate)));
         chokeSel.attach (apvts.getParameter (id (params::padChoke)));
+        swapSel.attach  (apvts.getParameter (id (params::padSwap)));
+        swapAtSel.attach (apvts.getParameter (id (params::padSwapAt)));
 
         noteSel.setNote (processor.getEngine().getPadNote (pad));
     }
@@ -266,9 +280,13 @@ namespace tb::ui
     void PadEditorPanel::resized()
     {
         const int w = getWidth();
-        soundTab.setBounds (80,  0, 66, kHeaderH);
-        playTab.setBounds  (148, 0, 58, kHeaderH);
-        sliceTab.setBounds (208, 0, 62, kHeaderH);
+        soundTab.setBounds (64,  0, 62, kHeaderH);
+        playTab.setBounds  (128, 0, 52, kHeaderH);
+        sliceTab.setBounds (182, 0, 56, kHeaderH);
+        swapTab.setBounds  (240, 0, 54, kHeaderH);
+
+        swapSel.setBounds   (0,   kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
+        swapAtSel.setBounds (108, kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
         loadKey.setBounds  (w - 136, 0, 66, kHeaderH);
         clearKey.setBounds (w - 68,  0, 68, kHeaderH);
 
@@ -306,11 +324,11 @@ namespace tb::ui
     void PadEditorPanel::paint (Graphics& g)
     {
         Random rnd (pad + 77);
-        paint::labelPlate (g, { 0.0f, 0.0f, 76.0f, (float) kHeaderH },
+        paint::labelPlate (g, { 0.0f, 0.0f, 60.0f, (float) kHeaderH },
                            "PAD " + String (pad + 1).paddedLeft ('0', 2), {}, paint::PlateStyle::black, rnd);
 
         // Sample readout in a recess between the tabs and LOAD.
-        auto r = Rectangle<float> (274.0f, 0.0f, (float) (getWidth() - 274 - 140), (float) kHeaderH);
+        auto r = Rectangle<float> (298.0f, 0.0f, (float) (getWidth() - 298 - 140), (float) kHeaderH);
         paint::recess (g, r, 3.0f);
         r.reduce (8.0f, 0.0f);
 
@@ -350,6 +368,23 @@ namespace tb::ui
             g.drawText ("SENS",  Rectangle<float> (108.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
             g.drawText ("COUNT", Rectangle<float> (182.0f, (float) kCtlTop - 18.0f, 90.0f, 14.0f), Justification::centred, false);
             g.drawText ("SLICE", Rectangle<float> (274.0f, (float) kCtlTop - 16.0f, 72.0f, 14.0f), Justification::centred, false);
+        }
+        else if (page == Page::swap)
+        {
+            g.drawText ("GROUP", Rectangle<float> (0.0f,   (float) kCtlTop - 18.0f, 104.0f, 14.0f), Justification::centred, false);
+            g.drawText ("AT",    Rectangle<float> (108.0f, (float) kCtlTop - 18.0f, 104.0f, 14.0f), Justification::centred, false);
+
+            // How it works, on a recessed instruction plate.
+            auto help = Rectangle<float> (222.0f, (float) kCtlTop - 20.0f, (float) getWidth() - 222.0f, (float) (getHeight() - kCtlTop + 20));
+            paint::recess (g, help, 3.0f);
+            help.reduce (8.0f, 4.0f);
+            g.setColour (c::vfd.withAlpha (0.85f));
+            g.setFont (monoFont (11.0f));
+            g.drawFittedText ("PADS IN ONE GROUP TAKE TURNS (LATCHED).\n"
+                              "HIT ANOTHER: IT TAKES OVER AT THE NEXT\n"
+                              "SLICE, FROM THE SAME POINT IN ITS BREAK.\n"
+                              "HIT THE PLAYING PAD AGAIN TO STOP.",
+                              help.toNearestInt(), Justification::centredLeft, 4, 1.0f);
         }
         else
         {

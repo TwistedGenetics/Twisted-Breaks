@@ -42,6 +42,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ SPREAD: pads fill with slices; play the break from your controller; attacks sound punchy (not softened)
 - [ ] ✅ Save, close, reopen: markers and spread pads all come back
 
+## SWAP groups (0.4.1)
+- [ ] ✅ Two breaks on pads 1 and 2 (LOOP, SYNC on, AUTO SLICE each), both SWAP group 1. Live playing: hit pad 1, let go: it keeps playing
+- [ ] ✅ Hit pad 2 mid-bar: pad 2 flashes, then takes over on pad 1's next slice, in time, starting cleanly on a hit (by ear: no flam, no gap, no double hit)
+- [ ] ✅ Chop between them for a few minutes from your controller: always on the grid vs Live's metronome
+- [ ] ✅ AT = BAR on pad 2: the swap waits for the next bar line
+- [ ] ✅ Hit the playing pad again: stops at its next slice. PANIC stops everything
+- [ ] ✅ Save, close, reopen: groups and AT settings come back
+
 ## MIDI pad triggering
 - [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)
@@ -77,7 +85,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Undo/redo a Master Level change works
 - [ ] ✅ Save the set with the VST3 and with the AU version on separate tracks; both reload
 - [ ] ✅ Load samples on several pads, change pitch / start / end / reverse, save, reopen: all restored
-- [ ] Phase 4+: slices, patterns, FX states and snapshots all restored
+- [ ] Phase 5+: patterns, FX states and snapshots all restored
 
 ## Sample recovery
 - [ ] ✅ Rename a sample on disk, reopen the set: pad shows **MISSING** (red), set opens, other pads fine

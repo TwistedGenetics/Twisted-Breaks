@@ -25,9 +25,10 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 1 | Plugin shell, MIDI, host transport, master section, skin | **done** |
 | 2 | Sample playback: load, waveform editor, pitch, gain, pan, start/end, reverse | **done** |
 | 3 | Pad modes (one-shot / loop), tempo-synced loops, choke groups, mute / solo, velocity, MIDI learn | **done** |
-| 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** — 158/158 automated checks |
+| 4 | Transient detection, slice markers, SLICE mode, SPREAD to pads | **done** |
+| 4.1 | SWAP groups: hand off between breaks at slice points | **done** — 175/175 automated checks |
 | 5 | Four group buses + mixer | next |
-| 6–8 | FX, sequencer, snapshots | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 6–8 | FX, sequencer, snapshots (+ break bank) | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -43,14 +44,14 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 227 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
-  `pad16_slice`).
+* 259 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+  `pad16_swapq`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
   automatic sample-rate conversion (a 44.1 kHz break plays correctly in a
   48 kHz set), click-free starts, ends, retriggers and panic.
 * **PLAY page** per pad (the SOUND / PLAY keys switch pages):
   * **MODE**: ONE (plays once) or LOOP (repeats while the pad / note is
-    held, with a crossfaded loop point). SLICE arrives in Phase 4.
+    held, with a crossfaded loop point), or SLICE (see below).
   * **SYNC**: loops lock to Ableton's tempo and bar grid. The loop length
     in beats is worked out from the audio (a 4-beat break stays 4 beats),
     triggering mid-bar enters at the right point, and it re-locks after
@@ -74,6 +75,11 @@ Sections that aren't built yet are visibly marked offline on the panel
   * **SPREAD** puts each slice on its own pad from the selected pad onwards,
     in SLICE mode, sharing one copy of the audio — drag a break in, AUTO
     SLICE, SPREAD, and play it from your controller.
+* **SWAP page**: put pads holding sliced breaks in the same **SWAP group**
+  (1-4). One plays at a time, latched. Hit another and it takes over at the
+  playing break's **next slice marker** (or next 1/16, beat or bar: **AT**),
+  carrying on from the same point in its own break and starting right on
+  its own hit. The waiting pad flashes. Hit the playing pad again to stop.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

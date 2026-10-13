@@ -217,6 +217,25 @@ Runs on the loader thread, never in `processBlock`, and never alters audio:
    state. Drag/add/delete edit the table; RESET restores the last detection;
    EQUAL SLICE replaces it with 16 equal regions.
 
+## 6b. SWAP groups (0.4.1, implemented)
+
+Hand-off between breaks at slice points (spec addition A1 in
+[SPEC_ADDITIONS.md](SPEC_ADDITIONS.md)). All in `AudioEngine`:
+
+* Per group (1–4): the playing pad (`swapPlaying`) and at most one
+  `PendingSwap { pad, level, remaining samples }`. Group pads latch.
+* A hit in a group with something playing computes how many output samples
+  until the next landing point: the playing voice's next slice marker in
+  its playback direction (distance / increment), or the next 1/16 / beat /
+  bar from the transport's PPQ.
+* `renderVoices` splits the span at the earliest pending landing, so the
+  hand-off is sample-accurate even mid-block, then `fireSwap` releases the
+  outgoing voice (1 ms) and starts the incoming one with `startAt`.
+* `startAt` = the incoming break's grid position (synced, Live playing) or
+  the same fraction through (otherwise), snapped to its nearest own marker
+  within a 1/32 note. `PadVoice` keeps the difference as `phaseOffset`, so
+  `syncTo` holds it there instead of snapping back onto the grid.
+
 ## 7. The 16 performance effects (Phase 6)
 
 Each `GroupBus` owns one `FXChain` holding all 16 effect instances in fixed
@@ -310,8 +329,9 @@ Ableton stores in the `.als` file:
 | **2 ✅** | `SampleBuffer`, background `SampleLoader`, `SampleManager`, `PadVoice`; load WAV/AIFF (drag & drop / LOAD), waveform editor on the CRT, MIDI trigger, pitch, gain, pan, start/end, reverse on every pad | 90/90 automated checks incl. sample-exact output and zero allocations in `processBlock`; pluginval strictness 7 |
 | **3 ✅** | Per-pad mode (one-shot / loop), tempo-synced loops phase-locked to PPQ, rates, choke groups, mute / solo, velocity sensitivity, MIDI learn | 126/126 automated checks incl. sync locked to the grid over 6 s, re-lock after jumps / tempo changes, seam crossfade, click-free choke |
 | **4 ✅** | `TransientDetector` (two-band spectral flux), `SliceTable`, slice editing on the CRT, equal / transient slicing, SLICE mode, SPREAD to pads with shared audio | 158/158 checks: every kick and snare of a test break found, slices ≤ 2.5 ms before the attack, no false slices on a tone, slice playback, edits, SPREAD memory sharing, state |
+| **4.1 ✅** | SWAP groups: latched pads hand off to each other at the next slice point (or 1/16 / beat / bar), continuing from the same point in the incoming break | 175/175 checks: lands within 2 samples of the marker, incoming starts on its own marker, stays on the grid, AT BAR, cancel, stop, transport stopped, state |
 | 5 | Four `GroupBus`es, mixer view, routing | Group mute/solo/pan correct |
 | 6 | 16 performance FX per group, LOCKED/MOMENTARY, MIDI-mappable | All FX click-free, synced FX on the grid |
 | 7 | 32-step sequencer, live record with quantise | Sequencer sample-accurate vs. Live's metronome after loop wraps |
-| 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery | Full Live Set round-trip, snapshot switch with no dropouts |
+| 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |

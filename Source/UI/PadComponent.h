@@ -40,6 +40,9 @@ namespace tb::ui
         /** muted: pad's own mute. silenced: muted or another pad is soloed. */
         void setMuteSolo (bool muted, bool soloed, bool silenced);
 
+        /** A SWAP hand-off onto (or a stop of) this pad is waiting to land: the bezel flashes. */
+        void setQueued (bool);
+
         bool isInterestedInFileDrag (const juce::StringArray&) override;
         void fileDragEnter (const juce::StringArray&, int, int) override;
         void fileDragExit (const juce::StringArray&) override;
@@ -66,6 +69,7 @@ namespace tb::ui
         int  note  = 36;
         juce::String tag;            // e.g. "LOOP C2"
         bool muted = false, soloed = false, silenced = false;
+        bool queued = false, queuedFlash = false;
 
         juce::Image overlay;     // bezel, screws, grime, cracks — baked on resize
 

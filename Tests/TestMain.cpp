@@ -318,9 +318,12 @@ namespace
             for (auto* n : { tb::params::padMode, tb::params::padSync, tb::params::padRate, tb::params::padChoke,
                              tb::params::padVelSens, tb::params::padMute, tb::params::padSolo, tb::params::padSlice })
                 allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
-        check (allPadParams, "224 per-pad parameters exist (pad01_gain .. pad16_slice)");
+        for (int pad = 0; pad < tb::kNumPads; ++pad)
+            for (auto* n : { tb::params::padSwap, tb::params::padSwapAt })
+                allPadParams &= p.getParameters().getParameter (tb::params::padId (pad, n)) != nullptr;
+        check (allPadParams, "256 per-pad parameters exist (pad01_gain .. pad16_swapq)");
         check (tb::params::padId (6, tb::params::padPitch) == "pad07_pitch", "stable per-pad parameter IDs");
-        check (p.getParameters().processor.getParameters().size() == 227, "227 automatable parameters in total (3 master + 14 x 16 pads)");
+        check (p.getParameters().processor.getParameters().size() == 259, "259 automatable parameters in total (3 master + 16 x 16 pads)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -955,6 +958,193 @@ namespace
 
 
     //==========================================================================
+    //  0.4.1: SWAP groups
+    //==========================================================================
+    struct TimedEvent { int at; juce::MidiMessage msg; };
+
+    /** Renders `total` samples from the current host position, injecting events at absolute sample positions. */
+    juce::AudioBuffer<float> renderTimeline (Rig& r, int total, const std::vector<TimedEvent>& events,
+                                             std::vector<bool>* queued0 = nullptr)
+    {
+        const int blocks = (total + kBlock - 1) / kBlock;
+        juce::AudioBuffer<float> out (2, blocks * kBlock), buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (const auto& e : events)
+                if (e.at >= b * kBlock && e.at < (b + 1) * kBlock)
+                    midi.addEvent (e.msg, e.at - b * kBlock);
+            runBlock (r.p, r.host, buf, midi);
+            for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            if (queued0 != nullptr) queued0->push_back (r.p.getBridge().padQueued[0].load());
+        }
+        return out;
+    }
+
+    int firstSoundIn (const juce::AudioBuffer<float>& b, int ch, int from, int to)
+    {
+        for (int i = juce::jmax (0, from); i < juce::jmin (to, b.getNumSamples()); ++i)
+            if (std::abs (b.getSample (ch, i)) > 1.0e-7f) return i;
+        return -1;
+    }
+
+    void testSwapGroups()
+    {
+        std::cout << "\n== 0.4.1: SWAP groups (hand-off between breaks at slice points) ==" << std::endl;
+
+        // Break A on pad 1 (panned hard left); break B on pad 2 (hard right) is the
+        // same groove played 100 samples LATE (laid back), so its own markers sit
+        // 100 samples after A's. Both two bars, equal 16 slices.
+        const auto aAudio = makeBreak (48000.0);
+        const int  len    = aAudio.getNumSamples();
+        juce::AudioBuffer<float> bAudio (2, len);
+        bAudio.clear();
+        for (int ch = 0; ch < 2; ++ch) bAudio.copyFrom (ch, 100, aAudio, ch, 0, len - 100);
+        const auto fileA = writeAudio ("swapA", aAudio, 48000.0, Fmt::wavFloat);
+        const auto fileB = writeAudio ("swapB", bAudio, 48000.0, Fmt::wavFloat);
+
+        Rig r;
+        auto& sm = r.p.getSamples();
+        r.load (0, fileA);
+        r.load (1, fileB);
+        sm.setSliceCount (0, 16); sm.equalSlice (0);
+        auto tb16 = tb::SliceTable::equal (len, 16);
+        for (int i = 1; i < tb16.count; ++i) tb16.starts[(size_t) i] += 100;
+        sm.setSlices (1, tb16);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+
+        for (int p = 0; p < 2; ++p)
+        {
+            setPadParam (r.p, p, tb::params::padMode, (float) tb::params::modeLoop);
+            setPadParam (r.p, p, tb::params::padSync, 1.0f);
+            setPadParam (r.p, p, tb::params::padSwap, 1.0f);
+            setPadParam (r.p, p, tb::params::padPan, p == 0 ? -1.0f : 1.0f);
+        }
+        r.settle();
+
+        const auto aTable = sm.getInfo (0).slices;
+        check (aTable.count == 16 && sm.getInfo (1).slices.starts[3] == aTable.starts[3] + 100, "two sliced breaks in SWAP group 1");
+
+        // Tempo at which a 2-bar (8-beat) break plays at exactly its own speed.
+        r.host.bpm = 60.0 * 8.0 * 48000.0 / (double) len;
+        r.host.ppq = 0.0;
+        r.host.playing = true;
+
+        auto on  = [] (int note) { return juce::MidiMessage::noteOn (1, note, (juce::uint8) 127); };
+        auto off = [] (int note) { return juce::MidiMessage::noteOff (1, note); };
+
+        const int hitB  = 21000;                       // mid slice 3 of A
+        const int S     = aTable.starts[3];            // A's next marker: the hand-off point
+        const int stopB = S + 30000;                   // hit B again: stop at B's next marker
+        int nextB = -1;
+        for (int i = 0; i < 16 && nextB < 0; ++i)
+            if (tb16.starts[(size_t) i] > stopB - S + tb16.starts[3]) nextB = tb16.starts[(size_t) i];
+        const int stopAt = S + (nextB - tb16.starts[3]);
+
+        std::vector<bool> q0;
+        auto out = renderTimeline (r, stopAt + 6000,
+                                   { { 0, on (36) }, { 600, off (36) },        // latched: note-off ignored
+                                     { hitB, on (37) }, { hitB + 300, off (37) },
+                                     { stopB, on (37) } });
+
+        check (firstSoundIn (out, 0, 0, 2000) >= 0 && firstSoundIn (out, 0, 1000, 2000) >= 0,
+               "a pad in a SWAP group latches: it keeps playing after note-off");
+        check (firstSoundIn (out, 1, 0, S) < 0, "hitting pad 2 mid-slice does NOT cut in straight away (queued)");
+        const int firstB = firstSoundIn (out, 1, S - 2000, S + 2000);
+        check (std::abs (firstB - S) <= 2, "pad 2 takes over exactly on break A's next slice marker (at "
+                                             + juce::String (firstB) + ", marker " + juce::String (S) + ")");
+        check (isSilent (out.getMagnitude (0, S + 120, 3000)), "break A stops right there (1 ms fade, its next hit doesn't leak)");
+        bool faded = true;
+        for (int k = 0; k < 120; ++k)
+            faded &= std::abs (out.getSample (0, S + k)) <= std::abs (aAudio.getSample (0, S + k)) * juce::jmax (0.0f, 1.0f - (float) k / 48.0f) + 1.0e-4f;
+        check (faded, "...faded out over 1 ms, not hard-cut (no click)");
+
+        const int mB = tb16.starts[3];
+        float err = 0.0f;
+        for (int k = 48; k < 448; ++k)
+            err = juce::jmax (err, std::abs (out.getSample (1, S + k) - bAudio.getSample (1, mB + k)));
+        check (err < 5.0e-3f, "break B continues from the same point, starting ON its own slice marker (its hit isn't cut) (err "
+                                 + juce::String (err, 6) + ")");
+
+        const int stopFirstSilent = stopAt + 200;
+        check (! isSilent (out.getMagnitude (1, stopAt - 1500, 1400)) && isSilent (out.getMagnitude (1, stopFirstSilent, 3000)),
+               "hitting the playing pad again stops it at its next slice point");
+
+        // B stays on the grid (with its 100-sample lead) while it plays: check the
+        // playhead over a long run.
+        r.settle();
+        r.host.ppq = 0.0;
+        renderTimeline (r, 30000, { { 0, on (36) }, { 21000, on (37) } });
+        double worst = 0.0;
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < 400; ++b)
+        {
+            runBlock (r.p, r.host, buf, midi);
+            const double grid = std::fmod (r.host.ppq, 8.0) / 8.0 * len;
+            double e = std::abs (r.p.getBridge().padPlayhead[1].load() * len - (grid + 100.0));
+            e = juce::jmin (e, len - e);
+            worst = juce::jmax (worst, e);
+        }
+        check (worst < 3.0, "after the swap, break B stays locked to Live's grid for 4+ s (max err "
+                               + juce::String (worst, 2) + " samples)");
+        check (buf.getMagnitude (0, 0, kBlock) < 1.0e-9f, "...and break A stays stopped");
+
+        // SWAP AT = BAR on pad 1: hit it while pad 2 plays; it lands on the next bar line.
+        r.settle();
+        r.host.ppq = 0.0;
+        setPadParam (r.p, 0, tb::params::padSwapAt, (float) tb::params::swapAtBar);
+        const double samplesPerBar = 4.0 * 60.0 / r.host.bpm * 48000.0;
+        q0.clear();
+        out = renderTimeline (r, 150000, { { 1000, on (37) }, { 80000, on (36) } }, &q0);
+        const int bar = (int) std::lround (std::ceil (80000.0 / samplesPerBar) * samplesPerBar);
+        const int firstA = firstSoundIn (out, 0, 0, 150000);
+        check (std::abs (firstA - bar) <= 2, "SWAP AT BAR: lands on the next bar line (at " + juce::String (firstA)
+                                               + ", bar " + juce::String (bar) + ")");
+        check (q0[(size_t) (82000 / kBlock)] && ! q0.back(), "the queued pad flashes until the swap lands");
+        setPadParam (r.p, 0, tb::params::padSwapAt, (float) tb::params::swapAtSlice);
+
+        // Pressing the playing pad while a swap is queued cancels it.
+        r.settle();
+        r.host.ppq = 0.0;
+        out = renderTimeline (r, 40000, { { 0, on (36) }, { 21000, on (37) }, { 22000, on (36) } });
+        check (firstSoundIn (out, 1, 0, 40000) < 0 && ! isSilent (out.getMagnitude (0, 30000, 5000)),
+               "hitting the playing pad while a swap is queued cancels the swap");
+
+        // Live stopped: same fraction of the way through, still on A's slice point.
+        r.settle();
+        r.host.playing = false;
+        out = renderTimeline (r, 40000, { { 0, on (36) }, { hitB, on (37) } });
+        const int firstStopped = firstSoundIn (out, 1, 0, 40000);
+        err = 0.0f;
+        for (int k = 48; k < 448; ++k)
+            err = juce::jmax (err, std::abs (out.getSample (1, S + k) - bAudio.getSample (1, mB + k)));
+        check (std::abs (firstStopped - S) <= 2 && err < 1.0e-2f,
+               "with Live stopped it still swaps on A's slice point, onto B's matching slice (at " + juce::String (firstStopped)
+                 + ", err " + juce::String (err, 5) + ")");
+
+        // Panic clears everything; pads not in a group behave as before.
+        r.p.requestPanic();
+        runBlock (r.p, r.host, buf, midi);
+        runBlock (r.p, r.host, buf, midi);
+        check (isSilent (peakOf (buf)), "PANIC stops a latched SWAP pad");
+        setPadParam (r.p, 0, tb::params::padSwap, 0.0f);
+        r.settle();
+        auto held = renderHeld (r, 36, 8, 3);
+        check (isSilent (peakOf (held, 5 * kBlock)), "SWAP off: a LOOP pad stops on note-off again");
+
+        juce::MemoryBlock blob;
+        setPadParam (r.p, 4, tb::params::padSwap, 3.0f);
+        setPadParam (r.p, 4, tb::params::padSwapAt, 2.0f);
+        r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        auto raw = [&] (int pad, const char* n) { return q.getParameters().getRawParameterValue (tb::params::padId (pad, n))->load(); };
+        check (juce::roundToInt (raw (4, tb::params::padSwap)) == 3 && juce::roundToInt (raw (4, tb::params::padSwapAt)) == 2,
+               "SWAP group and AT are saved with the set");
+    }
+
+    //==========================================================================
     //  PHASE 4
     //==========================================================================
     void testTransientDetection()
@@ -1378,6 +1568,18 @@ namespace
         setPadParam (p, 4, tb::params::padMute, 1.0f);
         const bool playPage  = out.getFileName().contains ("play");
         const bool slicePage = out.getFileName().contains ("slice");
+        const bool swapPage  = out.getFileName().contains ("swap");
+        if (swapPage)
+        {
+            p.getSamples().autoSlice (0);
+            waitForLoads (p);
+            for (int pad = 0; pad < 4; ++pad)
+            {
+                setPadParam (p, pad, tb::params::padMode, (float) tb::params::modeLoop);
+                setPadParam (p, pad, tb::params::padSwap, 1.0f);
+                setPadParam (p, pad, tb::params::padChoke, 0.0f);
+            }
+        }
         if (slicePage)
         {
             p.getSamples().autoSlice (0);
@@ -1390,12 +1592,13 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
-        if (playPage || slicePage)
+        if (playPage || slicePage || swapPage)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
             {
                 if (auto* pe = dynamic_cast<tb::ui::PadEditorPanel*> (&c))
-                    pe->setPage (slicePage ? tb::ui::PadEditorPanel::Page::slice : tb::ui::PadEditorPanel::Page::play);
+                    pe->setPage (slicePage ? tb::ui::PadEditorPanel::Page::slice
+                                 : swapPage ? tb::ui::PadEditorPanel::Page::swap : tb::ui::PadEditorPanel::Page::play);
                 for (auto* child : c.getChildren()) find (*child);
             };
             find (*ed);
@@ -1460,6 +1663,7 @@ int main (int argc, char* argv[])
         testTransientDetection();
         testSlicing (toneAudio, tone);
         testSliceEditingOnScreen (tone);
+        testSwapGroups();
         testEditorDrivesState();
         testRealtimeSafety();
 

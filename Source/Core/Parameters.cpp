@@ -104,6 +104,14 @@ namespace tb::params
             // ---- Phase 4 ----
             layout.add (std::make_unique<AudioParameterInt> (
                 ParameterID { padId (pad, padSlice), kV4 }, prefix + "Slice", 1, 16, 1));
+
+            // ---- 0.4.1: SWAP groups (slice-point hand-off between breaks) ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padSwap), kV5 }, prefix + "Swap Group",
+                StringArray { "Off", "1", "2", "3", "4" }, 0));
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padSwapAt), kV5 }, prefix + "Swap At",
+                StringArray { "Slice", "1/16", "Beat", "Bar" }, swapAtSlice));
         }
     }
 

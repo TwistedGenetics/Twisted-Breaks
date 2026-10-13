@@ -232,7 +232,7 @@ namespace tb::ui
         navKeys[1]->onClick = [this] { padEditor.setPage (PadEditorPanel::Page::slice); };
         padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
         {
-            waveform.setSliceView (page == PadEditorPanel::Page::slice);
+            waveform.setSliceView (page == PadEditorPanel::Page::slice || page == PadEditorPanel::Page::swap);
             navKeys[0]->setToggleState (page != PadEditorPanel::Page::slice, dontSendNotification);
             navKeys[1]->setToggleState (page == PadEditorPanel::Page::slice, dontSendNotification);
         };

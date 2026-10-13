@@ -56,17 +56,36 @@ namespace tb
         return juce::jmax (0, juce::jmin (kMaxCrossfade, room, len / 4));
     }
 
+    double PadVoice::gridPosition (const Settings& s, double ppq) noexcept
+    {
+        const double len = (double) (s.regionEnd - s.regionStart);
+        if (s.syncPeriodBeats <= 0.0 || len <= 0.0) return (double) (s.reverse ? s.regionEnd - 1 : s.regionStart);
+        double phase = ppq / s.syncPeriodBeats;
+        phase -= std::floor (phase);
+        return s.reverse ? (double) s.regionEnd - 1.0 - phase * len
+                         : (double) s.regionStart + phase * len;
+    }
+
     double PadVoice::phaseLockedPosition (double ppq) const noexcept
     {
-        const double len   = (double) (regionEnd - regionStart);
-        double phase = ppq / syncPeriod;
-        phase -= std::floor (phase);
-        return reverse ? (double) regionEnd - 1.0 - phase * len
-                       : (double) regionStart + phase * len;
+        Settings s;
+        s.regionStart = regionStart; s.regionEnd = regionEnd;
+        s.reverse = reverse; s.syncPeriodBeats = syncPeriod;
+        double p = gridPosition (s, ppq) + phaseOffset;
+
+        // Keep it inside the region.
+        const double lo = (double) regionStart, len = (double) (regionEnd - regionStart);
+        if (len > 0.0)
+        {
+            p = std::fmod (p - lo, len);
+            if (p < 0.0) p += len;
+            p += lo;
+        }
+        return p;
     }
 
     void PadVoice::start (const SampleBuffer::Ptr& newBuffer, const Settings& s, float level,
-                          double startPpq, bool hostPlaying) noexcept
+                          double startPpq, bool hostPlaying, double startAt) noexcept
     {
         if (newBuffer == nullptr || newBuffer->getNumSamples() <= 0) { kill(); return; }
 
@@ -82,16 +101,34 @@ namespace tb
         releaseGain  = 1.0f;
         releaseStep  = 1.0f / juce::jmax (1.0f, (float) (hostRate * 0.005));
 
-        position = reverse ? (double) (regionEnd - 1) : (double) regionStart;
+        position    = reverse ? (double) (regionEnd - 1) : (double) regionStart;
+        phaseOffset = 0.0;
 
         // A synced loop enters at the point the host's playhead says it should
         // be at, so it lands on the grid even when triggered mid-bar.
         const bool lockToHost = syncPeriod > 0.0 && hostPlaying;
         if (lockToHost) position = phaseLockedPosition (startPpq);
 
+        // SWAP hand-off: start exactly here. A synced loop remembers how far
+        // that is from its grid position, so syncTo() keeps it there.
+        const bool forced = startAt >= 0.0;
+        if (forced)
+        {
+            const double grid = position;
+            position = juce::jlimit ((double) regionStart, (double) juce::jmax (regionStart, regionEnd - 1), startAt);
+            if (lockToHost)
+            {
+                const double len = (double) (regionEnd - regionStart);
+                double off = position - grid;
+                if (off >  len * 0.5) off -= len;
+                if (off < -len * 0.5) off += len;
+                phaseOffset = off;
+            }
+        }
+
         // Starting exactly at the top of the file forwards keeps the attack
         // sample-exact; anywhere else gets a tiny fade so it can't click.
-        const bool needsFade = reverse || regionStart > 0 || lockToHost;
+        const bool needsFade = reverse || regionStart > 0 || lockToHost || (forced && position > 0.0);
         // Short (0.5 ms): slices start just before their attack, so the fade
         // is over before the hit and never softens it.
         fadeIn     = needsFade ? 0.0f : 1.0f;

@@ -48,9 +48,15 @@ namespace tb
 
         void prepare (double hostSampleRate) noexcept;
 
-        /** startPpq: song position at the trigger (used to phase-lock synced loops). */
+        /**
+            startPpq: song position at the trigger (used to phase-lock synced loops).
+            startAt >= 0: begin at this source position instead (SWAP hand-offs).
+            A synced loop started that way keeps the small offset between
+            startAt and its grid position for as long as it plays, so the
+            attack it starts on isn't cut and it still never drifts.
+        */
         void start (const SampleBuffer::Ptr& buffer, const Settings&, float levelFromVelocity,
-                    double startPpq = 0.0, bool hostPlaying = false) noexcept;
+                    double startPpq = 0.0, bool hostPlaying = false, double startAt = -1.0) noexcept;
         void release (float fadeMs = 5.0f) noexcept;
         void kill() noexcept;
 
@@ -64,6 +70,10 @@ namespace tb
         bool   isReleasing() const noexcept { return releasing; }
         bool   isLooping()   const noexcept { return looping; }
         double getPosition() const noexcept { return position; }
+        double getIncrement() const noexcept { return increment.getCurrentValue(); }
+        int    getRegionStart() const noexcept { return regionStart; }
+        int    getRegionEnd()   const noexcept { return regionEnd; }
+        bool   isReverse()      const noexcept { return reverse; }
         const SampleBuffer* getBuffer() const noexcept { return buffer.get(); }
 
         /** Adds into `out`. Returns the voice's peak in this span (for lamps). */
@@ -79,6 +89,9 @@ namespace tb
         */
         static double loopBeatsFor (double regionSeconds) noexcept;
 
+        /** Where a synced loop with these settings sits at song position `ppq` (no offset). */
+        static double gridPosition (const Settings&, double ppq) noexcept;
+
     private:
         double phaseLockedPosition (double ppq) const noexcept;
         int    crossfadeLength() const noexcept;
@@ -92,6 +105,7 @@ namespace tb
         bool   looping   = false;
         double syncPeriod = 0.0;
         double position  = 0.0;
+        double phaseOffset = 0.0;   // source samples ahead of the grid (SWAP hand-offs)
         int    regionStart = 0, regionEnd = 0;
         float  velocityGain = 1.0f;
 

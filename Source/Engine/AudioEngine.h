@@ -31,6 +31,26 @@ namespace tb
             decoded; the engine never touches files
           * MIDI is rendered sample-accurately by splitting the block at
             each event's sample position
+
+        SWAP groups (0.4.1)
+        -------------------
+        Pads in the same SWAP group (1..4) take turns: one plays at a time,
+        latched (note-off is ignored), and hitting another pad in the group
+        QUEUES a hand-off instead of cutting straight away. The hand-off lands
+        at the next slice marker of the break that's playing (or the next
+        1/16, beat or bar — the incoming pad's SWAP AT setting), sample-
+        accurately, even in the middle of a block:
+
+            amen (pad 1) ... kick . hat . SNARE <- hit pad 2 here
+                                          |
+            think (pad 2)                 SNARE . hat . kick ...
+
+        The incoming break carries on from the SAME musical point: a synced
+        loop takes its own grid position for that song position, otherwise
+        the same fraction of the way through; then it snaps to its own
+        nearest slice marker (within a 1/32 note) so it starts on its hit,
+        not a few ms into it. Hitting the playing pad again stops it at the
+        next point. Everything is plain data on the audio thread.
     */
     class AudioEngine
     {
@@ -59,6 +79,8 @@ namespace tb
             bool  mute    = false;
             bool  solo    = false;
             int   slice   = 1;       // 1..16, SLICE mode
+            int   swap    = 0;       // 0 = off, 1..4: SWAP group
+            int   swapAt  = 0;       // params::SwapAt: when a hand-off lands
         };
 
         struct BlockParams
@@ -109,9 +131,24 @@ namespace tb
         uint32_t getNoteMapVersion() const noexcept { return noteMapVersion.load(); }
 
         static constexpr int kDefaultFirstNote = 36;  // C1 in Ableton = Drum Rack pad 1
+        static constexpr int kSwapGroups = 4;
 
     private:
         void triggerPad (int pad, float velocity, int sampleOffset) noexcept;
+        void startVoice (int pad, float level, int sampleOffset, double startAt = -1.0) noexcept;
+
+        // ---- SWAP groups
+        struct PendingSwap
+        {
+            bool  active    = false;
+            int   pad       = -1;     // incoming pad; -1 = stop the group
+            float level     = 1.0f;
+            int   remaining = 0;      // output samples until it lands
+        };
+        int    swapOwner (int group) const noexcept;           // playing pad, or -1
+        int    samplesUntilSwap (int owner, int swapAt, int sampleOffset) const noexcept;
+        double handoffPosition (int fromPad, int toPad, int sampleOffset) const noexcept;
+        void   fireSwap (int group, int sampleOffset) noexcept;
         void chokeOthers (int pad, int chokeGroup) noexcept;
         void releasePad (int pad) noexcept;
         void handleMidi (const juce::MidiMessage& m) noexcept;
@@ -135,6 +172,10 @@ namespace tb
         std::array<int,  kNumPads>  padMode {};       // this block's mode per pad
         std::array<int,  kNumPads>  padChoke {};
         std::array<float, kNumPads> padVelSens {};
+        std::array<int,  kNumPads>  padSwap {};       // 0 = off, 1..4
+        std::array<int,  kNumPads>  padSwapAt {};
+        std::array<int,  kSwapGroups + 1> swapPlaying {};   // [1..4]: pad, or -1
+        std::array<PendingSwap, kSwapGroups + 1> pendingSwap {};
         std::atomic<int>      learnPad { -1 };
         std::atomic<uint32_t> noteMapVersion { 0 };
         const TransportState* transportNow = nullptr; // valid during process()

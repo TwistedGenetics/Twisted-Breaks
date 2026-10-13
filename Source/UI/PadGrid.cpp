@@ -62,14 +62,17 @@ namespace tb::ui
             const bool muted  = raw (params::padMute) > 0.5f;
             const bool soloed = raw (params::padSolo) > 0.5f;
             pad.setMuteSolo (muted, soloed, muted || (anySolo && ! soloed));
+            pad.setQueued (bridge.padQueued[(size_t) i].load (std::memory_order_relaxed));
 
-            // Footer tag: playback mode and choke group, e.g. "LOOP C2".
+            // Footer tag: playback mode, choke and SWAP group, e.g. "LOOP C2 SW1".
             const int mode  = juce::roundToInt (raw (params::padMode));
             const int choke = juce::roundToInt (raw (params::padChoke));
+            const int swap  = juce::roundToInt (raw (params::padSwap));
             const juce::String modeTag = mode == params::modeLoop  ? juce::String ("LOOP")
                                        : mode == params::modeSlice ? "SL " + juce::String (juce::roundToInt (raw (params::padSlice)))
                                                                    : juce::String ("ONE");
-            const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String());
+            const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())
+                                             + (swap > 0 ? " SW" + juce::String (swap) : juce::String());
 
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);

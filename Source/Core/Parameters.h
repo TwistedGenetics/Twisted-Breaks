@@ -30,6 +30,7 @@ namespace tb::params
     inline constexpr int kV2 = 2;   // parameters introduced in 0.2.x
     inline constexpr int kV3 = 3;   // parameters introduced in 0.3.x
     inline constexpr int kV4 = 4;   // parameters introduced in 0.4.x
+    inline constexpr int kV5 = 5;   // parameters introduced in 0.4.1 (SWAP groups)
 
     // ---- Master section (Phase 1) ------------------------------------------
     inline constexpr const char* masterGain    = "master_gain";     // dB
@@ -59,7 +60,12 @@ namespace tb::params
     // ---- Per pad (Phase 4) ---------------------------------------------------
     inline constexpr const char* padSlice   = "slice";     // int 1..16: slice played in SLICE mode
 
+    // ---- Per pad (0.4.1: SWAP groups) ---------------------------------------
+    inline constexpr const char* padSwap    = "swap";      // choice: Off / 1..4
+    inline constexpr const char* padSwapAt  = "swapq";     // choice: Slice / 1/16 / Beat / Bar
+
     enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2 };
+    enum SwapAt  { swapAtSlice = 0, swapAtSixteenth = 1, swapAtBeat = 2, swapAtBar = 3 };
     inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
 
     inline constexpr float padGainMinDb  = -48.0f;

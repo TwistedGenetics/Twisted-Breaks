@@ -38,6 +38,17 @@ namespace tb::ui
         }
     }
 
+    void PadComponent::setQueued (bool q)
+    {
+        // Flash at ~4 Hz while queued (driven by the 30 Hz refresh).
+        const bool flash = q && (Time::getMillisecondCounter() / 125) % 2 == 0;
+        if (q != queued || flash != queuedFlash)
+        {
+            queued = q; queuedFlash = flash;
+            repaint();
+        }
+    }
+
     void PadComponent::setLabels (const String& upper, const String& name, int midiNote, const String& newTag,
                                   bool isWarning, bool sampleLoaded)
     {
@@ -211,6 +222,13 @@ namespace tb::ui
         }
         if (muted)  paint::lamp (g, { 18.0f, (float) getHeight() - 18.0f }, 4.2f, c::red,   c::redDim,   1.0f);
         if (soloed) paint::lamp (g, { (float) getWidth() - 18.0f, (float) getHeight() - 18.0f }, 4.2f, c::green, c::greenDim, 1.0f);
+
+        // 6a. SWAP queued: flashing amber frame until the hand-off lands.
+        if (queuedFlash)
+        {
+            g.setColour (c::amber);
+            g.drawRoundedRectangle (glass.expanded (2.0f), 3.0f, 2.5f);
+        }
 
         // 6. A file is being dragged over this pad: amber outline.
         if (fileHover)

@@ -112,6 +112,8 @@ private:
         std::atomic<float>* mute = nullptr;
         std::atomic<float>* solo = nullptr;
         std::atomic<float>* slice = nullptr;
+        std::atomic<float>* swap = nullptr;
+        std::atomic<float>* swapAt = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

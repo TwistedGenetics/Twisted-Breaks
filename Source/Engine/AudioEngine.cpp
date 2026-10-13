@@ -16,6 +16,7 @@ namespace tb
             padNote[(size_t) p].store (kDefaultFirstNote + p);
             bridge.padPlayhead[(size_t) p].store (-1.0f);
         }
+        swapPlaying.fill (-1);
     }
 
     AudioEngine::~AudioEngine()
@@ -47,6 +48,8 @@ namespace tb
                 v.kill();
 
         currentVoice.fill (0);
+        swapPlaying.fill (-1);
+        pendingSwap.fill ({});
         padPeak.fill (0.0f);
         padFlash.fill (false);
         master.reset();
@@ -135,6 +138,8 @@ namespace tb
             padMode[(size_t) p]    = pp.mode;
             padChoke[(size_t) p]   = pp.choke;
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
+            padSwap[(size_t) p]    = juce::jlimit (0, kSwapGroups, pp.swap);
+            padSwapAt[(size_t) p]  = juce::jlimit (0, 3, pp.swapAt);
 
             auto& s = padSettings[(size_t) p];
             const auto* buf = padSample[(size_t) p].get();
@@ -221,12 +226,50 @@ namespace tb
 
         chokeOthers (pad, padChoke[(size_t) pad]);
 
-        const auto& sample = padSample[(size_t) pad];
-        if (sample == nullptr) return;
-
         // Velocity sensitivity: 0 = every hit at full level, 1 = level follows velocity.
         const float sens  = padVelSens[(size_t) pad];
         const float level = 1.0f - sens + sens * velocity;
+
+        // ---- SWAP group: queue a hand-off instead of starting now.
+        const int group = padSwap[(size_t) pad];
+        if (group > 0)
+        {
+            auto& pending = pendingSwap[(size_t) group];
+            const int owner = swapOwner (group);
+
+            if (owner == pad)
+            {
+                // The playing pad again: cancel a queued swap, else stop at the next point.
+                if (pending.active && pending.pad >= 0) { pending.active = false; return; }
+                pending = { true, -1, level, samplesUntilSwap (owner, padSwapAt[(size_t) pad], sampleOffset) };
+            }
+            else if (owner >= 0)
+            {
+                if (padSample[(size_t) pad] == nullptr) return;
+                pending = { true, pad, level, samplesUntilSwap (owner, padSwapAt[(size_t) pad], sampleOffset) };
+            }
+            else
+            {
+                // Nothing playing in the group: this pad starts right away.
+                if (padSample[(size_t) pad] == nullptr) return;
+                pending = {};
+                swapPlaying[(size_t) group] = pad;
+                startVoice (pad, level, sampleOffset);
+                return;
+            }
+
+            if (pending.remaining <= 0) fireSwap (group, sampleOffset);
+            return;
+        }
+
+        if (padSample[(size_t) pad] == nullptr) return;
+        startVoice (pad, level, sampleOffset);
+    }
+
+    void AudioEngine::startVoice (int pad, float level, int sampleOffset, double startAt) noexcept
+    {
+        const auto& sample = padSample[(size_t) pad];
+        if (sample == nullptr) return;
 
         const bool   playing  = transportNow != nullptr && transportNow->isPlaying;
         const double ppqHere  = transportNow != nullptr ? transportNow->ppqAt (sampleOffset) : 0.0;
@@ -240,13 +283,164 @@ namespace tb
         slots[(size_t) cur].release();
         cur = (cur + 1) % kVoicesPerPad;
         slots[(size_t) cur].kill();
-        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], level, ppqHere, playing);
+        slots[(size_t) cur].start (sample, padSettings[(size_t) pad], level, ppqHere, playing, startAt);
+    }
+
+    //==========================================================================
+    //  SWAP groups
+    //==========================================================================
+    int AudioEngine::swapOwner (int group) const noexcept
+    {
+        const int p = swapPlaying[(size_t) group];
+        if (p < 0 || padSwap[(size_t) p] != group) return -1;
+        const auto& v = voices[(size_t) p][(size_t) currentVoice[(size_t) p]];
+        return v.isActive() && ! v.isReleasing() ? p : -1;
+    }
+
+    int AudioEngine::samplesUntilSwap (int owner, int swapAt, int sampleOffset) const noexcept
+    {
+        const auto* t = transportNow;
+
+        // 1/16, BEAT, BAR: the next grid line of Ableton's timeline.
+        if (swapAt != params::swapAtSlice && t != nullptr && t->isPlaying && t->ppqPerSample > 0.0)
+        {
+            const double q   = swapAt == params::swapAtSixteenth ? 0.25 : (swapAt == params::swapAtBeat ? 1.0 : t->ppqPerBar());
+            const double now = t->ppqAt (sampleOffset);
+            const double target = std::ceil (now / q - 1.0e-9) * q;
+            return (int) std::lround ((target - now) / t->ppqPerSample);
+        }
+
+        // SLICE (and any setting while Live is stopped): the next slice
+        // point of the break that's playing, in its playback direction.
+        const auto& v   = voices[(size_t) owner][(size_t) currentVoice[(size_t) owner]];
+        const auto* buf = v.getBuffer();
+        const int lo = v.getRegionStart(), hi = v.getRegionEnd();
+        if (buf == nullptr || hi - lo < 2) return 0;
+
+        std::array<int, 66> points {};
+        int n = 0;
+        points[(size_t) n++] = lo;
+        const auto& table = padSlices[(size_t) owner];
+        if (! table.isEmpty())
+        {
+            for (int i = 0; i < table.count; ++i)
+                if (table.starts[(size_t) i] > lo && table.starts[(size_t) i] < hi)
+                    points[(size_t) n++] = table.starts[(size_t) i];
+        }
+        else
+        {
+            // Unsliced: every 1/16 of the region.
+            const double beats = PadVoice::loopBeatsFor ((double) (hi - lo) / buf->sourceSampleRate);
+            const int steps = juce::jlimit (1, 64, (int) std::lround (beats * 4.0));
+            for (int k = 1; k < steps; ++k)
+                points[(size_t) n++] = lo + (int) ((juce::int64) (hi - lo) * k / steps);
+        }
+
+        const double pos = v.getPosition();
+        double dist = -1.0;
+        if (! v.isReverse())
+        {
+            for (int i = 0; i < n && dist < 0.0; ++i)
+                if ((double) points[(size_t) i] > pos + 0.5) dist = (double) points[(size_t) i] - pos;
+            if (dist < 0.0) dist = (double) hi - pos;              // the loop point / the end
+        }
+        else
+        {
+            for (int i = n; --i >= 0 && dist < 0.0;)
+                if ((double) points[(size_t) i] < pos - 0.5) dist = pos - (double) points[(size_t) i];
+            if (dist < 0.0) dist = pos - (double) lo + 1.0;
+        }
+        return (int) std::lround (juce::jmax (0.0, dist) / juce::jmax (1.0e-6, v.getIncrement()));
+    }
+
+    double AudioEngine::handoffPosition (int fromPad, int toPad, int sampleOffset) const noexcept
+    {
+        const auto& s   = padSettings[(size_t) toPad];
+        const auto* buf = padSample[(size_t) toPad].get();
+        const int len   = s.regionEnd - s.regionStart;
+        if (buf == nullptr || len <= 0) return -1.0;
+
+        // 1. The same musical point.
+        double base;
+        const bool playing = transportNow != nullptr && transportNow->isPlaying;
+        if (s.loop && s.syncPeriodBeats > 0.0 && playing)
+        {
+            // Synced: where this break sits on Ableton's grid right now.
+            base = PadVoice::gridPosition (s, transportNow->ppqAt (sampleOffset));
+        }
+        else
+        {
+            // Otherwise: the same fraction of the way through.
+            double f = 0.0;
+            if (fromPad >= 0)
+            {
+                const auto& v = voices[(size_t) fromPad][(size_t) currentVoice[(size_t) fromPad]];
+                const double flen = (double) juce::jmax (1, v.getRegionEnd() - v.getRegionStart());
+                f = v.isReverse() ? ((double) v.getRegionEnd() - 1.0 - v.getPosition()) / flen
+                                  : (v.getPosition() - (double) v.getRegionStart()) / flen;
+                f -= std::floor (f);
+            }
+            base = s.reverse ? (double) s.regionEnd - 1.0 - f * len : (double) s.regionStart + f * len;
+        }
+
+        // 2. Snap onto this break's own nearest slice marker (within a 1/32
+        //    note) so it starts on its hit instead of a few ms into it.
+        const auto& table = padSlices[(size_t) toPad];
+        if (! s.reverse && ! table.isEmpty())
+        {
+            const double beats = PadVoice::loopBeatsFor ((double) len / buf->sourceSampleRate);
+            const double tolerance = (double) len / (beats * 8.0);
+            double best = -1.0, bestDistance = tolerance;
+            auto consider = [&] (int m)
+            {
+                if (m < s.regionStart || m >= s.regionEnd) return;
+                double d = std::abs ((double) m - base);
+                if (s.loop) d = juce::jmin (d, (double) len - d);   // across the loop point
+                if (d <= bestDistance) { bestDistance = d; best = (double) m; }
+            };
+            consider (s.regionStart);
+            for (int i = 0; i < table.count; ++i) consider (table.starts[(size_t) i]);
+            if (best >= 0.0) base = best;
+        }
+        return base;
+    }
+
+    void AudioEngine::fireSwap (int group, int sampleOffset) noexcept
+    {
+        auto& pending = pendingSwap[(size_t) group];
+        if (! pending.active) return;
+        pending.active = false;
+
+        const int owner = swapOwner (group);
+        if (pending.pad < 0)
+        {
+            if (owner >= 0)
+                for (auto& v : voices[(size_t) owner]) v.release (3.0f);
+            swapPlaying[(size_t) group] = -1;
+            return;
+        }
+
+        const int to = pending.pad;
+        if (padSample[(size_t) to] == nullptr) return;
+
+        const double at = handoffPosition (owner, to, sampleOffset);
+
+        // The outgoing break was cut on its own slice point (1 ms before its
+        // next hit), so a 1 ms fade is clean and nothing of that hit leaks.
+        if (owner >= 0 && owner != to)
+            for (auto& v : voices[(size_t) owner]) v.release (1.0f);
+
+        swapPlaying[(size_t) group] = to;
+        padFlash[(size_t) to] = true;
+        startVoice (to, pending.level, sampleOffset, at);
     }
 
     void AudioEngine::releasePad (int pad) noexcept
     {
         // One-shots (and slices) ignore note-off; loops play while held.
-        if (! juce::isPositiveAndBelow (pad, kNumPads) || padMode[(size_t) pad] != params::modeLoop) return;
+        // Pads in a SWAP group latch: they play until another pad takes over.
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || padMode[(size_t) pad] != params::modeLoop
+             || padSwap[(size_t) pad] > 0) return;
         for (auto& v : voices[(size_t) pad])
             if (v.isLooping()) v.release();
     }
@@ -256,6 +450,9 @@ namespace tb
         for (auto& padVoices : voices)
             for (auto& v : padVoices)
                 v.release();       // 5 ms fade, never a hard cut
+
+        pendingSwap.fill ({});
+        swapPlaying.fill (-1);
 
         // Later phases add: sequencer voices, stutter / beat-repeat buffers,
         // delay & reverb tails are cleared here too.
@@ -289,12 +486,32 @@ namespace tb
 
     void AudioEngine::renderVoices (juce::AudioBuffer<float>& buffer, int start, int num) noexcept
     {
-        if (num <= 0) return;
+        // Queued SWAP hand-offs land sample-accurately: split the span there.
+        while (num > 0)
+        {
+            int span = num;
+            for (int g = 1; g <= kSwapGroups; ++g)
+                if (pendingSwap[(size_t) g].active)
+                    span = juce::jmin (span, juce::jmax (0, pendingSwap[(size_t) g].remaining));
 
-        for (int p = 0; p < kNumPads; ++p)
-            for (auto& v : voices[(size_t) p])
-                if (v.isActive())
-                    padPeak[(size_t) p] = juce::jmax (padPeak[(size_t) p], v.renderAdding (buffer, start, num));
+            if (span > 0)
+            {
+                for (int p = 0; p < kNumPads; ++p)
+                    for (auto& v : voices[(size_t) p])
+                        if (v.isActive())
+                            padPeak[(size_t) p] = juce::jmax (padPeak[(size_t) p], v.renderAdding (buffer, start, span));
+
+                for (int g = 1; g <= kSwapGroups; ++g)
+                    if (pendingSwap[(size_t) g].active)
+                        pendingSwap[(size_t) g].remaining -= span;
+                start += span;
+                num   -= span;
+            }
+
+            for (int g = 1; g <= kSwapGroups; ++g)
+                if (pendingSwap[(size_t) g].active && pendingSwap[(size_t) g].remaining <= 0)
+                    fireSwap (g, start);
+        }
     }
 
     //==========================================================================
@@ -380,6 +597,15 @@ namespace tb
             if (v.isActive() && ! v.isReleasing() && v.getBuffer() != nullptr)
                 head = (float) (v.getPosition() / (double) v.getBuffer()->getNumSamples());
             bridge.padPlayhead[(size_t) p].store (head, std::memory_order_relaxed);
+
+            // Queued SWAP (incoming pad, or the playing pad waiting to stop).
+            bool queued = false;
+            for (int g = 1; g <= kSwapGroups; ++g)
+            {
+                const auto& ps = pendingSwap[(size_t) g];
+                queued = queued || (ps.active && (ps.pad == p || (ps.pad < 0 && swapPlaying[(size_t) g] == p)));
+            }
+            bridge.padQueued[(size_t) p].store (queued, std::memory_order_relaxed);
         }
 
         // ---- Scope tap: decimated mono sum of the master output
