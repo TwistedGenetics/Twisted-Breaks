@@ -85,22 +85,59 @@ namespace tb
         PadCommand cmd;
         while (padCommands.pop (cmd))
         {
-            const bool valid = juce::isPositiveAndBelow (cmd.pad, kNumPads);
-
-            if (valid && cmd.setSlices)
-                padSlices[(size_t) cmd.pad] = cmd.slices;      // plain copy, no allocation
-
-            if (valid && cmd.setSample && padSample[(size_t) cmd.pad].get() != cmd.buffer)
+            if (juce::isPositiveAndBelow (cmd.pad, kNumPads))
             {
-                // Old voices fade out still holding the old buffer (kept alive by
-                // their own reference); new triggers use the new one.
-                for (auto& v : voices[(size_t) cmd.pad])
-                    v.release();
-                padSample[(size_t) cmd.pad] = cmd.buffer;            // +1
+                if (cmd.setSlices) ownSlices[(size_t) cmd.pad] = cmd.slices;     // plain copy, no allocation
+                if (cmd.setSample) ownSample[(size_t) cmd.pad] = cmd.buffer;     // +1
+                refreshPadSource (cmd.pad);
+            }
+            else if (juce::isPositiveAndBelow (cmd.pad - kBankCommandBase, kBankSlots))
+            {
+                const int slot = cmd.pad - kBankCommandBase;
+                if (cmd.setSlices) bankSlices[(size_t) slot] = cmd.slices;
+                if (cmd.setSample) bankSample[(size_t) slot] = cmd.buffer;
+                if (slot == bankActive)
+                    for (int p = 0; p < kNumPads; ++p) if (padFollowBank[(size_t) p]) refreshPadSource (p);
             }
 
             if (cmd.buffer != nullptr)
                 cmd.buffer->decReferenceCountWithoutDeleting();       // adopt the sender's +1
+        }
+    }
+
+    void AudioEngine::refreshPadSource (int pad) noexcept
+    {
+        const bool bank = padFollowBank[(size_t) pad] && bankSample[(size_t) bankActive] != nullptr;
+        const auto& buf = bank ? bankSample[(size_t) bankActive] : ownSample[(size_t) pad];
+        padSlices[(size_t) pad] = bank ? bankSlices[(size_t) bankActive] : ownSlices[(size_t) pad];
+        if (padSample[(size_t) pad].get() != buf.get())
+        {
+            // Old voices fade out still holding the old buffer (kept alive by
+            // their own reference); new triggers use the new one. A running
+            // slice sequence carries on with the new break.
+            for (auto& v : voices[(size_t) pad])
+                v.release();
+            padSample[(size_t) pad] = buf;
+        }
+    }
+
+    void AudioEngine::switchBank (int slot) noexcept
+    {
+        bankActive = juce::jlimit (0, kBankSlots - 1, slot);
+        bankActiveNow.store (bankActive, std::memory_order_relaxed);
+        for (int p = 0; p < kNumPads; ++p)
+            if (padFollowBank[(size_t) p]) refreshPadSource (p);
+        if (currentParams != nullptr) computeVoiceSettings (*currentParams);   // regions follow the new break's length
+    }
+
+    void AudioEngine::applySnapshotPads (const std::array<SampleBuffer*, kNumPads>& buffers,
+                                         const std::array<SliceTable, kNumPads>& slices) noexcept
+    {
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            ownSample[(size_t) p] = buffers[(size_t) p];        // the frame keeps its own reference
+            ownSlices[(size_t) p] = slices[(size_t) p];
+            refreshPadSource (p);
         }
     }
 
@@ -140,6 +177,9 @@ namespace tb
     {
         bool anySolo = false;
         for (const auto& pp : bp.pads) anySolo = anySolo || pp.solo;
+        currentParams = &bp;
+        bankWanted = juce::jlimit (0, kBankSlots - 1, bp.bankActive);
+        bankAtNow  = juce::jlimit (0, 2, bp.bankAt);
 
         // Group buses: level, pan, mute / solo (solo is between groups).
         bool anyGroupSolo = false;
@@ -166,6 +206,11 @@ namespace tb
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
             padFixVel[(size_t) p]  = pp.fixVel;
             padPitchNow[(size_t) p] = pp.pitch;
+            if (pp.followBank != padFollowBank[(size_t) p])
+            {
+                padFollowBank[(size_t) p] = pp.followBank;
+                refreshPadSource (p);
+            }
             padSliceSlot[(size_t) p] = juce::jlimit (0, SliceSeqData::kSlots - 1, pp.sliceSlot);
             if (padSliceSeq[(size_t) p] && ! pp.sliceSeq && sliceRun[(size_t) p].running)
                 stopSliceSeq (p);                     // SLICE SEQ switched off while it played
@@ -566,6 +611,10 @@ namespace tb
             if (pad >= 0) releasePad (pad);
             else          handleFxNote (m.getNoteNumber(), false);
         }
+        else if (m.isProgramChange())  // Program Change 1-8: recall a snapshot (message thread does it)
+        {
+            bridge.programChange.store (m.getProgramChangeNumber() + 1, std::memory_order_relaxed);
+        }
         else if (m.isAllSoundOff())   // CC 120: a hardware panic button
         {
             panic();
@@ -587,6 +636,25 @@ namespace tb
         clockDppq = clockPlaying ? t.ppqPerSample : t.bpm / 60.0 / sampleRate;
         for (int p = 0; p < kNumPads; ++p)
             if (sliceRun[(size_t) p].running) addSliceEvents (p, 0);
+
+        // Break bank: a new active break lands now, or on the next beat / bar.
+        if (bankWanted != bankActive)
+        {
+            if (bankAtNow == params::switchNow || ! clockPlaying)
+            {
+                switchBank (bankWanted);
+            }
+            else
+            {
+                const double p0 = t.ppqAtBlockStart;
+                const double unit   = bankAtNow == params::switchBeat ? 1.0 : t.ppqPerBar();
+                const double origin = bankAtNow == params::switchBeat ? 0.0 : t.ppqOfBarStart;
+                const double next   = origin + std::ceil ((p0 - origin) / unit - 1.0e-9) * unit;
+                const int offset = (int) std::lround ((next - p0) / t.ppqPerSample);
+                if (offset < numSamples)
+                    insertEvent ({ juce::jmax (0, offset), bankWanted, 0.0f, SeqKind::bankSwitch, 0, 0 });
+            }
+        }
         seqLengthNow  = juce::jlimit (1, SequencerData::kSteps, bp.seqLength);
         seqStepPpq    = params::seqResPpq[juce::jlimit (0, 2, bp.seqRes)];
         seqQuantPpq   = params::seqQuantPpq[juce::jlimit (0, 3, bp.seqQuant)];
@@ -1004,6 +1072,9 @@ namespace tb
                 currentOffset = e.offset;
                 switch (e.kind)
                 {
+                    case SeqKind::bankSwitch:
+                        switchBank (e.pad);
+                        break;
                     case SeqKind::padHit:
                         triggerPad (e.pad, e.velocity, e.offset, true);
                         break;
@@ -1049,6 +1120,7 @@ namespace tb
         freePpq = clock0 + numSamples * clockDppq;
 
         transportNow = nullptr;
+        currentParams = nullptr;
 
         // ---- Master
         master.setGainDb (params.masterGainDb);

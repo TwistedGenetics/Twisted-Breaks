@@ -152,8 +152,16 @@ sample; slot switch lands on the bar; state round trip; zero allocations.
 
 ## A2. Break bank swap — change the break under all 16 pads
 
-**Status: planned for Phase 8** (shares the quantised switching of
-snapshots).
+**Status: built in 0.8.0.** As built: `Core/BreakBank` (8 slots: drop a
+file, or copy the selected pad's break + markers; AUTO SLICE runs on
+load), per-pad `pad01_bank` (FOLLOW BANK, on the SWAP page) and the
+automatable `bank_active` (1-8) + `bank_at` (Now / Next Beat / Next Bar).
+The engine keeps each pad's own sample and plays the active bank break for
+following pads; a bank change is an event in the block's sorted event list,
+so it lands on the exact sample of the beat / bar. Slice sequences carry on
+across the change (same pattern, new break). Saved with the set.
+
+(Original prompt and plan follow.)
 
 Prompt:
 

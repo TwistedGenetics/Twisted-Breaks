@@ -7,6 +7,8 @@
 #include "Engine/AudioEngine.h"
 #include "Core/SampleManager.h"
 #include "Core/PadLights.h"
+#include "Core/SnapshotManager.h"
+#include "Core/BreakBank.h"
 
 /*
     TwistedBreaksProcessor
@@ -61,6 +63,21 @@ public:
     tb::AudioEngine&  getEngine() noexcept { return engine; }
     tb::SampleManager& getSamples() noexcept { return samples; }
     tb::PadLights&     getLights() noexcept  { return lights; }
+    tb::SnapshotManager& getSnapshots() noexcept { return *snapshots; }
+    tb::BreakBank&       getBank() noexcept      { return *bank; }
+
+    // ---- Snapshot switching (see SnapshotManager) ----------------------------------
+    /** Message thread: arm a frame for the audio thread; returns a frame it replaced (not applied). */
+    tb::SnapshotFrame* armSnapshotFrame (tb::SnapshotFrame*) noexcept;
+    tb::SnapshotFrame* takeAppliedSnapshotFrame() noexcept { return appliedFrame.exchange (nullptr); }
+    void releaseSnapshotOverride (tb::SnapshotFrame* f) noexcept { overrideFrame.compare_exchange_strong (f, nullptr); }
+    bool isSnapshotFrameInUse (const tb::SnapshotFrame* f) const noexcept
+    {
+        return f == armedFrame.load() || f == overrideFrame.load() || f == appliedFrame.load();
+    }
+    uint64_t getBlockEpoch() const noexcept { return blockEpoch.load(); }
+    /** Fills the engine's parameter view from any source of raw parameter values. */
+    void fillParamsFrom (tb::AudioEngine::BlockParams&, const std::function<float (const std::atomic<float>*)>&) const;
 
     /** UI pad press: queued lock-free to the audio thread. */
     void triggerPadFromUi (int pad, float velocity, bool noteOn);
@@ -111,6 +128,16 @@ private:
     tb::AudioEngine                     engine { bridge };
     tb::SampleManager                   samples { engine };   // after engine: destroyed first
     tb::PadLights                       lights { bridge, engine };   // controller LEDs (iRig Pads)
+    std::unique_ptr<tb::BreakBank>       bank;        // after samples: destroyed first
+    std::unique_ptr<tb::SnapshotManager> snapshots;
+
+    template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;
+    void applySnapshotFrame (tb::SnapshotFrame*) noexcept;
+    static int switchOffset (const tb::TransportState&, int quant, int numSamples) noexcept;
+
+    std::atomic<tb::SnapshotFrame*> armedFrame { nullptr }, overrideFrame { nullptr }, appliedFrame { nullptr };
+    std::atomic<uint64_t> blockEpoch { 0 };
+    juce::MidiBuffer midiFirst, midiSecond;
 
     // Cached raw parameter pointers: atomic loads only in processBlock().
     std::atomic<float>* masterGainParam    = nullptr;
@@ -120,6 +147,8 @@ private:
     std::atomic<float>* seqLengthParam = nullptr;
     std::atomic<float>* seqResParam = nullptr;
     std::atomic<float>* seqQuantParam = nullptr;
+    std::atomic<float>* bankActiveParam = nullptr;
+    std::atomic<float>* bankAtParam = nullptr;
 
     struct PadParamPointers
     {
@@ -143,6 +172,7 @@ private:
         std::atomic<float>* fixVel = nullptr;
         std::atomic<float>* sliceSeq = nullptr;
         std::atomic<float>* sliceSlot = nullptr;
+        std::atomic<float>* followBank = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

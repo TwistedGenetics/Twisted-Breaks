@@ -30,6 +30,9 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     seqResParam    = apvts.getRawParameterValue (tb::params::seqRes);
     seqQuantParam  = apvts.getRawParameterValue (tb::params::seqQuant);
     jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
+    bankActiveParam = apvts.getRawParameterValue (tb::params::bankActive);
+    bankAtParam     = apvts.getRawParameterValue (tb::params::bankAt);
+    jassert (bankActiveParam && bankAtParam);
 
     for (int pad = 0; pad < tb::kNumPads; ++pad)
     {
@@ -55,9 +58,10 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.fixVel  = apvts.getRawParameterValue (padId (pad, padFixVel));
         pp.sliceSeq  = apvts.getRawParameterValue (padId (pad, padSliceSeq));
         pp.sliceSlot = apvts.getRawParameterValue (padId (pad, padSliceSlot));
+        pp.followBank = apvts.getRawParameterValue (padId (pad, padFollowBank));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
-                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot);
+                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -86,11 +90,19 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         param->addListener (this);
 
     samples.onStateChanged = [this] { markStateChanged(); };
+    bank      = std::make_unique<tb::BreakBank> (samples);
+    snapshots = std::make_unique<tb::SnapshotManager> (*this);
     lights.onSettingsChanged = [this] { markStateChanged(); };
 }
 
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
 {
+    // Frames still handed over to the audio thread (audio has stopped now).
+    for (auto* f : { armedFrame.exchange (nullptr), overrideFrame.exchange (nullptr), appliedFrame.exchange (nullptr) })
+        if (f != nullptr) snapshots->adoptForDeletion (f);
+    snapshots.reset();
+    bank.reset();
+
     cancelPendingUpdate();
     for (auto* param : AudioProcessor::getParameters())
         param->removeListener (this);
@@ -165,6 +177,8 @@ void TwistedBreaksProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     // Everything is allocated here, on the message thread, before audio runs.
     transport.prepare (sampleRate);
     engine.prepare (sampleRate, samplesPerBlock);
+    midiFirst.ensureSize (8192);
+    midiSecond.ensureSize (8192);
     setLatencySamples (0);
 }
 
@@ -186,23 +200,19 @@ namespace
     }
 }
 
-void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+template <typename Load>
+void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&& ld) const
 {
-    juce::ScopedNoDenormals noDenormals;
+    p.masterGainDb   = ld (masterGainParam);
+    p.limiterEnabled = ld (masterLimiterParam) > 0.5f;
+    p.panicParam     = ld (masterPanicParam) > 0.5f;
+    p.seqRun         = ld (seqRunParam) > 0.5f;
+    p.seqLength      = juce::roundToInt (ld (seqLengthParam));
+    p.seqRes         = juce::roundToInt (ld (seqResParam));
+    p.seqQuant       = juce::roundToInt (ld (seqQuantParam));
+    p.bankActive     = juce::jlimit (0, 7, juce::roundToInt (ld (bankActiveParam)) - 1);
+    p.bankAt         = juce::roundToInt (ld (bankAtParam));
 
-    const auto& ts = transport.update (getPlayHead(), buffer.getNumSamples());
-    transport.publish (bridge.transport);
-
-    tb::AudioEngine::BlockParams p;
-    p.masterGainDb   = masterGainParam->load (std::memory_order_relaxed);
-    p.limiterEnabled = masterLimiterParam->load (std::memory_order_relaxed) > 0.5f;
-    p.panicParam     = masterPanicParam->load (std::memory_order_relaxed) > 0.5f;
-    p.seqRun         = seqRunParam->load (std::memory_order_relaxed) > 0.5f;
-    p.seqLength      = juce::roundToInt (seqLengthParam->load (std::memory_order_relaxed));
-    p.seqRes         = juce::roundToInt (seqResParam->load (std::memory_order_relaxed));
-    p.seqQuant       = juce::roundToInt (seqQuantParam->load (std::memory_order_relaxed));
-
-    constexpr auto relaxed = std::memory_order_relaxed;
     for (size_t pad = 0; pad < (size_t) tb::kNumPads; ++pad)
     {
         const auto& src = padParams[pad];
@@ -212,49 +222,155 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         // Silicon fuses the multiply-add). Clean it so "pitch 0" is exactly
         // unity speed (loops stay sample-exact) and "pan hard right" is
         // exactly silent on the left.
-        dst.gainDb  = cleanValue (src.gain->load (relaxed), 1.0e-3f);
-        dst.pan     = cleanPan (src.pan->load (relaxed));
-        dst.pitch   = cleanValue (src.pitch->load (relaxed), 1.0e-4f);
-        dst.start   = src.start->load (relaxed);
-        dst.end     = src.end->load (relaxed);
-        dst.reverse = src.reverse->load (relaxed) > 0.5f;
-        dst.mode    = juce::roundToInt (src.mode->load (relaxed));
-        dst.sync    = src.sync->load (relaxed) > 0.5f;
-        dst.rate    = juce::roundToInt (src.rate->load (relaxed));
-        dst.choke   = juce::roundToInt (src.choke->load (relaxed));
-        dst.velSens = src.velSens->load (relaxed);
-        dst.mute    = src.mute->load (relaxed) > 0.5f;
-        dst.solo    = src.solo->load (relaxed) > 0.5f;
-        dst.slice   = juce::roundToInt (src.slice->load (relaxed));
-        dst.swap    = juce::roundToInt (src.swap->load (relaxed));
-        dst.swapAt  = juce::roundToInt (src.swapAt->load (relaxed));
-        dst.group   = juce::jlimit (0, tb::kNumGroups - 1, juce::roundToInt (src.group->load (relaxed)));
-        dst.fixVel  = src.fixVel->load (relaxed) > 0.5f;
-        dst.sliceSeq  = src.sliceSeq->load (relaxed) > 0.5f;
-        dst.sliceSlot = juce::jlimit (0, 7, juce::roundToInt (src.sliceSlot->load (relaxed)) - 1);
+        dst.gainDb  = cleanValue (ld (src.gain), 1.0e-3f);
+        dst.pan     = cleanPan (ld (src.pan));
+        dst.pitch   = cleanValue (ld (src.pitch), 1.0e-4f);
+        dst.start   = ld (src.start);
+        dst.end     = ld (src.end);
+        dst.reverse = ld (src.reverse) > 0.5f;
+        dst.mode    = juce::roundToInt (ld (src.mode));
+        dst.sync    = ld (src.sync) > 0.5f;
+        dst.rate    = juce::roundToInt (ld (src.rate));
+        dst.choke   = juce::roundToInt (ld (src.choke));
+        dst.velSens = ld (src.velSens);
+        dst.mute    = ld (src.mute) > 0.5f;
+        dst.solo    = ld (src.solo) > 0.5f;
+        dst.slice   = juce::roundToInt (ld (src.slice));
+        dst.swap    = juce::roundToInt (ld (src.swap));
+        dst.swapAt  = juce::roundToInt (ld (src.swapAt));
+        dst.group   = juce::jlimit (0, tb::kNumGroups - 1, juce::roundToInt (ld (src.group)));
+        dst.fixVel  = ld (src.fixVel) > 0.5f;
+        dst.sliceSeq  = ld (src.sliceSeq) > 0.5f;
+        dst.sliceSlot = juce::jlimit (0, 7, juce::roundToInt (ld (src.sliceSlot)) - 1);
+        dst.followBank = ld (src.followBank) > 0.5f;
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
     {
         const auto& src = groupParams[(size_t) g];
         auto& dst = p.groups[(size_t) g];
-        dst.levelDb = cleanValue (src.level->load (relaxed), 1.0e-3f);
-        dst.pan     = cleanPan (src.pan->load (relaxed));
-        dst.mute    = src.mute->load (relaxed) > 0.5f;
-        dst.solo    = src.solo->load (relaxed) > 0.5f;
-        dst.bypass  = src.bypass->load (relaxed) > 0.5f;
+        dst.levelDb = cleanValue (ld (src.level), 1.0e-3f);
+        dst.pan     = cleanPan (ld (src.pan));
+        dst.mute    = ld (src.mute) > 0.5f;
+        dst.solo    = ld (src.solo) > 0.5f;
+        dst.bypass  = ld (src.bypass) > 0.5f;
         for (int f = 0; f < tb::fx::kNumFx; ++f)
         {
-            dst.fxOn[(size_t) f] = src.fxOn[(size_t) f]->load (relaxed) > 0.5f;
+            dst.fxOn[(size_t) f] = ld (src.fxOn[(size_t) f]) > 0.5f;
             for (int k = 0; k < 3; ++k)
                 if (auto* a = src.fxParam[(size_t) f][(size_t) k])
-                    dst.fxParam[(size_t) f][(size_t) k] = a->load (relaxed);
+                    dst.fxParam[(size_t) f][(size_t) k] = ld (a);
         }
     }
 
-    engine.process (buffer, midi, ts, p);
+}
+
+void TwistedBreaksProcessor::fillParamsFrom (tb::AudioEngine::BlockParams& p, const std::function<float (const std::atomic<float>*)>& source) const
+{
+    fillParams (p, source);
+}
+
+int TwistedBreaksProcessor::switchOffset (const tb::TransportState& ts, int quant, int n) noexcept
+{
+    // NOW (or Live stopped): this block's first sample. Otherwise the next
+    // beat / bar line, if it falls in this block (-1: not yet).
+    if (quant == tb::params::switchNow || ! ts.isPlaying || ts.ppqPerSample <= 0.0) return 0;
+    const double p0     = ts.ppqAtBlockStart;
+    const double unit   = quant == tb::params::switchBeat ? 1.0 : ts.ppqPerBar();
+    const double origin = quant == tb::params::switchBeat ? 0.0 : ts.ppqOfBarStart;
+    const double next   = origin + std::ceil ((p0 - origin) / unit - 1.0e-9) * unit;
+    const int off = (int) std::lround ((next - p0) / ts.ppqPerSample);
+    return off < n ? juce::jmax (0, off) : -1;
+}
+
+void TwistedBreaksProcessor::applySnapshotFrame (tb::SnapshotFrame* f) noexcept
+{
+    // Audio thread, at the boundary sample: samples + markers, both
+    // sequencers, then the parameter override until the message thread has
+    // written the real parameters.
+    engine.applySnapshotPads (f->raw, f->slices);
+    for (int p = 0; p < tb::kNumPads; ++p)
+    {
+        for (int k = 0; k < tb::SequencerData::kSteps; ++k) bridge.seq.setPacked (p, k, f->seq[(size_t) p][(size_t) k]);
+        for (int sl = 0; sl < tb::SliceSeqData::kSlots; ++sl)
+        {
+            bridge.sliceSeq.setPackedSlot (p, sl, f->sliceSlots[(size_t) p][(size_t) sl]);
+            for (int k = 0; k < tb::SliceSeqData::kSteps; ++k)
+                bridge.sliceSeq.setPackedStep (p, sl, k, f->sliceSteps[(size_t) p][(size_t) sl][(size_t) k]);
+        }
+    }
+    bridge.seq.bumpVersion();
+    bridge.sliceSeq.bumpVersion();
+
+    auto* expected = f;
+    armedFrame.compare_exchange_strong (expected, nullptr);
+    overrideFrame.store (f);
+    appliedFrame.store (f);
+}
+
+tb::SnapshotFrame* TwistedBreaksProcessor::armSnapshotFrame (tb::SnapshotFrame* f) noexcept
+{
+    return armedFrame.exchange (f);
+}
+
+void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    const int n = buffer.getNumSamples();
+
+    const auto& ts = transport.update (getPlayHead(), n);
+    transport.publish (bridge.transport);
+
+    // Snapshot due in this block? 0 = now, > 0 = part-way through, -1 = not yet.
+    auto* armed = armedFrame.load();
+    const int switchAt = armed != nullptr ? switchOffset (ts, armed->quant, n) : -1;
+    if (switchAt == 0) applySnapshotFrame (armed);
+
+    auto live = [] (const std::atomic<float>* a) { return a->load (std::memory_order_relaxed); };
+    auto overlay = [this] (tb::AudioEngine::BlockParams& bp)
+    {
+        if (auto* f = overrideFrame.load())
+        {
+            bp.pads = f->params.pads;
+            bp.groups = f->params.groups;
+            bp.seqRun = f->params.seqRun; bp.seqLength = f->params.seqLength;
+            bp.seqRes = f->params.seqRes; bp.seqQuant = f->params.seqQuant;
+        }
+    };
+
+    tb::AudioEngine::BlockParams p;
+    fillParams (p, live);
+    overlay (p);
+
+    if (switchAt > 0)
+    {
+        // Split the block at the boundary: old snapshot before, new after.
+        juce::AudioBuffer<float> first  (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), 0, switchAt);
+        juce::AudioBuffer<float> second (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), switchAt, n - switchAt);
+        midiFirst.clear();
+        midiSecond.clear();
+        for (const auto m : midi)
+        {
+            if (m.samplePosition < switchAt) midiFirst.addEvent (m.data, m.numBytes, m.samplePosition);
+            else                             midiSecond.addEvent (m.data, m.numBytes, m.samplePosition - switchAt);
+        }
+        auto ts2 = ts;
+        ts2.ppqAtBlockStart += switchAt * ts.ppqPerSample;
+        ts2.numSamples  = n - switchAt;
+        ts2.justStarted = ts2.justStopped = ts2.jumped = false;
+
+        engine.process (first, midiFirst, ts, p);
+        applySnapshotFrame (armed);
+        overlay (p);
+        engine.process (second, midiSecond, ts2, p);
+    }
+    else
+    {
+        engine.process (buffer, midi, ts, p);
+    }
 
     midi.clear();   // instrument: nothing passes through
+    blockEpoch.fetch_add (1, std::memory_order_release);
 }
 
 //==============================================================================
@@ -298,6 +414,8 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName ("FX"), nullptr);
     state.removeChild (state.getChildWithName (tb::SequencerData::seqId), nullptr);
     state.removeChild (state.getChildWithName (tb::SliceSeqData::sliceSeqId), nullptr);
+    state.removeChild (state.getChildWithName (tb::SnapshotManager::snapshotsId), nullptr);
+    state.removeChild (state.getChildWithName (tb::BreakBank::bankId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -318,6 +436,8 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     state.appendChild (bridge.seq.toValueTree(), nullptr);
     state.appendChild (bridge.sliceSeq.toValueTree(), nullptr);
+    state.appendChild (snapshots->toValueTree(), nullptr);
+    state.appendChild (bank->toValueTree(), nullptr);
 
     juce::ValueTree fxState ("FX");
     fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
@@ -348,6 +468,17 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     bridge.seq.fromValueTree (state.getChildWithName (tb::SequencerData::seqId));
     bridge.sliceSeq.fromValueTree (state.getChildWithName (tb::SliceSeqData::sliceSeqId));
+    {
+        // Snapshots + bank live on the message thread.
+        auto snaps = state.getChildWithName (tb::SnapshotManager::snapshotsId).createCopy();
+        auto bk    = state.getChildWithName (tb::BreakBank::bankId).createCopy();
+        auto restore = [this, snaps, bk] { snapshots->fromValueTree (snaps); bank->fromValueTree (bk); };
+        if (juce::MessageManager::getInstanceWithoutCreating() != nullptr
+             && juce::MessageManager::getInstance()->isThisTheMessageThread())
+            restore();
+        else
+            juce::MessageManager::callAsync (restore);
+    }
     if (auto fxState = state.getChildWithName ("FX"); fxState.isValid())
     {
         engine.setFxLockedMask ((uint32_t) (juce::int64) fxState.getProperty ("lockedMask", (juce::int64) tb::fx::kDefaultLockedMask));

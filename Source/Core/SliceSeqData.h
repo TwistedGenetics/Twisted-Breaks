@@ -169,6 +169,13 @@ namespace tb
 
         uint32_t getVersion() const noexcept { return version.load (std::memory_order_relaxed); }
 
+        // Raw packed access (snapshot switching: copied as plain numbers).
+        uint64_t getPackedStep (int p, int s, int k) const noexcept { return valid (p, s, k) ? steps[(size_t) p][(size_t) s][(size_t) k].load (std::memory_order_relaxed) : 0; }
+        uint32_t getPackedSlot (int p, int s) const noexcept { return valid (p, s, 0) ? slots[(size_t) p][(size_t) s].load (std::memory_order_relaxed) : 0; }
+        void setPackedStep (int p, int s, int k, uint64_t v) noexcept { if (valid (p, s, k)) steps[(size_t) p][(size_t) s][(size_t) k].store (v, std::memory_order_relaxed); }
+        void setPackedSlot (int p, int s, uint32_t v) noexcept { if (valid (p, s, 0)) slots[(size_t) p][(size_t) s].store (v, std::memory_order_relaxed); }
+        void bumpVersion() noexcept { bump(); }
+
         // ---- Default pattern ---------------------------------------------------------
         /**
             Each slice on its nearest step of `stepBeats`, with micro-timing for

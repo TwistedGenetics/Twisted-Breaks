@@ -33,7 +33,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 6 | 16 performance FX per group | **done** — 267/267 automated checks |
 | 7 | 32-step sequencer + live recording | **done** — 296/296 automated checks |
 | 7.1 | Per-pad slice sequencer | **done** — 333/333 automated checks |
-| 8 | Snapshots, state management (+ break bank) | next |
+| 8 | Snapshots, break bank, find missing samples | **done** — 362/362 automated checks |
 | 9+ | Later ideas | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
@@ -50,7 +50,7 @@ Sections that aren't built yet are visibly marked offline on the panel
   double-click to zoom out, with a live playback cursor. Non-destructive.
 * **SOUND page** per pad: **GAIN, PAN, PITCH** (+/-12 semitones), **START,
   END, REVERSE**.
-* 547 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
+* 567 Ableton-automatable parameters with stable IDs (`pad01_gain` ...
   `pad16_fixvel`, `grp_a_level` ... `grp_d_bypass`, `grp_a_lpf` ...
   `grp_d_reverse_size`).
 * Sample-exact playback with Hermite interpolation, velocity sensitivity,
@@ -129,6 +129,18 @@ Sections that aren't built yet are visibly marked offline on the panel
   per pad (automatable, switch at the pattern start), LEN, RATE (1/8 ...
   1/16T), SWING. Works with SWAP groups (hand-off on the next step), choke,
   groups and FX.
+* **SNAPSHOTS** (top rail): 8 slots. **STORE** then click a slot to capture
+  every pad (sample, slices, all settings), the mixer, every effect and
+  both sequencers; click a slot to recall it **NOW**, on the **NEXT BEAT** or
+  **NEXT BAR**, exactly on the boundary sample. Also MIDI Program Change
+  1-8 and the automatable `Snapshot` parameter (write snapshot changes into
+  your arrangement). The master section stays as it is.
+* **Break bank** (same view): 8 breaks. Pads with **FOLLOW BANK** (SWAP page,
+  or ALL SLICE PADS FOLLOW) play the active break; switch it (click, or
+  automate `Break Bank`) and every following pad - and every slice
+  sequence - changes break on the next beat / bar.
+* **FIND MISSING**: point it at a folder and every missing sample is found
+  (sub-folders too) and reloaded with its slices.
 * Triggered by mouse (click higher = harder) or MIDI notes **36–51**
   (C1–D#2, an Ableton Drum Rack layout), sample-accurately.
 * Host **BPM, bar.beat.16th, time signature, play state** and a **32-step

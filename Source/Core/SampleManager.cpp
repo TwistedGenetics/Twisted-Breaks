@@ -243,6 +243,140 @@ namespace tb
     }
 
     //==========================================================================
+    void SampleManager::requestBuffer (const juce::File& file, std::function<void (SampleBuffer::Ptr)> done)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        if (file == juce::File()) { done (nullptr); return; }
+        if (auto shared = findLoaded (file)) { done (shared); return; }
+
+        juce::WeakReference<SampleManager> weak (this);
+        auto* fm = &formats;
+        loader.addJob ([weak, file, fm, done]
+        {
+            auto result = SampleLoader::loadFile (file, *fm);
+            juce::MessageManager::callAsync ([weak, result, done]
+            {
+                auto* self = weak.get();
+                if (self == nullptr) return;
+                if (result.status != SampleLoader::Status::ok) { done (nullptr); return; }
+                // Someone may have decoded the same file meanwhile: share theirs.
+                auto buf = self->findLoaded (result.buffer->file);
+                if (buf == nullptr) { buf = result.buffer; self->keepAlive.add (buf.get()); }
+                done (buf);
+            });
+        });
+    }
+
+    void SampleManager::requestSlices (const SampleBuffer::Ptr& buf, float sensitivity, int count, std::function<void (SliceTable)> done)
+    {
+        if (buf == nullptr) { done ({}); return; }
+        juce::WeakReference<SampleManager> weak (this);
+        loader.addJob ([weak, buf, sensitivity, count, done]
+        {
+            const auto table = TransientDetector::detect (*buf, sensitivity, count);
+            juce::MessageManager::callAsync ([weak, table, done] { if (weak.get() != nullptr) done (table); });
+        });
+    }
+
+    void SampleManager::sendBank (int slot, const SampleBuffer::Ptr& buf, const SliceTable& slices)
+    {
+        retain (buf);
+        Pending p;
+        p.pad = AudioEngine::kBankCommandBase + slot;
+        p.setSample = true; p.buffer = buf;
+        p.setSlices = true; p.slices = slices;
+        pending.push_back (p);
+        flushPending();
+    }
+
+    void SampleManager::retain (const SampleBuffer::Ptr& buf)
+    {
+        if (buf != nullptr && ! keepAlive.contains (buf.get())) keepAlive.add (buf.get());
+    }
+
+    void SampleManager::adoptPads (const juce::ValueTree& tree, const std::array<SampleBuffer::Ptr, kNumPads>& buffers)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            ++generation[(size_t) p];               // cancel loads in flight for this pad
+            ++sliceGeneration[(size_t) p];
+            followLeader[(size_t) p] = -1;
+            hasRestoreSlices[(size_t) p] = false;
+
+            juce::ValueTree e;
+            for (const auto& c : tree)
+                if ((int) c.getProperty (kIndexId, -1) == p) e = c;
+
+            const auto path = e.isValid() ? e.getProperty (kPathId).toString() : juce::String();
+            PadInfo info;
+            if (path.isNotEmpty())
+            {
+                info.file = juce::File (path);
+                info.name = info.file.getFileNameWithoutExtension();
+                info.sensitivity = (float) e.getProperty (kSensId, 0.5f);
+                info.sliceCount  = juce::jlimit (1, SliceTable::kMax, (int) e.getProperty (kCountId, 16));
+                info.slices   = SliceTable::fromString (e.getProperty (kSlicesId).toString());
+                info.detected = SliceTable::fromString (e.getProperty (kDetectedId).toString());
+                const auto& buf = buffers[(size_t) p];
+                if (buf != nullptr)
+                {
+                    info.status = Status::ready;
+                    info.buffer = buf;
+                    info.name   = buf->name;
+                    info.slices.normalise (buf->getNumSamples());
+                    info.detected.normalise (buf->getNumSamples());
+                    retain (buf);
+                }
+                else
+                {
+                    info.status = Status::missing;
+                    restoreSlices[(size_t) p] = info.slices;     // kept for a later relocate
+                    restoreDetected[(size_t) p] = info.detected;
+                }
+            }
+            // The engine already switched to these at the boundary; sending
+            // them again is a no-op there, and keeps the queue consistent.
+            sendSample (p, info.buffer);
+            sendSlices (p, info.buffer != nullptr ? info.slices : SliceTable{});
+            setInfo (p, std::move (info));
+        }
+        if (onStateChanged) onStateChanged();
+    }
+
+    int SampleManager::countMissing() const
+    {
+        int n = 0;
+        for (int p = 0; p < kNumPads; ++p) if (getInfo (p).status == Status::missing) ++n;
+        return n;
+    }
+
+    int SampleManager::relocateMissing (const juce::File& folder)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        int found = 0;
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const auto info = getInfo (p);
+            if (info.status != Status::missing) continue;
+            const auto name = info.file.getFileName();
+            juce::File hit;
+            for (const auto& entry : juce::RangedDirectoryIterator (folder, true, name, juce::File::findFiles))
+            {
+                hit = entry.getFile();
+                break;
+            }
+            if (hit == juce::File()) continue;
+
+            ++found;
+            if (! info.slices.isEmpty()) restoreSlices[(size_t) p] = info.slices;
+            hasRestoreSlices[(size_t) p] = ! restoreSlices[(size_t) p].isEmpty();
+            startLoad (p, hit, hasRestoreSlices[(size_t) p] ? &restoreSlices[(size_t) p] : nullptr);
+        }
+        return found;
+    }
+
+    //==========================================================================
     void SampleManager::autoSlice (int pad)
     {
         const auto info = getInfo (pad);

@@ -97,6 +97,11 @@ namespace tb
             version.fetch_add (1, std::memory_order_relaxed);
         }
 
+        // Raw packed access (snapshot switching: copied as plain numbers).
+        uint32_t getPacked (int pad, int step) const noexcept { return valid (pad, step) ? steps[(size_t) pad][(size_t) step].load (std::memory_order_relaxed) : 0; }
+        void setPacked (int pad, int step, uint32_t v) noexcept { if (valid (pad, step)) steps[(size_t) pad][(size_t) step].store (v, std::memory_order_relaxed); }
+        void bumpVersion() noexcept { version.fetch_add (1, std::memory_order_relaxed); }
+
         bool laneHasSteps (int pad) const noexcept
         {
             for (int s = 0; s < kSteps; ++s) if (get (pad, s).on) return true;

@@ -130,17 +130,21 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Undo/redo a Master Level change works
 - [ ] ✅ Save the set with the VST3 and with the AU version on separate tracks; both reload
 - [ ] ✅ Load samples on several pads, change pitch / start / end / reverse, save, reopen: all restored
-- [ ] Phase 5+: patterns, FX states and snapshots all restored
+- [ ] ✅ Patterns, FX states, snapshots and the bank all restored
 
 ## Sample recovery
 - [ ] ✅ Rename a sample on disk, reopen the set: pad shows **MISSING** (red), set opens, other pads fine
 - [ ] ✅ Load the file again onto that pad (drag or LOAD): plays again; saving fixes the path
-- [ ] Phase 8: relocate missing files in one go
+- [ ] ✅ Phase 8: relocate missing files in one go (SNAPSHOTS view, FIND MISSING)
 - [ ] Collect All and Save: set reopens on another machine with samples
 
 ## Snapshot switching (Phase 8)
-- [ ] Switch snapshots Immediate / Next Beat / Next Bar while playing — change lands exactly on the boundary
-- [ ] No dropouts, clicks or CPU spike while switching every beat for 2 minutes
+- [ ] ✅ STORE two different set-ups (samples, mixer, FX, patterns) in slots 1 and 2
+- [ ] ✅ Switch snapshots Immediate / Next Beat / Next Bar while playing — change lands exactly on the boundary
+- [ ] ✅ No dropouts, clicks or CPU spike while switching every beat for 2 minutes
+- [ ] ✅ Program Change 1-8 from your controller recalls snapshots; automate `Snapshot` in the arrangement
+- [ ] ✅ Break bank: copy two sliced breaks in, SPREAD pads + ALL SLICE PADS FOLLOW, switch Break Bank on the beat: same playing, new break
+- [ ] ✅ Save, close, reopen: snapshots, bank and the active snapshot come back
 
 ## Panic
 - [ ] ✅ PANIC (red STOP) button: all sound stops within ~5 ms, no click, button flashes

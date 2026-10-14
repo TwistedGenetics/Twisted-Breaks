@@ -205,6 +205,7 @@ namespace tb::ui
           fxEditor (p),
           sequencer (p),
           sliceSeq (p),
+          snapshotPanel (p),
           meter (p.getBridge()),
           fxGrid (p),
           status (p)
@@ -219,6 +220,7 @@ namespace tb::ui
         addChildComponent (fxEditor);
         addChildComponent (sequencer);
         addChildComponent (sliceSeq);
+        addChildComponent (snapshotPanel);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -257,6 +259,7 @@ namespace tb::ui
         navKeys[0]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::sound); };
         navKeys[1]->onClick = [this] { showMixer (false); padEditor.setPage (PadEditorPanel::Page::slice); };
         navKeys[2]->onClick = [this] { showView (view == View::sequencer ? View::crt : View::sequencer); };
+        navKeys[5]->onClick = [this] { showView (view == View::snapshots ? View::crt : View::snapshots); };
         navKeys[3]->onClick = [this] { showView (view == View::fx ? View::crt : View::fx); };
         sequencer.onSelectPad = [this] (int pad) { padGrid.setSelectedPad (pad); };
         navKeys[4]->onClick = [this] { showView (view == View::mixer ? View::crt : View::mixer); };
@@ -280,6 +283,7 @@ namespace tb::ui
             mixer.setSelectedPad (pad);
             sequencer.setSelectedPad (pad);
             sliceSeq.setPad (pad);
+            snapshotPanel.setSelectedPad (pad);
             status.refresh (pad);
         };
 
@@ -306,6 +310,7 @@ namespace tb::ui
         fxEditor.setBounds (layout::scope);
         sequencer.setBounds (layout::scope);
         sliceSeq.setBounds (layout::scope);
+        snapshotPanel.setBounds (layout::scope);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
@@ -332,6 +337,7 @@ namespace tb::ui
             case View::fx:    fxEditor.refresh(); break;
             case View::sequencer: sequencer.refresh(); break;
             case View::sliceSeq:  sliceSeq.refresh(); break;
+            case View::snapshots: snapshotPanel.refresh(); break;
             case View::crt:   waveform.refresh(); break;
         }
         fxGrid.refresh();
@@ -399,6 +405,7 @@ namespace tb::ui
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
         sliceSeq.setVisible (v == View::sliceSeq);
+        snapshotPanel.setVisible (v == View::snapshots);
         updateNavLamps();
     }
 
@@ -411,6 +418,7 @@ namespace tb::ui
         navKeys[2]->setToggleState (view == View::sequencer, dontSendNotification);
         navKeys[3]->setToggleState (view == View::fx,   dontSendNotification);
         navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
+        navKeys[5]->setToggleState (view == View::snapshots, dontSendNotification);
     }
 
     void MainView::paint (Graphics& g)

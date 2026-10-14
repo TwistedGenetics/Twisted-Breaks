@@ -82,6 +82,7 @@ namespace tb
         // ---- Sequencer (shared: UI edits, audio plays + records) ----------------
         SequencerData    seq;
         std::atomic<int> seqStep { -1 };            // step under the playhead, -1 = stopped
+        std::atomic<int> programChange { 0 };       // MIDI Program Change + 1 (snapshot recall), 0 = none
 
         // ---- Slice sequencer (per pad) ---------------------------------------------
         SliceSeqData sliceSeq;

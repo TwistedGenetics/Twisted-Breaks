@@ -128,6 +128,10 @@ namespace tb::params
                 ParameterID { padId (pad, padSliceSeq), kV9 }, prefix + "Slice Seq", false));
             layout.add (std::make_unique<AudioParameterInt> (
                 ParameterID { padId (pad, padSliceSlot), kV9 }, prefix + "Slice Seq Slot", 1, 8, 1));
+
+            // ---- 0.8: break bank ----
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padFollowBank), kV10 }, prefix + "Follow Bank", false));
         }
     }
 
@@ -194,6 +198,15 @@ namespace tb::params
                                                             StringArray { "1/8", "1/16", "1/32" }, 1));
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
+
+        // ---- Phase 8: snapshots + break bank ----
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { snapRecall, kV10 }, "Snapshot", 0, 8, 0,
+            AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("-") : String (v); })));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { snapAt, kV10 }, "Snapshot Switch",
+                                                            StringArray { "Now", "Next Beat", "Next Bar" }, switchBar));
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { bankActive, kV10 }, "Break Bank", 1, 8, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { bankAt, kV10 }, "Break Bank Switch",
+                                                            StringArray { "Now", "Next Beat", "Next Bar" }, switchBeat));
 
         // ---- Phase 6: performance FX, per group: on / off + settings ----
         for (int g = 0; g < kNumGroups; ++g)

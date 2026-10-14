@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 547, "547 automatable parameters in total (3 master + 4 sequencer + 20 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 567, "567 automatable parameters in total (3 master + 4 sequencer + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -2069,6 +2069,294 @@ namespace
                "...continuing from the same point in the bar (step 5 of its own pattern)");
     }
 
+    //==========================================================================
+    //  PHASE 8: snapshots, break bank, missing samples
+    //==========================================================================
+    void testSnapshots (const juce::File& tone)
+    {
+        std::cout << "\n== Phase 8: snapshots ==" << std::endl;
+        using namespace tb::params;
+        SeqRig x;                                // blips on pads 1 (left) and 2 (right), 120 BPM
+        auto& snaps = x.r.p.getSnapshots();
+        auto raw = [&] (const juce::String& id) { return x.r.p.getParameters().getRawParameterValue (id)->load(); };
+        auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+
+        // Snapshot 1: pad 1 at -6 dB, LPF on group A, steps on pad 1; master at -3 dB.
+        setPadParam (x.r.p, 0, padGain, -6.0f);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::lpf), 1.0f);
+        setParam (x.r.p, masterGain, -3.0f);
+        x.step (0, 0); x.step (0, 4);
+        snaps.store (0);
+        check (snaps.getState (0) == tb::SnapshotManager::SlotState::active, "STORE: slot 1 holds the current state");
+
+        // Change everything, store snapshot 2.
+        setPadParam (x.r.p, 0, padGain, 0.0f);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::lpf), 0.0f);
+        x.seq.clearAll();
+        x.step (1, 2);
+        x.r.load (0, tone);                      // a different sample on pad 1
+        snaps.store (1);
+        setParam (x.r.p, masterGain, 0.0f);
+
+        // Recall 1, NOW (Live stopped).
+        snaps.recall (0, switchNow);
+        pump();
+        {
+            juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
+            runBlock (x.r.p, x.r.host, buf, midi);
+        }
+        snaps.poll();
+        pump();
+        check (std::abs (raw (padId (0, padGain)) + 6.0f) < 0.01f && raw (tb::fx::paramId (0, tb::fx::lpf)) > 0.5f,
+               "RECALL 1: pad gain and group A's LPF come back (parameters, so Live sees them too)");
+        check (x.seq.get (0, 0).on && x.seq.get (0, 4).on && ! x.seq.get (1, 2).on, "...the sequencer pattern comes back");
+        check (x.r.p.getSamples().getInfo (0).name == "seq_blip", "...and pad 1's sample comes back");
+        check (std::abs (raw (masterGain)) < 0.01f, "...the master section is left alone");
+        check (snaps.getState (0) == tb::SnapshotManager::SlotState::active, "slot 1 shows ACTIVE");
+
+        // Exactness: NEXT BAR, armed mid bar 1. Old snapshot: pad 1 on its own
+        // step 1 pulled 94 samples early (95906); new: pad 2 on step 1 (96000).
+        setPadParam (x.r.p, 0, padGain, 0.0f);
+        x.seq.clearAll();
+        x.step (0, 0, 127, -2);                  // -2/128 of a step = -94 samples
+        snaps.store (2);
+        x.seq.clearAll();
+        x.step (1, 0);
+        snaps.store (3);
+        snaps.recall (2, switchNow);
+        { juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi; runBlock (x.r.p, x.r.host, buf, midi); }
+        snaps.poll(); pump();
+        x.r.settle();
+
+        x.r.host.ppq = 0.0; x.r.host.playing = true;
+        const int blocks = 220;
+        juce::AudioBuffer<float> all (2, blocks * kBlock), buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < blocks; ++b)
+        {
+            if (b == 60) { snaps.recall (3, switchBar); }        // ~30700: mid bar 1
+            runBlock (x.r.p, x.r.host, buf, midi);
+            for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+            if (b > 60) snaps.poll();
+        }
+        x.r.host.playing = false;
+        const auto left = onsets (all, 0), right = onsets (all, 1);
+        check (std::find (left.begin(), left.end(), 96000 - 94) != left.end() && std::find (right.begin(), right.end(), 96000) != right.end()
+                 && std::find (right.begin(), right.end(), 0) == right.end(),
+               "NEXT BAR: the switch lands on the bar line sample (96000, mid-block): old step at 95906 plays, new step at 96000 plays ("
+                 + listOf (left) + " | " + listOf (right) + ")");
+        check (std::find (left.begin(), left.end(), 192000 - 94) == left.end(), "...and the old pattern is gone after it");
+        check (snaps.getState (3) == tb::SnapshotManager::SlotState::active && x.seq.get (1, 0).on && ! x.seq.get (0, 0).on,
+               "slot 4 is active and its pattern is now the one you see");
+        x.r.p.requestPanic(); x.r.settle();
+
+        // MIDI Program Change 2 -> snapshot 2; automating "Snapshot" = 3 -> snapshot 3.
+        {
+            juce::MidiBuffer m;
+            m.addEvent (juce::MidiMessage::programChange (1, 1), 0);
+            juce::AudioBuffer<float> b2 (2, kBlock);
+            runBlock (x.r.p, x.r.host, b2, m);
+            snaps.poll(); pump();
+            runBlock (x.r.p, x.r.host, b2, m);
+            snaps.poll(); pump();
+            check (snaps.getActive() == 1, "MIDI Program Change 2 recalls snapshot 2");
+            setParam (x.r.p, snapRecall, 3.0f);
+            snaps.poll(); pump();
+            runBlock (x.r.p, x.r.host, b2, m);
+            snaps.poll(); pump();
+            check (snaps.getActive() == 2, "automating the Snapshot parameter to 3 recalls snapshot 3");
+        }
+
+        // Saved with the set.
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        {
+            TwistedBreaksProcessor q;
+            q.setStateInformation (blob.getData(), (int) blob.getSize());
+            pump();
+            check (q.getSnapshots().getState (0) != tb::SnapshotManager::SlotState::empty
+                     && q.getSnapshots().getState (3) != tb::SnapshotManager::SlotState::empty
+                     && q.getSnapshots().getState (5) == tb::SnapshotManager::SlotState::empty,
+                   "snapshots are saved with the set");
+        }
+    }
+
+    void testBreakBank()
+    {
+        std::cout << "\n== Phase 8: break bank ==" << std::endl;
+        SliceRig x;
+        x.equal16();
+        auto& bank = x.r.p.getBank();
+        auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (50); };
+
+        juce::AudioBuffer<float> inv (x.brk);
+        inv.applyGain (-1.0f);                    // break B: the same groove, upside down
+        const auto fileA = writeAudio ("bank_a", x.brk, 48000.0, Fmt::wavFloat);
+        const auto fileB = writeAudio ("bank_b", inv, 48000.0, Fmt::wavFloat);
+        const auto slices = tb::SliceTable::equal (x.brk.getNumSamples(), 16);
+        bank.loadFile (0, fileA, &slices);
+        bank.loadFile (1, fileB, &slices);
+        for (int i = 0; i < 20 && (bank.get (0).status != tb::BreakBank::Status::ready || bank.get (1).status != tb::BreakBank::Status::ready); ++i) pump();
+        x.r.settle();
+        check (bank.get (0).status == tb::BreakBank::Status::ready && bank.get (1).slices.count == 16, "two breaks loaded into bank slots 1 and 2");
+
+        // Pad 1 = SLICE SEQ, following the bank. Untouched pattern: replays the active break.
+        setPadParam (x.r.p, 0, tb::params::padFollowBank, 1.0f);
+        x.r.settle();
+        const int beat = 4 * x.step;
+        juce::AudioBuffer<float> all (2, 6 * beat / kBlock * kBlock + kBlock), buf (2, kBlock);
+        x.r.host.ppq = 0.0; x.r.host.playing = true;
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127), 0);
+        const int blocks = all.getNumSamples() / kBlock;
+        for (int b = 0; b < blocks; ++b)
+        {
+            if (b == 10) { setParam (x.r.p, tb::params::bankAt, (float) tb::params::switchBeat); setParam (x.r.p, tb::params::bankActive, 2.0f); }
+            runBlock (x.r.p, x.r.host, buf, midi);
+            for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, b * kBlock, buf, ch, 0, kBlock);
+        }
+        x.r.host.playing = false;
+        check (x.diffFromBreak (all, 0, 0, beat - 50) < 1.0e-5f, "FOLLOW BANK: the pad plays bank break 1");
+        float d = 0.0f;
+        for (int i = 300; i < beat - 300; ++i) d = juce::jmax (d, std::abs (all.getSample (0, beat + i) - inv.getSample (0, beat + i)));
+        check (d < 1.0e-4f, "Break Bank 2 (NEXT BEAT) set mid-beat: from the next beat the same pattern plays break 2 (err " + juce::String (d, 6) + ")");
+        check (x.r.p.getEngine().getActiveBank() == 1, "...and the bank shows slot 2 active");
+        x.r.p.requestPanic(); x.r.settle();
+
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        {
+            TwistedBreaksProcessor q;
+            q.setStateInformation (blob.getData(), (int) blob.getSize());
+            for (int i = 0; i < 20 && q.getBank().get (1).status != tb::BreakBank::Status::ready; ++i) pump();
+            check (q.getBank().get (1).status == tb::BreakBank::Status::ready && q.getBank().get (1).slices == slices,
+                   "the bank (files + markers) is saved with the set");
+        }
+    }
+
+    void testFindMissing()
+    {
+        std::cout << "\n== Phase 8: find missing samples ==" << std::endl;
+        const auto oldDir = testDir().getChildFile ("old_place");
+        const auto newDir = testDir().getChildFile ("new_place").getChildFile ("deep");
+        oldDir.createDirectory(); newDir.createDirectory();
+        const auto orig = oldDir.getChildFile ("lost_break.wav");
+        { const auto f = writeAudio ("lost_break", makeBreak (44100.0), 44100.0, Fmt::wav16); f.moveFileTo (orig); }
+
+        juce::MemoryBlock blob;
+        {
+            Rig r;
+            r.load (2, orig);
+            r.p.getSamples().equalSlice (2);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+            r.p.getStateInformation (blob);
+        }
+        orig.moveFileTo (newDir.getChildFile ("lost_break.wav"));     // the folder was moved
+
+        Rig q;
+        q.p.setStateInformation (blob.getData(), (int) blob.getSize());
+        waitForLoads (q.p);
+        check (q.p.getSamples().countMissing() == 1 && q.p.getSamples().getInfo (2).status == tb::SampleManager::Status::missing,
+               "the moved sample shows MISSING (the set still opens)");
+        const int found = q.p.getSamples().relocateMissing (testDir().getChildFile ("new_place"));
+        waitForLoads (q.p);
+        const auto info = q.p.getSamples().getInfo (2);
+        check (found == 1 && info.status == tb::SampleManager::Status::ready && info.slices.count == 16,
+               "FIND MISSING: found in the new folder (searching sub-folders), reloaded with its slices kept");
+    }
+
+    void testSnapshotView()
+    {
+        std::cout << "\n== Phase 8: SNAPSHOTS view ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        tb::ui::SnapshotPanel* panel = nullptr; juce::Button* key = nullptr; juce::Button* store = nullptr; juce::Button* follow = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* sp = dynamic_cast<tb::ui::SnapshotPanel*> (&c)) panel = sp;
+            if (auto* sk = dynamic_cast<tb::ui::SelectorKey*> (&c)) if (sk->getName() == "SNAPSHOTS") key = sk;
+            if (auto* b = dynamic_cast<juce::Button*> (&c))
+            {
+                if (b->getName() == "STORE") store = b;
+                if (b->getName() == "FOLLOW BANK") follow = b;
+            }
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (panel && key && store && follow, "found the SNAPSHOTS key and view, STORE and FOLLOW BANK");
+        if (! (panel && key && store && follow)) return;
+        check (key->isEnabled(), "SNAPSHOTS key is online (every view now live)");
+        key->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (panel->isVisible(), "it shows the snapshot slots and the break bank");
+
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto click = [&] (juce::Point<float> pos)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            panel->mouseDown (juce::MouseEvent (src, pos, juce::ModifierKeys::leftButtonModifier, 1.0f, 0, 0, 0, 0, panel, panel, t, pos, t, 1, false));
+        };
+        store->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        click (panel->snapBounds (2).getCentre());
+        check (r.p.getSnapshots().getState (2) == tb::SnapshotManager::SlotState::active && ! store->getToggleState(),
+               "STORE, then click slot 3: stored (and STORE switches off)");
+        click (panel->bankBounds (4).getCentre());
+        check (juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::bankActive)->load()) == 5,
+               "clicking bank slot 5 makes it the active break (automatable)");
+        follow->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        check (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padFollowBank))->load() > 0.5f,
+               "FOLLOW BANK on the SWAP page sets the pad to follow the bank");
+    }
+
+    void testSnapshotStress (const juce::File& tone)
+    {
+        std::cout << "\n== Phase 8: snapshot switching every beat for 2 minutes ==" << std::endl;
+        SeqRig x;
+        auto& snaps = x.r.p.getSnapshots();
+        x.r.load (2, tone);
+        x.step (0, 0); x.step (0, 8);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::delay), 1.0f);
+        snaps.store (0);
+        x.seq.clearAll();
+        x.step (1, 4); x.step (1, 12);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::delay), 0.0f);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::stutter), 1.0f);
+        snaps.store (1);
+
+        x.r.host.ppq = 0.0; x.r.host.playing = true;
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        const int beats = 240;                                   // 2 minutes at 120 BPM
+        const int blocksPerBeat = 24000 / kBlock + 1;
+        double worstMs = 0.0;
+        int switches = 0;
+        const int buffersBefore = tb::SampleBuffer::liveInstances();
+        bool sane = true;
+        for (int beat = 0; beat < beats; ++beat)
+        {
+            snaps.recall (beat % 2, tb::params::switchBeat);
+            for (int b = 0; b < blocksPerBeat; ++b)
+            {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                runBlock (x.r.p, x.r.host, buf, midi);
+                worstMs = juce::jmax (worstMs, juce::Time::getMillisecondCounterHiRes() - t0);
+                for (int i = 0; i < kBlock; i += 64) sane &= std::isfinite (buf.getSample (0, i));
+                snaps.poll();
+            }
+            if (snaps.getActive() == beat % 2) ++switches;
+        }
+        x.r.host.playing = false;
+        const double blockMs = kBlock * 1000.0 / kSr;
+        check (switches >= beats - 2, "240 switches, one per beat: every one landed (" + juce::String (switches) + ")");
+        check (worstMs < blockMs * 0.5, "no CPU spike: worst block took " + juce::String (worstMs, 2) + " ms of its "
+                                          + juce::String (blockMs, 1) + " ms (switching included)");
+        check (sane, "...and the audio stayed clean (no NaN / inf)");
+        check (snaps.framesInFlight() <= 2 && tb::SampleBuffer::liveInstances() <= buffersBefore + 1,
+               "nothing piles up: old frames are retired, no extra sample memory (" + juce::String (snaps.framesInFlight()) + " frames in flight)");
+    }
+
     void testFixedVelocity (const juce::File& tone)
     {
         std::cout << "\n== 0.5.2: fixed velocity ==" << std::endl;
@@ -3018,6 +3306,17 @@ namespace
         const bool mixerView = out.getFileName().contains ("mixer");
         const bool fxView    = out.getFileName().contains ("fx");
         const bool sliceSeqView = out.getFileName().contains ("sseq");
+        const bool snapView = out.getFileName().contains ("snap");
+        if (snapView)
+        {
+            for (int i : { 0, 1, 2, 4 }) p.getSnapshots().store (i);
+            p.getSnapshots().recall (1, 0);
+            p.getBank().copyFromPad (0, 0);
+            p.getBank().copyFromPad (1, 2);
+            p.getBank().copyFromPad (2, 1);
+            setParam (p, tb::params::bankActive, 2.0f);
+            setPadParam (p, 0, tb::params::padFollowBank, 1.0f);
+        }
         const bool seqView   = out.getFileName().contains ("seq") && ! sliceSeqView;
         if (sliceSeqView)
         {
@@ -3095,6 +3394,15 @@ namespace
 
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (tb::ui::MainView::kWidth, tb::ui::MainView::kHeight);
+        if (snapView)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::snapshots);
+                for (auto* child : c.getChildren()) find (*child);
+            };
+            find (*ed);
+        }
         if (sliceSeqView)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -3222,6 +3530,11 @@ int main (int argc, char* argv[])
         testSliceSequencer();
         testSliceSeqEditing();
         testSliceSeqSwap();
+        testSnapshots (tone);
+        testBreakBank();
+        testFindMissing();
+        testSnapshotView();
+        testSnapshotStress (tone);
         testEditorDrivesState();
         testRealtimeSafety();
 

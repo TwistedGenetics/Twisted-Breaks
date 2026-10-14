@@ -298,6 +298,34 @@ Hand-off between breaks at slice points (spec addition A1 in
   `SliceSeqPanel` on the screen; edits materialise an unwritten slot first.
   Variations (`TwistedBreaksProcessor::sliceSeqOp`) run on the message thread.
 
+## 6f. Snapshots and break bank (Phase 8, implemented)
+
+* `SnapshotManager` (message thread): STORE captures every non-master
+  parameter's value, the PADS tree, SEQ and SLICESEQ. RECALL decodes the
+  samples it needs in the background (`SampleManager::requestBuffer`,
+  shared with what's loaded), builds a `SnapshotFrame` (the engine's
+  BlockParams for those values via `fillParamsFrom`, the buffers + slices,
+  both sequencers as packed numbers, the parameters to write back) and arms
+  it.
+* `processBlock` finds the switch sample (`switchOffset`: now, or the next
+  beat / bar line in this block); if it's part-way through, the block is
+  split (buffer views, MIDI split into pre-sized buffers, the second half's
+  transport shifted) so the switch is sample-exact. Applying: pad samples /
+  slices (`AudioEngine::applySnapshotPads`), sequencer atomics, and the frame
+  becomes the parameter override.
+* `SnapshotManager::poll` then writes the parameters (host + UI follow),
+  hands the buffers to `SampleManager::adoptPads`, drops the override (same
+  values, so inaudible) and retires the frame, deleting it once the audio
+  thread's block epoch has moved on twice.
+* Program Change 1-8 and the `snapshot` parameter request recalls through
+  the same path.
+* `BreakBank` + engine: each pad's own sample and markers are kept apart from
+  what it plays; FOLLOW BANK pads play the active bank slot. Bank changes
+  are `SeqKind::bankSwitch` events (first on a tie), so they land on the
+  beat / bar sample and pad regions are recomputed for the new length.
+* `SampleManager::relocateMissing` searches a folder tree by file name and
+  reloads, keeping slices.
+
 ## 7. The 16 performance effects (Phase 6, implemented)
 
 As built (`Engine/FXChain`, `Core/FxDefs`, `UI/FXGrid`, `UI/FxEditorPanel`):
@@ -427,5 +455,5 @@ Ableton stores in the `.als` file:
 | **6 ✅** | 16 performance FX per group, LOCKED/MOMENTARY, MIDI notes + automation, FX editor view | 267/267 checks: each effect measured (filter slopes, crush levels, S&H runs, clip, roll-off, sample-exact stutter / repeat / reverse / delay timing, gate on the grid, pitch dive, comb pitch), click-free engage, throws, group independence, bypass, MIDI latch / momentary, mouse keys, state, ~4 % CPU with all 64 on |
 | **7 ✅** | 32-step sequencer (16 lanes, velocity, length, step size, RUN), live record with quantise | 296/296 checks: steps sample-exact mid-block, length / step size, micro-timing, stopped / RUN off silent, jumps and restarts land on the right step, recording at 1/4–1/32 (finer kept as micro-timing) without double hits, mouse + MIDI, state, grid editing |
 | **7.1 ✅** | **Per-pad slice sequencer** (spec addition A5) | 333/333 checks: untouched pattern replays the break sample-exactly, rearranged / REST / REV / RATCHET / gate / PITCH / CHANCE / MICRO / SWING / RATE timed to the sample, start / stop, free clock when stopped, slot switch at the pattern start, FILL, main-sequencer start, SWAP hand-off on the step, edit ops, screen editing, STEP REC, state |
-| 8 | Snapshots (4+ slots, quantised switching), StateManager, missing-sample recovery; **break bank** (spec addition A2) | Full Live Set round-trip, snapshot switch with no dropouts |
+| **8 ✅** | Snapshots (8 slots, NOW / BEAT / BAR, Program Change, automation), break bank (A2), find missing samples | 362/362 checks: recall restores params / samples / patterns, master untouched, NEXT BAR switch on the exact bar-line sample mid-block, bank switch on the beat sample-exact, state, relocate, UI, 240 switches in 2 min with the worst block at 0.5 ms and nothing leaking |
 | 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |

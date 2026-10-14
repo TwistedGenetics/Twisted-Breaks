@@ -87,6 +87,7 @@ namespace tb
             bool  fixVel  = false;   // every hit at full level
             bool  sliceSeq  = false; // a hit starts / stops the slice sequence
             int   sliceSlot = 0;     // 0..7
+            bool  followBank = false; // play the active bank break
         };
 
         struct GroupParams
@@ -112,7 +113,19 @@ namespace tb
             int   seqLength = 16;
             int   seqRes    = 1;     // index into params::seqResPpq
             int   seqQuant  = 2;     // index into params::seqQuantPpq
+
+            int   bankActive = 0;    // 0..7
+            int   bankAt     = 1;    // params::SwitchAt
         };
+
+        static constexpr int kBankSlots = 8;
+        /** Pad commands with pad = kNumPads + slot fill break-bank slots. */
+        static constexpr int kBankCommandBase = kNumPads;
+
+        /** Snapshot switch (audio thread, at the boundary): every pad's own sample + slices. */
+        void applySnapshotPads (const std::array<SampleBuffer*, kNumPads>& buffers,
+                                const std::array<SliceTable, kNumPads>& slices) noexcept;
+        int  getActiveBank() const noexcept { return bankActiveNow.load (std::memory_order_relaxed); }
 
         void process (juce::AudioBuffer<float>& buffer,
                       const juce::MidiBuffer& midi,
@@ -193,7 +206,7 @@ namespace tb
         bool handleFxNote (int note, bool on) noexcept;
 
         // ---- Sequencer
-        enum class SeqKind : uint8_t { padHit, sliceRelease, sliceHit };   // order = priority on a tie
+        enum class SeqKind : uint8_t { bankSwitch, padHit, sliceRelease, sliceHit };   // order = priority on a tie
         struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; };
         void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
         void insertEvent (const SeqEvent&) noexcept;
@@ -217,6 +230,8 @@ namespace tb
         double clockAt (int sampleOffset) const noexcept { return clock0 + sampleOffset * clockDppq; }
         void recordHit (int pad, float velocity, int sampleOffset) noexcept;
         void applyPadCommands() noexcept;
+        void refreshPadSource (int pad) noexcept;     // own sample or the active bank break
+        void switchBank (int slot) noexcept;
         void computeVoiceSettings (const BlockParams&) noexcept;
 
         EngineBridge& bridge;
@@ -225,7 +240,15 @@ namespace tb
         SpscQueue<PadCommand, 128> padCommands;
         std::array<SliceTable, kNumPads> padSlices {};
 
-        std::array<SampleBuffer::Ptr, kNumPads> padSample;           // audio-thread owned
+        std::array<SampleBuffer::Ptr, kNumPads> padSample;           // what each pad plays (audio-thread owned)
+        std::array<SampleBuffer::Ptr, kNumPads> ownSample;           // the pad's own sample
+        std::array<SliceTable, kNumPads>        ownSlices {};
+        std::array<SampleBuffer::Ptr, kBankSlots> bankSample;        // break bank
+        std::array<SliceTable, kBankSlots>        bankSlices {};
+        std::array<bool, kNumPads> padFollowBank {};
+        int bankActive = 0, bankWanted = 0, bankAtNow = 1;
+        std::atomic<int> bankActiveNow { 0 };
+        const BlockParams* currentParams = nullptr;
         std::array<PadVoice::Settings, kNumPads> padSettings {};     // this block's settings
         std::array<std::array<PadVoice, kVoicesPerPad>, kNumPads> voices;
         std::array<int, kNumPads>   currentVoice {};

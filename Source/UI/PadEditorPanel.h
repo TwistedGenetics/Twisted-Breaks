@@ -96,6 +96,8 @@ namespace tb::ui
         // ---- SWAP page
         RotarySelector swapSel   { { "OFF", "1", "2", "3", "4" } };
         RotarySelector swapAtSel { { "SLICE", "1/16", "BEAT", "BAR" } };
+        PushKey        followBankKey { "FOLLOW BANK", "This pad plays the active BREAK BANK break (its slice of it) instead of its own sample", juce::Colour (0xff7dff5a) };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followBankAttachment;
 
         // ---- SEQ page (slice sequencer)
         PushKey     sseqKey  { "SLICE SEQ", "On: hitting this pad starts / stops its slice sequence (steps on the screen)", juce::Colour (0xff7dff5a) };

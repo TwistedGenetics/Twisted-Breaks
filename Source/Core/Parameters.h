@@ -35,6 +35,14 @@ namespace tb::params
     inline constexpr int kV7 = 7;   // parameters introduced in 0.5.2 (fixed velocity)
     inline constexpr int kV8 = 8;   // parameters introduced in 0.6.x (performance FX)
     inline constexpr int kV9 = 9;   // parameters introduced in 0.7.x (sequencer)
+    inline constexpr int kV10 = 10; // parameters introduced in 0.8.x (snapshots, break bank)
+
+    // ---- Snapshots & break bank (Phase 8) ----------------------------------------
+    inline constexpr const char* snapRecall = "snapshot";     // int 0..8: 0 = none; changing it recalls that slot
+    inline constexpr const char* snapAt     = "snap_at";      // choice: Now / Next Beat / Next Bar
+    inline constexpr const char* bankActive = "bank_active";  // int 1..8: break the FOLLOW BANK pads play
+    inline constexpr const char* bankAt     = "bank_at";      // choice: Now / Next Beat / Next Bar
+    enum SwitchAt { switchNow = 0, switchBeat = 1, switchBar = 2 };
 
     // ---- Sequencer (Phase 7) ---------------------------------------------------
     inline constexpr const char* seqRun    = "seq_run";      // bool: pattern plays with Live's transport
@@ -85,6 +93,9 @@ namespace tb::params
     // ---- Per pad (0.7.1: slice sequencer) ------------------------------------
     inline constexpr const char* padSliceSeq  = "sseq";    // bool: a hit starts / stops the pad's slice sequence
     inline constexpr const char* padSliceSlot = "sslot";   // int 1..8: pattern slot (switches at the pattern start)
+
+    // ---- Per pad (0.8: break bank) -----------------------------------------------
+    inline constexpr const char* padFollowBank = "bank";   // bool: play the active bank break instead of its own sample
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB

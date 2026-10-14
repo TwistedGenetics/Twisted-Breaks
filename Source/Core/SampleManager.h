@@ -88,6 +88,26 @@ namespace tb
 
         static const juce::Identifier padsId;
 
+        // ---- Snapshots / break bank (message thread) -------------------------------
+        /** Decoded audio for `file` (shared if any pad already has it), delivered on the
+            message thread; nullptr if missing / unreadable. Doesn't touch any pad. */
+        void requestBuffer (const juce::File&, std::function<void (SampleBuffer::Ptr)> done);
+        /** Transient slicing of a buffer on the loader thread, result on the message thread. */
+        void requestSlices (const SampleBuffer::Ptr&, float sensitivity, int count, std::function<void (SliceTable)> done);
+        /** Keeps a buffer alive (and shareable) while something other than a pad uses it. */
+        void retain (const SampleBuffer::Ptr&);
+        /** Hands a break-bank slot's audio + slices to the engine (queued like pad samples). */
+        void sendBank (int slot, const SampleBuffer::Ptr&, const SliceTable&);
+        /** Take over a snapshot's pads: paths, slices, slicer settings and the already
+            decoded buffers (index = pad; nullptr + a path = MISSING). */
+        void adoptPads (const juce::ValueTree& pads, const std::array<SampleBuffer::Ptr, kNumPads>& buffers);
+
+        // ---- Missing files ------------------------------------------------------------
+        int  countMissing() const;
+        /** Looks for every MISSING pad's file (by name) in `folder` and below; loads what it
+            finds, keeping the slices. Returns how many were found. */
+        int  relocateMissing (const juce::File& folder);
+
         /** Called on the message thread whenever a pad's content or status changes. */
         std::function<void()> onStateChanged;
 

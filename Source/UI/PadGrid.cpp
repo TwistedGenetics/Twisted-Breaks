@@ -73,7 +73,8 @@ namespace tb::ui
                                        : mode == params::modeSlice ? "SL " + juce::String (juce::roundToInt (raw (params::padSlice)))
                                                                    : juce::String ("ONE");
             const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())
-                                             + (swap > 0 ? " SW" + juce::String (swap) : juce::String());
+                                             + (swap > 0 ? " SW" + juce::String (swap) : juce::String())
+                                             + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String());
 
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);

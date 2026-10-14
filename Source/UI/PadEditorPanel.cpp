@@ -125,6 +125,8 @@ namespace tb::ui
         swapAtSel.setTooltip ("When a swap onto this pad lands: the next SLICE marker of the playing break, or the next 1/16, beat or bar of Live's grid");
         addChildComponent (swapSel);
         addChildComponent (swapAtSel);
+        followBankKey.setClickingTogglesState (true);
+        addChildComponent (followBankKey);
 
         // ---- SEQ page
         sseqKey.setClickingTogglesState (true);
@@ -185,6 +187,7 @@ namespace tb::ui
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
         groupAttachment.reset();
         sseqAttachment.reset();
+        followBankAttachment.reset();
         slotRead.attach (nullptr);
     }
 
@@ -228,6 +231,7 @@ namespace tb::ui
         swapTab.setToggleState (swap, dontSendNotification);
         swapSel.setVisible (swap);
         swapAtSel.setVisible (swap);
+        followBankKey.setVisible (swap);
 
         for (auto& k : knobs) k.setVisible (sound);
         reverseSwitch.setVisible (sound);
@@ -276,6 +280,8 @@ namespace tb::ui
         swapAtSel.attach (apvts.getParameter (id (params::padSwapAt)));
         sseqAttachment.reset();
         sseqAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padSliceSeq), sseqKey);
+        followBankAttachment.reset();
+        followBankAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padFollowBank), followBankKey);
         slotRead.attach (apvts.getParameter (id (params::padSliceSlot)));
 
         noteSel.setNote (processor.getEngine().getPadNote (pad));
@@ -381,6 +387,7 @@ namespace tb::ui
 
         swapSel.setBounds   (0,   kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
         swapAtSel.setBounds (108, kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
+        followBankKey.setBounds (222, kCtlTop - 20, 112, 34);
         loadKey.setBounds  (w - 136, 0, 66, kHeaderH);
         clearKey.setBounds (w - 68,  0, 68, kHeaderH);
 
@@ -487,15 +494,15 @@ namespace tb::ui
             g.drawText ("AT",    Rectangle<float> (108.0f, (float) kCtlTop - 18.0f, 104.0f, 14.0f), Justification::centred, false);
 
             // How it works, on a recessed instruction plate.
-            auto help = Rectangle<float> (222.0f, (float) kCtlTop - 20.0f, (float) getWidth() - 222.0f, (float) (getHeight() - kCtlTop + 20));
+            auto help = Rectangle<float> (342.0f, (float) kCtlTop - 20.0f, (float) getWidth() - 342.0f, (float) (getHeight() - kCtlTop + 20));
             paint::recess (g, help, 3.0f);
             help.reduce (8.0f, 4.0f);
             g.setColour (c::vfd.withAlpha (0.85f));
             g.setFont (monoFont (11.0f));
-            g.drawFittedText ("PADS IN ONE GROUP TAKE TURNS (LATCHED).\n"
-                              "HIT ANOTHER: IT TAKES OVER AT THE NEXT\n"
-                              "SLICE, FROM THE SAME POINT IN ITS BREAK.\n"
-                              "HIT THE PLAYING PAD AGAIN TO STOP.",
+            g.drawFittedText ("ONE GROUP: PADS TAKE TURNS.\n"
+                              "HIT ANOTHER: TAKES OVER AT\n"
+                              "THE NEXT SLICE. HIT AGAIN\n"
+                              "TO STOP.",
                               help.toNearestInt(), Justification::centredLeft, 4, 1.0f);
         }
         else
