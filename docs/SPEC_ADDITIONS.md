@@ -181,3 +181,103 @@ Notes for the build:
 * Active slot is an automatable choice parameter (`bank_active`); switching
   uses the same next-beat / next-bar landing as snapshots and SWAP AT.
 * Saved with the set; missing files in a slot show MISSING like pads.
+
+---
+
+## A6. Sequence pads — launch a pad's sequence by hitting it, and SWAP between sequences
+
+**Status: not built yet (prompt + plan).**
+
+Prompt:
+
+> The sequencer is great but I want to be able to trigger a sequence
+> (either one-off or looped) by hitting the pad with the sequence in. I
+> guess this will be set in the play mode selector. I also want to swap
+> between pads with different sequences and have them cut each other's
+> sequence in the same way as slices do (slice, 1/16, beat / bar).
+
+What to build:
+
+* **Two new play modes** on the PLAY page's **MODE** selector (appended to
+  the choice list, so saved sets and automation keep their meaning):
+  * **SEQ ONE**: a hit plays the pad's sequencer lane once, from step 1,
+    then stops.
+  * **SEQ LOOP**: a hit starts the lane and it loops until it is stopped.
+  * In both modes the lane no longer runs on its own with Live's
+    transport: it plays only when launched. Lanes of pads in the other
+    modes behave exactly as now.
+* **What a launched sequence plays**: the pad's own lane in the main
+  sequencer, with every step feature (velocity, CHANCE, RATCHET, PITCH,
+  SLICE, REV, MICRO, FX, conditions). A sliced break on a SEQ pad can
+  therefore play a whole chopped pattern of its own slices from one hit.
+  The hit's velocity scales the steps' velocities (following the pad's VEL
+  / FIX settings).
+* **LAUNCH** (new per-pad setting on the PLAY page, shown in SEQ modes,
+  automatable, saved): when a hit starts the sequence:
+  **NOW, 1/16, BEAT, BAR** (default BEAT). Step 1 lands exactly on that
+  boundary sample, even mid-block. With Live stopped it starts at once on
+  the free clock, like the slice sequencer.
+* **SEQ LEN** (per pad, saved): **GLOBAL** (the sequencer's LEN) or 1-32
+  steps, so a 1-bar fill and a 2-bar groove can sit on different pads.
+  The STEP size stays global.
+* **Hitting a running sequence pad again**:
+  * SEQ LOOP: it stops at its next LAUNCH boundary (the tile flashes while
+    it waits); hitting it again before then cancels the stop.
+  * SEQ ONE: it restarts from step 1 at the next LAUNCH boundary.
+* **SWAP groups for sequences**: SEQ pads in the same SWAP group (1-4) take
+  turns like breaks do. One sequence plays at a time; hitting another
+  queues a hand-off (the incoming pad flashes) that lands on the playing
+  sequence's **AT** setting:
+  * **STEP**: the next step of the playing sequence (the sequence
+    equivalent of SLICE),
+  * **1/16, BEAT, BAR**: the next line of Live's grid.
+
+  The outgoing sequence is cut there; the incoming one takes over on the
+  same sample.
+* **SWAP FROM** (per pad, saved): **SAME STEP** (default: the incoming
+  sequence carries on from the same position in its own pattern, like a
+  break hand-off continuing from the same point) or **STEP 1** (it starts
+  its pattern from the top).
+* **Mixed SWAP groups**: a SEQ pad and a break pad (or a slice-sequencer
+  pad) in one SWAP group hand off to each other by the same rules.
+* **Everything else keeps working**:
+  * choke groups stop a running sequence;
+  * MUTATE varies the lanes of SEQ pads too (a variation lands while the
+    sequence plays);
+  * snapshots store the modes, LAUNCH, SEQ LEN and SWAP FROM, and stop
+    sequences whose pad is no longer in a SEQ mode;
+  * scenes A / B both have sequence pads;
+  * conditions count passes from the moment the sequence was launched
+    (FIRST = its first time round);
+  * PANIC and Live stopping end every launched sequence.
+* **Optional, for consistency**: give the slice sequencer the same choice,
+  **LOOP** (as now) or **ONCE**, so a slice pattern can also be a one-shot.
+* **On screen**:
+  * pad tiles tag the mode (`SEQ1` / `SEQL`), light while the sequence
+    runs and flash while a launch, stop or hand-off is waiting;
+  * the sequencer view shows each launched lane's own playhead (it may
+    differ from Live's position) and dims lanes of SEQ pads that aren't
+    running;
+  * the iRig lights follow the same states (green running, red flashing
+    queued).
+* **Real-time safety**: launches, stops and hand-offs are events in the
+  block's sorted event list (like SWAP and the slice sequencer), with
+  per-pad run state (anchor step, slot, generation) as plain data. No
+  allocation, no locks.
+
+Exit tests (automated):
+* a hit on a SEQ ONE pad plays its lane once from the LAUNCH boundary
+  sample (NOW / 1/16 / BEAT / BAR, mid-block) and then stops;
+* SEQ LOOP keeps going across many passes without drift;
+* SEQ pads don't play when not launched;
+* a hit on a running pad stops it at the boundary, and a second hit
+  cancels the stop;
+* SEQ LEN per pad;
+* SWAP hand-off between two SEQ pads at STEP, 1/16, BEAT and BAR lands on
+  the exact sample, with no doubled or missing step at the seam;
+* SAME STEP vs STEP 1;
+* a mixed SWAP group (sequence ↔ break);
+* choke, Live stopped (free clock), conditions counted from the launch,
+  velocity scaling;
+* the state round trip, and an old set opening unchanged;
+* zero allocations on the audio thread.
