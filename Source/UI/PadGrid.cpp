@@ -87,7 +87,9 @@ namespace tb::ui
             const int mode  = juce::roundToInt (raw (params::padMode));
             const int choke = juce::roundToInt (raw (params::padChoke));
             const int swap  = juce::roundToInt (raw (params::padSwap));
-            const juce::String modeTag = mode == params::modeLoop  ? juce::String ("LOOP")
+            const juce::String modeTag = mode == params::modeSeqOne  ? juce::String ("SEQ1")
+                                       : mode == params::modeSeqLoop ? juce::String ("SEQL")
+                                       : mode == params::modeLoop  ? juce::String ("LOOP")
                                        : mode == params::modeSlice ? "SL " + juce::String (juce::roundToInt (raw (params::padSlice)))
                                                                    : juce::String ("ONE");
             const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())

@@ -70,9 +70,13 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.sliceSlot = apvts.getRawParameterValue (padId (pad, padSliceSlot));
         pp.followBank = apvts.getRawParameterValue (padId (pad, padFollowBank));
         pp.character  = apvts.getRawParameterValue (padId (pad, padCharacter));
+        pp.launch     = apvts.getRawParameterValue (padId (pad, padLaunch));
+        pp.seqLen     = apvts.getRawParameterValue (padId (pad, padSeqLen));
+        pp.swapFrom   = apvts.getRawParameterValue (padId (pad, padSwapFrom));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
-                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character);
+                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character
+                 && pp.launch && pp.seqLen && pp.swapFrom);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -271,6 +275,9 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.sliceSlot = juce::jlimit (0, 7, juce::roundToInt (ld (src.sliceSlot)) - 1);
         dst.followBank = ld (src.followBank) > 0.5f;
         dst.character  = juce::roundToInt (ld (src.character));
+        dst.launch     = juce::roundToInt (ld (src.launch));
+        dst.seqLen     = juce::roundToInt (ld (src.seqLen));
+        dst.swapFrom   = juce::roundToInt (ld (src.swapFrom));
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)

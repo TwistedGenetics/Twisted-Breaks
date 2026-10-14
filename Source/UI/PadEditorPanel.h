@@ -66,7 +66,12 @@ namespace tb::ui
         ToggleSwitch reverseSwitch { "REVERSE", "Play this pad's region backwards" };
 
         // ---- PLAY page
-        RotarySelector modeSel  { { "ONE", "LOOP", "SLICE" } };
+        RotarySelector modeSel  { { "ONE", "LOOP", "SLICE", "SEQ1", "SEQL" } };
+        // SEQ ONE / SEQ LOOP (A6): LAUNCH and LEN take SYNC / RATE's places.
+        RotarySelector launchSel { { "NOW", "1/16", "BEAT", "BAR" } };
+        DragReadout    seqLenRead { "LEN", "This pad's sequence length: GLOBAL (the sequencer's LEN) or 1-32 steps" };
+        bool shownSeqMode = false;
+        bool isSeqModeNow() const;
         ToggleSwitch   syncSwitch { "SYNC", "Loops follow Ableton's tempo and stay locked to the bar grid" };
         RotarySelector rateSel  { { "1/4", "1/2", "1x", "2x" } };
         RotarySelector chokeSel { { "OFF", "1", "2", "3", "4" } };
@@ -98,6 +103,8 @@ namespace tb::ui
         RotarySelector swapAtSel { { "SLICE", "1/16", "BEAT", "BAR" } };
         PushKey        followBankKey { "FOLLOW BANK", "This pad plays the active BREAK BANK break (its slice of it) instead of its own sample", juce::Colour (0xff7dff5a) };
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followBankAttachment;
+        PushKey        swapFromKey { "FROM STEP 1", "A sequence taking over starts from its step 1 (off: it carries on from the same step)", juce::Colour (0xffffa928) };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> swapFromAttachment;
 
         // ---- SEQ page (slice sequencer)
         PushKey     sseqKey  { "SLICE SEQ", "On: hitting this pad starts / stops its slice sequence (steps on the screen)", juce::Colour (0xff7dff5a) };

@@ -247,7 +247,7 @@ a { color: var(--amber-ink); }
   <div class="plate title"><span class="rivets"></span>
     <h1>TWISTED BREAKS</h1>
     <p class="sub">Operator's manual <span>· руководство оператора · ТБ-1</span></p>
-    <p class="lead" style="margin-top:18px">A jungle and drum &amp; bass break sampler, slicer, sequencer and effects console for Ableton Live. This manual covers version 0.13: two scenes of 16 pads, slicing, SWAP hand-offs, the two sequencers, MUTATE, 16 performance effects, eight macros, snapshots, the break bank, RESAMPLE and the vintage modes.</p>
+    <p class="lead" style="margin-top:18px">A jungle and drum &amp; bass break sampler, slicer, sequencer and effects console for Ableton Live. This manual covers version 0.14: two scenes of 16 pads, slicing, SWAP hand-offs, the two sequencers, MUTATE, 16 performance effects, eight macros, snapshots, the break bank, RESAMPLE and the vintage modes.</p>
     <div class="meta">
       <span class="chip">AU + VST3</span><span class="chip">macOS · Apple Silicon + Intel</span><span class="chip">Ableton Live 11 / 12</span><span class="chip">iRig Pads ready</span>
     </div>
@@ -255,7 +255,7 @@ a { color: var(--amber-ink); }
   <div class="makers">
     <div class="plate"><span class="rivets"></span><div class="maker">TWISTED GENETICS<small>ЗАВОД № 4 · ЗАВ. № 0001 · 1979</small></div></div>
     <div class="caution"><b>ОСТОРОЖНО</b></div>
-    <div class="plate"><span class="rivets"></span><div class="maker" style="font-size:16px">VERSION 0.13<small>969 automatable parameters<br>32 pads · 4 groups · 16 effects</small></div></div>
+    <div class="plate"><span class="rivets"></span><div class="maker" style="font-size:16px">VERSION 0.14<small>1065 automatable parameters<br>32 pads · 4 groups · 16 effects</small></div></div>
   </div>
 </header>
 
@@ -350,7 +350,7 @@ a { color: var(--amber-ink); }
   <div class="tablewrap"><table>
     <thead><tr><th>Control</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04).</td></tr>
+      <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04). <b>SEQ1</b> / <b>SEQL</b> make it a sequence pad (§ 09).</td></tr>
       <tr><td><span class="key">Sync</span></td><td>Loops lock to Live's tempo and bar grid. The length in beats is worked out from the audio, a pad hit mid-bar enters at the right point, and it re-locks after loop-brace jumps and tempo changes.</td></tr>
       <tr><td><span class="key">Rate</span></td><td>Loop speed: 1/4, 1/2, 1x or 2x.</td></tr>
       <tr><td><span class="key">Choke</span></td><td>Groups 1–4: a hit stops the other pads in the same choke group (3 ms fade). Open and closed hats, for example.</td></tr>
@@ -395,7 +395,7 @@ a { color: var(--amber-ink); }
     <li><div>Hit another pad in the group. It flashes while it waits, then takes over at the playing break's next slice marker, carrying on from the same point in its own break and starting right on its own hit.</div></li>
     <li><div>Hit the playing pad again to stop it at its next point.</div></li>
   </ol>
-  <p><span class="key">At</span> picks when a hand-off lands: <b>SLICE</b> (the next marker), or the next <b>1/16</b>, <b>BEAT</b> or <b>BAR</b> of Live's grid. Slice-sequenced pads hand off on their next step. <span class="key">Follow bank</span> is explained in § 12.</p>
+  <p><span class="key">At</span> picks when a hand-off lands: <b>SLICE</b> (the next marker), or the next <b>1/16</b>, <b>BEAT</b> or <b>BAR</b> of Live's grid. Slice-sequenced pads and sequence pads (§ 09) hand off on their next step. <span class="key">Follow bank</span> is explained in § 12; <span class="key">From step 1</span> makes an incoming sequence start from the top.</p>
 </section>
 
 <!-- ===================================================================== 06 GROUPS -->
@@ -535,7 +535,16 @@ a { color: var(--amber-ink); }
       <p><span class="key red">Fill (hold)</span> is the automatable <code>Sequencer Fill</code> parameter: MIDI-map it to a pad.</p>
     </div>
   </div>
-  <div class="note"><p>PITCH, REV and SLICE don't apply to pads in a SWAP group or with SLICE SEQ on (they run their own playback). A pitched step on a synced loop plays that hit at its own speed, off the grid.</p></div>
+  <div class="note"><p>PITCH, REV and SLICE don't apply to pads in a SWAP group or with SLICE SEQ on (they run their own playback); they do on SEQ pads. A pitched step on a synced loop plays that hit at its own speed, off the grid.</p></div>
+  <h3>Sequence pads</h3>
+  <p>Set a pad's MODE (PLAY page) to <b>SEQ1</b> or <b>SEQL</b> and its lane stops running by itself: hitting the pad plays it, once (SEQ ONE) or looped (SEQ LOOP). On a sliced break, the lane's SLICE, PITCH and REV steps make a whole chopped pattern you fire from one pad. How hard you hit scales the whole sequence.</p>
+  <ul>
+    <li><span class="key">Launch</span> (in RATE's place): the sequence starts NOW or on the next 1/16, BEAT or BAR, exactly on that sample.</li>
+    <li><span class="key">Len</span> (in SYNC's place): GLOBAL (the sequencer's LEN) or its own 1–32 steps, so a fill and a groove can live on different pads.</li>
+    <li>Hit a SEQ LOOP pad again to stop it at the next LAUNCH boundary (it flashes while it waits; hit once more to cancel). Hit a SEQ ONE pad again to start it over.</li>
+    <li>In a <b>SWAP</b> group, sequence pads cut each other like breaks do: on the next <b>STEP</b> (AT SLICE), 1/16, BEAT or BAR. The incoming sequence carries on from the same step, or from the top with <span class="key">From step 1</span> (SWAP page). Sequence and break pads can share a group.</li>
+    <li>Conditions count from the launch (FIRST = its first time round). Choke groups stop a sequence; stopping or starting Live ends it; a loop brace wrap doesn't.</li>
+  </ul>
 </section>
 
 <!-- ===================================================================== 10 MUTATE -->
@@ -700,7 +709,7 @@ a { color: var(--amber-ink); }
 <section class="plate" id="trouble"><span class="rivets"></span>
   <header><h2 class="label">Saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
   <h3>What the Live set keeps</h3>
-  <p>All 969 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank and the iRig light layout. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
+  <p>All 1065 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank and the iRig light layout. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>
@@ -724,6 +733,7 @@ a { color: var(--amber-ink); }
     <div><h4>Loop it in time</h4><p>PLAY page: MODE <b>LOOP</b>, <span class="key">Sync</span> on.</p></div>
     <div><h4>Switch breaks on the snare</h4><p>Same <span class="key">Swap</span> group, AT <b>SLICE</b>, hit the other pad.</p></div>
     <div><h4>Program a beat</h4><p><span class="key">Sequencer</span>, click cells, press play in Live.</p></div>
+    <div><h4>Fire a chopped pattern</h4><p>MODE <b>SEQL</b>, program its lane, hit the pad.</p></div>
     <div><h4>Roll the hats</h4><p>Select the step, <span class="key">Rat</span> x3 or x4.</p></div>
     <div><h4>Vary it</h4><p>STEP row → <span class="key">Mutate</span> tab → <span class="key red">Go</span>.</p></div>
     <div><h4>Rearrange the break</h4><p>Pad editor <span class="key">Seq</span>, <span class="key">Slice seq</span> on, drag steps.</p></div>
@@ -736,7 +746,7 @@ a { color: var(--amber-ink); }
 </main>
 </div>
 
-<footer class="colophon"><div class="plate"><span class="rivets"></span>TWISTED BREAKS 0.13 · OPERATOR'S MANUAL · TWISTED GENETICS<br>github.com/TwistedGenetics/Twisted-Breaks</div></footer>
+<footer class="colophon"><div class="plate"><span class="rivets"></span>TWISTED BREAKS 0.14 · OPERATOR'S MANUAL · TWISTED GENETICS<br>github.com/TwistedGenetics/Twisted-Breaks</div></footer>
 
 </body>
 </html>

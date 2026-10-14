@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include <limits>
 #include "Core/EngineBridge.h"
 #include "Core/TransportSync.h"
 #include "Engine/PadVoice.h"
@@ -14,6 +15,7 @@
 #include "Core/FxDefs.h"
 #include "Core/SequencerData.h"
 #include "Core/MacroDefs.h"
+#include "Core/Parameters.h"
 
 namespace tb
 {
@@ -91,6 +93,9 @@ namespace tb
             int   sliceSlot = 0;     // 0..7
             bool  followBank = false; // play the active bank break
             int   character = 0;      // PadVoice::character (vintage mode)
+            int   launch    = 2;      // params::Launch (SEQ modes)
+            int   seqLen    = 0;      // 0 = global LEN
+            int   swapFrom  = 0;      // 0 same step, 1 step 1
         };
 
         struct GroupParams
@@ -260,10 +265,45 @@ namespace tb
         // ---- Sequencer
         // Order = priority on a tie. A step FX's ON comes before the previous
         // step's OFF, so the same effect on back-to-back steps runs unbroken.
-        enum class SeqKind : uint8_t { bankSwitch, stepFxOn, stepFxOff, padHit, sliceRelease, sliceHit };
-        struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; };
+        enum class SeqKind : uint8_t { bankSwitch, stepFxOn, stepFxOff, laneStop, padHit, sliceRelease, sliceHit };
+        /** owner >= 0: a launched sequence's event, dropped if that run's generation moved on. */
+        struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; int owner = -1; uint32_t ownerGen = 0; };
         void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
         void insertEvent (const SeqEvent&) noexcept;
+
+        /** One sequencer step into the event list (main lanes and launched lanes share it).
+            `base` / `rate`: the ppq at offset 0 and per sample of the domain `stepStart` is in. */
+        struct StepCtx
+        {
+            double p0, p1, base, rate, stepPpq;
+            int numSamples;
+            bool fill;
+        };
+        void emitStep (const StepCtx&, int pad, const SeqStep&, double stepStart, int64_t pass, bool firstPass,
+                       int64_t rollKey, int64_t& rollStep, bool& rollPlays, float velScale, int owner, uint32_t ownerGen) noexcept;
+
+        // ---- Sequence pads (A6): a pad in SEQ ONE / SEQ LOOP plays its lane when hit
+        struct LaneRun
+        {
+            bool     running = false, once = false;
+            double   anchor  = 0.0;        // clock ppq of step 1 (this segment)
+            double   endPpq  = 1.0e300;    // this segment is cut here (stop / restart / hand-off)
+            bool     releaseAtEnd = false; // a stop: cut the sound at endPpq
+            bool     hasNext = false;      // SEQ ONE re-hit: the next segment starts at nextAnchor
+            double   nextAnchor = 0.0;
+            float    hitVel = 1.0f;
+            uint32_t gen = 0;
+            int64_t  rollKey = std::numeric_limits<int64_t>::min();
+            bool     rollPlays = false;
+        };
+        bool   isSeqPad (int pad) const noexcept { return params::isSeqMode (padMode[(size_t) pad]); }
+        int    laneLength (int pad) const noexcept;
+        double launchBoundary (int pad, int sampleOffset) const noexcept;
+        void   launchLane (int pad, int sampleOffset, double anchor, float hitVel) noexcept;
+        void   hitSeqPad (int pad, float velocity, int sampleOffset) noexcept;
+        void   stopLane (int pad, float fadeMs = 3.0f) noexcept;
+        void   addLaneEvents (int pad, int fromOffset) noexcept;
+        void   advanceLanes() noexcept;      // block end: segments that have passed
         void applyFx (int group) noexcept;          // param XOR latch | MIDI held | step held
         void stepFx (int group, int fxId, bool on, double endPpq) noexcept;
         void clearStepFx() noexcept;
@@ -351,6 +391,11 @@ namespace tb
         int64_t seqFirstPass = 0;                        // pattern pass Live started in (FIRST condition)
         std::array<std::array<bool, kVoicesPerPad>, kNumPads> voiceCustom {};   // voice runs its own settings (step tweak / slice seq)
         std::array<SliceRun, kNumPads> sliceRun {};
+        std::array<LaneRun, kNumPads>  laneRun {};
+        std::array<int, kNumPads> padLaunch {}, padSeqLen {}, padSwapFrom {};
+        bool   clockWasPlaying = false, seqFillNow = false;
+        std::array<bool, kNumPads> laneQueued {};
+        const TransportState* lastTransport = nullptr;
         std::array<bool, kNumPads> padSliceSeq {};
         std::array<int,  kNumPads> padSliceSlot {};
         std::array<float, kNumPads> padPitchNow {};

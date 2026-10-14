@@ -169,6 +169,7 @@ namespace tb::ui
 
         uint32_t shownVersion = 0xffffffff;
         int shownStep = -2, shownLen = -1, shownBar = -1, shownBeat = -1;
+        uint32_t shownLaneHash = 0;
         bool shownFill = false;
         juce::Image background;
 

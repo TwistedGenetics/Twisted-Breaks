@@ -199,6 +199,9 @@ private:
         std::atomic<float>* sliceSlot = nullptr;
         std::atomic<float>* followBank = nullptr;
         std::atomic<float>* character = nullptr;
+        std::atomic<float>* launch = nullptr;
+        std::atomic<float>* seqLen = nullptr;
+        std::atomic<float>* swapFrom = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

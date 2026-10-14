@@ -71,7 +71,9 @@ namespace tb::ui
 
         styleKnob (velKnob, 62);
         velKnob.setTooltip ("Velocity sensitivity: 0% = every hit at full level, 100% = level follows how hard you play");
-        modeSel.setTooltip ("ONE: plays once.  LOOP: repeats while the pad / note is held (latched in a SWAP group).  SLICE: plays one slice (SLICE knob).");
+        modeSel.setTooltip ("ONE: plays once.  LOOP: repeats while the pad / note is held (latched in a SWAP group).  SLICE: plays one slice (SLICE knob).  "
+                            "SEQ1 / SEQL: a hit plays the pad's sequencer lane once / looped (hit a looping one again to stop it).");
+        launchSel.setTooltip ("When a hit starts this pad's sequence: NOW, or the next 1/16, beat or bar");
         rateSel.setTooltip ("Loop speed: 1/4, 1/2, 1x or 2x");
         chokeSel.setTooltip ("Choke group: hitting a pad stops the other pads in the same group");
         muteKey.setClickingTogglesState (true);
@@ -79,7 +81,7 @@ namespace tb::ui
         soloKey.setClickingTogglesState (true);
 
         for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
-                                                                    &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel })
+                                                                    &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel, &launchSel, &seqLenRead })
             addChildComponent (comp);
 
         noteSel.onNoteChanged = [this] (int n)
@@ -127,6 +129,8 @@ namespace tb::ui
         addChildComponent (swapAtSel);
         followBankKey.setClickingTogglesState (true);
         addChildComponent (followBankKey);
+        swapFromKey.setClickingTogglesState (true);
+        addChildComponent (swapFromKey);
 
         // ---- SEQ page
         sseqKey.setClickingTogglesState (true);
@@ -184,6 +188,7 @@ namespace tb::ui
         velAttachment.reset(); sliceAttachment.reset();
         reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
+        launchSel.attach (nullptr); seqLenRead.attach (nullptr); swapFromAttachment.reset();
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
         groupAttachment.reset();
         sseqAttachment.reset();
@@ -218,6 +223,11 @@ namespace tb::ui
         repaint();
     }
 
+    bool PadEditorPanel::isSeqModeNow() const
+    {
+        return params::isSeqMode (roundToInt (processor.getParameters().getRawParameterValue (params::padId (pad, params::padMode))->load()));
+    }
+
     void PadEditorPanel::setPage (Page p)
     {
         page = p;
@@ -232,13 +242,19 @@ namespace tb::ui
         swapSel.setVisible (swap);
         swapAtSel.setVisible (swap);
         followBankKey.setVisible (swap);
+        swapFromKey.setVisible (swap);
 
         for (auto& k : knobs) k.setVisible (sound);
         reverseSwitch.setVisible (sound);
         for (auto& k : groupKeys) k.setVisible (sound);
-        for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
+        for (Component* comp : std::initializer_list<Component*> { &modeSel, &chokeSel,
                                                                     &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel })
             comp->setVisible (play);
+        shownSeqMode = isSeqModeNow();
+        syncSwitch.setVisible (play && ! shownSeqMode);
+        rateSel.setVisible (play && ! shownSeqMode);
+        launchSel.setVisible (play && shownSeqMode);
+        seqLenRead.setVisible (play && shownSeqMode);
         for (Component* comp : sliceControls())
             comp->setVisible (slice);
 
@@ -278,6 +294,10 @@ namespace tb::ui
         chokeSel.attach (apvts.getParameter (id (params::padChoke)));
         swapSel.attach  (apvts.getParameter (id (params::padSwap)));
         swapAtSel.attach (apvts.getParameter (id (params::padSwapAt)));
+        launchSel.attach (apvts.getParameter (id (params::padLaunch)));
+        seqLenRead.attach (apvts.getParameter (id (params::padSeqLen)));
+        swapFromAttachment.reset();
+        swapFromAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padSwapFrom), swapFromKey);
         sseqAttachment.reset();
         sseqAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padSliceSeq), sseqKey);
         followBankAttachment.reset();
@@ -358,6 +378,9 @@ namespace tb::ui
         // VEL does nothing while FIXED is on.
         velKnob.setAlpha (fixVelKey.getToggleState() ? 0.4f : 1.0f);
 
+        // SEQ modes swap SYNC / RATE for LAUNCH / LEN.
+        if (isSeqModeNow() != shownSeqMode) setPage (page);
+
         // Rate only matters for loops; dim it otherwise.
         const bool loop = modeSel.getIndex() == params::modeLoop;
         rateSel.setAlpha (loop ? 1.0f : 0.45f);
@@ -388,6 +411,7 @@ namespace tb::ui
         swapSel.setBounds   (0,   kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
         swapAtSel.setBounds (108, kCtlTop - 6, 104, getHeight() - kCtlTop + 6);
         followBankKey.setBounds (222, kCtlTop - 20, 112, 34);
+        swapFromKey.setBounds (222, kCtlTop + 22, 112, 34);
         loadKey.setBounds  (w - 136, 0, 66, kHeaderH);
         clearKey.setBounds (w - 68,  0, 68, kHeaderH);
 
@@ -421,6 +445,8 @@ namespace tb::ui
         modeSel.setBounds   (col (0).withTrimmedTop (-6));
         syncSwitch.setBounds (col (1).withTrimmedTop (-10));
         rateSel.setBounds   (col (2).withTrimmedTop (-6));
+        launchSel.setBounds (col (2).withTrimmedTop (-6));
+        seqLenRead.setBounds (col (1).withTrimmedTop (-18).withHeight (44));
         chokeSel.setBounds  (col (3).withTrimmedTop (-6));
         velKnob.setBounds   (col (4));
         fixVelKey.setBounds (col (5).withTrimmedTop (-14).reduced (0, 2));
@@ -501,15 +527,16 @@ namespace tb::ui
             g.setFont (monoFont (11.0f));
             g.drawFittedText ("ONE GROUP: PADS TAKE TURNS.\n"
                               "HIT ANOTHER: TAKES OVER AT\n"
-                              "THE NEXT SLICE. HIT AGAIN\n"
-                              "TO STOP.",
+                              "THE NEXT SLICE (SEQ PADS:\n"
+                              "STEP). HIT AGAIN TO STOP.",
                               help.toNearestInt(), Justification::centredLeft, 4, 1.0f);
         }
         else
         {
             for (const auto& cdef : kPlayCols)
                 if (*cdef.caption != 0 && String (cdef.caption) != "SYNC")
-                    g.drawText (cdef.caption, Rectangle<float> ((float) cdef.x, (float) kCtlTop - 18.0f, (float) cdef.w, 14.0f),
+                    g.drawText (shownSeqMode && String (cdef.caption) == "RATE" ? String ("LAUNCH") : String (cdef.caption),
+                                Rectangle<float> ((float) cdef.x, (float) kCtlTop - 18.0f, (float) cdef.w, 14.0f),
                                 Justification::centred, false);
         }
     }

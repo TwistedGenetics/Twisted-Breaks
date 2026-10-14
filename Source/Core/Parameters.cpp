@@ -81,7 +81,7 @@ namespace tb::params
             // reorder or remove entries; only append.
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padMode), vh (kV3) }, prefix + "Mode",
-                StringArray { "One-shot", "Loop", "Slice" }, modeOneShot));
+                StringArray { "One-shot", "Loop", "Slice", "Seq One", "Seq Loop" }, modeOneShot));
 
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padSync), vh (kV3) }, prefix + "Loop Sync", true));
@@ -141,6 +141,17 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padCharacter), vh (kV14) }, prefix + "Character",
                 StringArray { "Clean", "SP-1200", "MPC60", "S950", "Lo-Fi" }, 0));
+
+            // ---- 0.14: sequence pads (A6) ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padLaunch), kV16 }, prefix + "Launch",
+                StringArray { "Now", "1/16", "Beat", "Bar" }, launchBeat));
+            layout.add (std::make_unique<AudioParameterInt> (
+                ParameterID { padId (pad, padSeqLen), kV16 }, prefix + "Seq Length", 0, 32, 0,
+                AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("GLOBAL") : String (v); })));
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padSwapFrom), kV16 }, prefix + "Swap From",
+                StringArray { "Same Step", "Step 1" }, 0));
         }
     }
 

@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 969, "969 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 22 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 1065, "1065 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 25 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3498,6 +3498,231 @@ namespace
 
 
 
+
+    //==========================================================================
+    //  A6: sequence pads
+    //==========================================================================
+    void testSeqPads()
+    {
+        std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065,
+               "LAUNCH, SEQ LEN and SWAP FROM on every pad (1065 parameters in total)");
+
+        SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
+        auto setPad = [&x] (int pad, const char* id, float v) { setPadParam (x.r.p, pad, id, v); };
+        auto lane = [&x] (int pad, std::initializer_list<int> steps) { x.seq.clearLane (pad); for (int k : steps) x.step (pad, k); };
+        auto hit  = [] (int at, int note = 36, int vel = 127) { return TimedEvent { at, juce::MidiMessage::noteOn (1, note, (juce::uint8) vel) }; };
+        auto list = [] (const std::vector<int>& v) { return listOf (v); };
+        auto run  = [&x] (int n, std::vector<TimedEvent> ev, bool playing = true) { return x.run (n, ev, playing); };
+
+        x.seq.clearAll();
+        setPad (0, tb::params::padMode, (float) tb::params::modeSeqLoop);
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchBeat);
+        lane (0, { 0, 2 });
+        x.r.settle();
+        auto o = onsets (run (170000, { hit (30000) }), 0);
+        check (o == std::vector<int> { 48000, 60000, 144000, 156000 },
+               "SEQ LOOP: nothing until the pad is hit; a hit at 30000 starts its lane on the next beat (48000) and it loops every 16 steps (" + list (o) + ")");
+
+        setPad (0, tb::params::padMode, (float) tb::params::modeSeqOne);
+        x.r.settle();
+        o = onsets (run (250000, { hit (30000) }), 0);
+        check (o == std::vector<int> { 48000, 60000 }, "SEQ ONE: the lane plays once, then stops (" + list (o) + ")");
+
+        const std::pair<int, std::vector<int>> launches[] = { { tb::params::launchNow, { 31000, 43000 } }, { tb::params::launchSixteenth, { 36000, 48000 } },
+                                                              { tb::params::launchBar, { 96000, 108000 } } };
+        bool launchOk = true; juce::String desc;
+        for (auto& [l, expect] : launches)
+        {
+            setPad (0, tb::params::padLaunch, (float) l);
+            x.r.settle();
+            o = onsets (run (130000, { hit (31000) }), 0);
+            launchOk = launchOk && o == expect;
+            desc << list (o) << " / ";
+        }
+        check (launchOk, "LAUNCH NOW / 1/16 / BAR: step 1 lands on that exact sample, mid-block (" + desc.dropLastCharacters (3) + ")");
+
+        // SEQ LEN, and SEQ ONE hit again restarts at the next boundary.
+        setPad (0, tb::params::padSeqLen, 4.0f);
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchSixteenth);
+        lane (0, { 0, 1 });
+        x.r.settle();
+        o = onsets (run (60000, { hit (0), hit (10000) }), 0);
+        check (o == std::vector<int> { 0, 6000, 12000, 18000 },
+               "SEQ LEN 4 + SEQ ONE: a second hit starts it over from step 1 on the next 1/16 (" + list (o) + ")");
+        setPad (0, tb::params::padSeqLen, 0.0f);
+
+        // SEQ LOOP: hit again = stop at the next boundary; a third hit cancels the stop.
+        setPad (0, tb::params::padMode, (float) tb::params::modeSeqLoop);
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchBeat);
+        x.seq.clearLane (0);
+        for (int k = 0; k < 16; ++k) x.step (0, k);
+        x.r.settle();
+        o = onsets (run (110000, { hit (0), hit (50000) }), 0);
+        check (! o.empty() && o.back() == 66000 && o.size() == 12, "hitting a looping sequence stops it at the next beat (last hit 66000, none from 72000)");
+        o = onsets (run (110000, { hit (0), hit (50000), hit (60000) }), 0);
+        check (o.size() == 19 && o.back() == 108000, "...and hitting it once more before then cancels the stop");
+
+        // Velocity of the hit scales the steps (VEL 100 %).
+        auto lv = [&] (int vel) { auto out = run (8000, { hit (0, 36, vel) }); return out.getSample (0, 45); };
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchNow);
+        x.r.settle();
+        const float full = lv (127), half = lv (64);
+        check (std::abs (half / full - 64.0f / 127.0f) < 0.01f, "a softer hit plays the whole sequence softer (x" + juce::String (half / full, 3) + ")");
+
+        // Conditions count from the launch: FIRST = its first time round.
+        lane (0, { 4 });
+        { tb::SeqStep st; st.on = true; st.velocity = 127; st.cond = tb::condFirst; x.seq.set (0, 0, st); }
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchBeat);
+        x.r.settle();
+        o = onsets (run (180000, { hit (30000) }), 0);
+        check (o == std::vector<int> { 48000, 72000, 168000 }, "conditions count passes from the launch (FIRST only on its first time round) (" + list (o) + ")");
+
+        // Live stopped: the free clock, straight away.
+        lane (0, { 0, 1 });
+        setPad (0, tb::params::padLaunch, (float) tb::params::launchNow);
+        x.r.settle();
+        o = onsets (run (20000, { hit (1000) }, false), 0);
+        check (o.size() >= 2 && o[0] == 1000 && o[1] == 7000, "with Live stopped a hit runs it on the free clock (" + list (o) + ")");
+
+        // ---- SWAP groups between sequences.
+        auto swapRig = [&] (int at, int from, std::initializer_list<int> lane1)
+        {
+            x.seq.clearAll();
+            for (int pad : { 0, 1 })
+            {
+                setPad (pad, tb::params::padMode, (float) tb::params::modeSeqLoop);
+                setPad (pad, tb::params::padLaunch, (float) tb::params::launchNow);
+                setPad (pad, tb::params::padSwap, 1.0f);
+                setPad (pad, tb::params::padSwapAt, (float) at);
+            }
+            setPad (1, tb::params::padSwapFrom, (float) from);
+            for (int k = 0; k < 16; ++k) x.step (0, k);
+            lane (1, lane1);
+            x.r.settle();
+            return run (130000, { hit (0, 36), hit (50000, 37) });
+        };
+        const int every[] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+        auto all16 = std::initializer_list<int> { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+        juce::ignoreUnused (every);
+        bool swapOk = true; desc = {};
+        const std::pair<int, int> ats[] = { { tb::params::swapAtSlice, 54000 }, { tb::params::swapAtSixteenth, 54000 },
+                                            { tb::params::swapAtBeat, 72000 }, { tb::params::swapAtBar, 96000 } };
+        for (auto& [at, landing] : ats)
+        {
+            auto out = swapRig (at, 0, all16);
+            const auto l = onsets (out, 0), r = onsets (out, 1);
+            swapOk = swapOk && ! l.empty() && l.back() == landing - 6000 && ! r.empty() && r.front() == landing;
+            desc << (l.empty() ? -1 : l.back()) << "|" << (r.empty() ? -1 : r.front()) << " ";
+        }
+        check (swapOk, "SWAP between sequences at STEP / 1/16 / BEAT / BAR: the outgoing one's last step and the incoming one's first meet exactly ("
+                         + desc.trim() + ")");
+        auto out = swapRig (tb::params::swapAtSlice, 0, { 0 });
+        auto r1 = onsets (out, 1);
+        check (! r1.empty() && r1.front() == 96000, "SWAP FROM SAME STEP: the incoming sequence carries on from the same position (its step 1 next at 96000)");
+        out = swapRig (tb::params::swapAtSlice, 1, { 0 });
+        r1 = onsets (out, 1);
+        check (! r1.empty() && r1.front() == 54000, "SWAP FROM STEP 1: it starts from the top, right at the hand-off (54000)");
+
+        // A sequence handing over to a plain pad.
+        setPad (1, tb::params::padMode, (float) tb::params::modeOneShot);
+        x.seq.clearLane (1);                             // a plain pad's lane runs with Live: keep it empty here
+        x.r.settle();
+        out = run (100000, { hit (0, 36), hit (50000, 37) });
+        auto l0 = onsets (out, 0); r1 = onsets (out, 1);
+        check (! l0.empty() && l0.back() == 48000 && r1 == std::vector<int> { 54000 }, "mixed SWAP group: a sequence hands over to a plain pad on its next step ("
+                 + (l0.empty() ? juce::String ("-") : juce::String (l0.back())) + " | " + listOf (r1) + ")");
+        for (int pad : { 0, 1 }) setPad (pad, tb::params::padSwap, 0.0f);
+
+        // Choke stops a running sequence; Live stopping ends it.
+        setPad (0, tb::params::padChoke, 1.0f);
+        setPad (1, tb::params::padChoke, 1.0f);
+        x.r.settle();
+        out = run (100000, { hit (0, 36), hit (50000, 37) });
+        l0 = onsets (out, 0);
+        check (! l0.empty() && l0.back() == 48000, "a choke-group partner stops a running sequence");
+        setPad (0, tb::params::padChoke, 0.0f); setPad (1, tb::params::padChoke, 0.0f);
+        {
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            renderTimeline (x.r, 20000, { hit (0, 36) });
+            x.r.host.playing = false;
+            renderTimeline (x.r, 4096, {});
+            x.r.host.playing = true;
+            auto after = renderTimeline (x.r, 60000, {});
+            x.r.host.playing = false;
+            x.r.p.requestPanic(); x.r.settle();
+            check (onsets (after, 0).empty(), "stopping Live ends a launched sequence");
+        }
+
+        // A loop-brace wrap: the launched sequence carries straight on (no gap, no double).
+        {
+            x.seq.clearAll();
+            setPad (0, tb::params::padMode, (float) tb::params::modeSeqLoop);
+            setPad (0, tb::params::padLaunch, (float) tb::params::launchNow);
+            for (int k = 0; k < 16; ++k) x.step (0, k);
+            x.r.settle();
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            auto first = renderTimeline (x.r, 30 * kBlock, { hit (0, 36) });      // 15360 samples
+            x.r.host.ppq = 0.0;                                                       // the brace wraps back to bar 1
+            auto second = renderTimeline (x.r, 40 * kBlock, {});
+            x.r.host.playing = false; x.r.p.requestPanic(); x.r.settle();
+            std::vector<int> all = onsets (first, 0);
+            for (int t : onsets (second, 0)) all.push_back (t + 30 * kBlock);
+            bool even = all.size() >= 5;
+            for (size_t i = 1; i < all.size(); ++i) even = even && all[i] - all[i - 1] == 6000;
+            check (even, "a loop-brace wrap doesn't upset a launched sequence: still every 1/16 straight through (" + listOf (all) + ")");
+        }
+
+        // Saved with the set; an older set's modes keep their meaning.
+        setPad (0, tb::params::padSeqLen, 12.0f);
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        auto raw = [&q] (const char* id) { return q.getParameters().getRawParameterValue (tb::params::padId (0, id))->load(); };
+        check (juce::roundToInt (raw (tb::params::padMode)) == tb::params::modeSeqLoop && juce::roundToInt (raw (tb::params::padSeqLen)) == 12,
+               "SEQ modes, LAUNCH, SEQ LEN and SWAP FROM are saved with the set (mode ONE / LOOP / SLICE keep their old values)");
+        setPad (0, tb::params::padMode, 0.0f);
+        x.r.settle();
+    }
+
+    void testSeqPadView()
+    {
+        std::cout << "\n== 0.14: sequence pads on screen ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::PadEditorPanel* editor = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* e = dynamic_cast<tb::ui::PadEditorPanel*> (&c)) editor = e;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        if (editor == nullptr) { check (false, "found the pad editor"); return; }
+        editor->setPage (tb::ui::PadEditorPanel::Page::play);
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeSeqLoop);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
+        bool launchShown = false, syncHidden = true;
+        for (auto* ch : editor->getChildren())
+        {
+            if (auto* rs = dynamic_cast<tb::ui::RotarySelector*> (ch)) launchShown = launchShown || (rs->isVisible() && rs->getTooltip().contains ("starts this pad's sequence"));
+            if (auto* ts = dynamic_cast<tb::ui::ToggleSwitch*> (ch)) if (ts->getName().contains ("SYNC") || ts->getTooltip().contains ("tempo")) syncHidden = syncHidden && ! ts->isVisible();
+        }
+        check (launchShown && syncHidden, "PLAY page in SEQ LOOP: LAUNCH and LEN take the places of SYNC and RATE");
+        editor->setPage (tb::ui::PadEditorPanel::Page::swap);
+        juce::Button* from = nullptr;
+        for (auto* ch : editor->getChildren()) if (auto* b = dynamic_cast<juce::Button*> (ch)) if (b->getButtonText() == "FROM STEP 1") from = b;
+        check (from != nullptr && from->isVisible(), "SWAP page: FROM STEP 1");
+        if (from != nullptr)
+        {
+            from->triggerClick();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+            check (r.p.getParameters().getRawParameterValue (tb::params::padId (0, tb::params::padSwapFrom))->load() > 0.5f, "...which sets Swap From to Step 1");
+        }
+        setPadParam (r.p, 0, tb::params::padMode, 0.0f);
+    }
+
     //==========================================================================
     //  PHASE 13: Scene A / B + crossfader
     //==========================================================================
@@ -3507,7 +3732,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 969 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1065 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -3669,7 +3894,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -3877,7 +4102,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -4157,7 +4382,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -4786,6 +5011,8 @@ int main (int argc, char* argv[])
         testResampleView();
         testScenes();
         testSceneView();
+        testSeqPads();
+        testSeqPadView();
         testEditorDrivesState();
         testRealtimeSafety();
 

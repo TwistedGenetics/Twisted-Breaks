@@ -508,6 +508,9 @@ namespace tb::ui
         const auto v = seq.getVersion();
         const int step = processor.getBridge().seqStep.load();
         const int len = lengthNow();
+        uint32_t laneHash = 0;
+        for (int p = 0; p < kNumPads; ++p) laneHash = laneHash * 31u + (uint32_t) (processor.getBridge().laneStep[(size_t) p].load() + 2);
+        if (laneHash != shownLaneHash) { shownLaneHash = laneHash; shownStep = -3; }
         if (v != shownVersion || step != shownStep || len != shownLen)
         {
             if (v != shownVersion)
@@ -575,6 +578,14 @@ namespace tb::ui
             g.drawText (padLabel (p), lb.withTrimmedLeft (9.0f), Justification::centredLeft, false);
             if (seq.isArmed (p))
                 paint::lamp (g, { lb.getX() + 4.0f, lb.getCentreY() }, 2.8f, c::red, c::redDim, 1.0f);
+
+            // SEQ pads (A6) play only when launched: their own playhead, dimmed while idle.
+            const bool seqPad = params::isSeqMode (roundToInt (processor.getParameters().getRawParameterValue (params::padId (p, params::padMode))->load()));
+            const int laneStep = processor.getBridge().laneStep[(size_t) p].load (std::memory_order_relaxed);
+            if (seqPad && laneStep < 0)
+                paint::lamp (g, { lb.getRight() - 2.0f, lb.getCentreY() }, 2.4f, c::amber, c::amberDim, 0.15f);
+            else if (seqPad)
+                paint::lamp (g, { lb.getRight() - 2.0f, lb.getCentreY() }, 2.4f, c::amber, c::amberDim, 1.0f);
 
             for (int s = 0; s < SequencerData::kSteps; ++s)
             {
@@ -645,6 +656,20 @@ namespace tb::ui
                 {
                     g.setColour (Colours::black.withAlpha (0.45f));
                     g.fillRect (cell);
+                }
+                if (seqPad)
+                {
+                    const int ls = processor.getBridge().laneStep[(size_t) p].load (std::memory_order_relaxed);
+                    if (ls == s)
+                    {
+                        g.setColour (c::phosphor.withAlpha (0.45f));
+                        g.drawRect (cell, 1.5f);
+                    }
+                    else if (ls < 0)
+                    {
+                        g.setColour (Colours::black.withAlpha (0.3f));
+                        g.fillRect (cell);
+                    }
                 }
                 if (p == selectedPad && s == selectedStep)
                 {

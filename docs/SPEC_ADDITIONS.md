@@ -186,9 +186,17 @@ Notes for the build:
 
 ## A6. Sequence pads — launch a pad's sequence by hitting it, and SWAP between sequences
 
-**Status: not built yet (prompt + plan).** Decided with Jamie: a SEQ pad
-plays its own lane, so its sequence triggers only its own sound (no
-multi-lane "pattern pads"). SWAP FROM defaults to SAME STEP.
+**Status: built in 0.14.0.** Decided with Jamie: a SEQ pad plays its own
+lane, so its sequence triggers only its own sound (no multi-lane "pattern
+pads"). As built: MODE gains SEQ ONE / SEQ LOOP (appended); per-pad
+`launch` (Now / 1/16 / Beat / Bar), `seqlen` (0 = global, 1-32) and
+`swapfrom` (Same Step / Step 1); launched lanes run on the slice
+sequencer's clock (Live's, or free when stopped), share the main
+sequencer's step code, and are cut / restarted / handed off through
+generation-checked events in the block's event list. SWAP AT SLICE means
+the next STEP for a sequence. Loop-brace wraps carry launched sequences
+on; Live starting or stopping ends them. Not built: the optional slice
+sequencer ONCE mode.
 
 Prompt:
 

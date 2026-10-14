@@ -94,6 +94,13 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
 - [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
 
+## Sequence pads (0.14)
+- [ ] ✅ A break pad with a chopped lane (SLICE / PITCH steps): MODE SEQL, LAUNCH BEAT, hit it while Live plays: the pattern starts on the next beat and loops; hit again: stops on the next beat
+- [ ] ✅ SEQ1: one pass then silence; hit again to start over; LEN 8 for a half-bar fill
+- [ ] ✅ Two SEQ pads with different chopped patterns in SWAP group 1, AT SLICE: they cut each other on the next step, in time; try BEAT / BAR, and FROM STEP 1
+- [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
+- [ ] ✅ Loop brace on: launched sequences carry on through the wrap
+
 ## Scenes A / B (Phase 13)
 - [ ] ✅ An older set opens exactly as before (scene A, crossfader in the middle, scene B empty)
 - [ ] ✅ VIEW B, load a different break and pattern onto B pads; play both: crossfader A <-> B blends them, CURVE SHARP cuts at the edges, CUT A / CUT B while held

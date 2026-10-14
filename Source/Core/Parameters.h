@@ -41,6 +41,7 @@ namespace tb::params
     inline constexpr int kV13 = 13; // parameters introduced in 0.11.x (macros)
     inline constexpr int kV14 = 14; // parameters introduced in 0.12.x (resample, character)
     inline constexpr int kV15 = 15; // parameters introduced in 0.13.x (scenes: pads 17-32, crossfader)
+    inline constexpr int kV16 = 16; // parameters introduced in 0.14.x (sequence pads)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -159,6 +160,12 @@ namespace tb::params
     // ---- Per pad (0.12: vintage sampler character) ---------------------------------
     inline constexpr const char* padCharacter = "char";    // choice: Clean / SP-1200 / MPC60 / S950 / Lo-Fi (PadVoice::character)
 
+    // ---- Per pad (0.14: sequence pads, spec addition A6) -------------------------
+    inline constexpr const char* padLaunch   = "launch";   // choice: Now / 1/16 / Beat / Bar: when a hit starts the pad's sequence
+    inline constexpr const char* padSeqLen   = "seqlen";   // int 0..32: 0 = the sequencer's LEN
+    inline constexpr const char* padSwapFrom = "swapfrom"; // choice: Same Step / Step 1 (a sequence taking over in a SWAP group)
+    enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
+
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB
     inline constexpr const char* grpPan     = "pan";       // -1 .. +1
@@ -169,7 +176,8 @@ namespace tb::params
     inline constexpr float grpLevelMinDb = -60.0f;
     inline constexpr float grpLevelMaxDb =   6.0f;
 
-    enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2 };
+    enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2, modeSeqOne = 3, modeSeqLoop = 4 };   // append only
+    inline constexpr bool isSeqMode (int mode) noexcept { return mode == modeSeqOne || mode == modeSeqLoop; }
     enum SwapAt  { swapAtSlice = 0, swapAtSixteenth = 1, swapAtBeat = 2, swapAtBar = 3 };
     inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
 

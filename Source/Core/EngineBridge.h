@@ -99,6 +99,7 @@ namespace tb
         // ---- Slice sequencer (per pad) ---------------------------------------------
         SliceSeqData sliceSeq;
         std::array<std::atomic<int>, kNumPads>  sliceStep {};    // pattern step playing, -1 = not running
+        std::array<std::atomic<int>, kNumPads>  laneStep {};     // A6: a launched SEQ pad's step, -1 = not running
         std::array<std::atomic<int>, kNumPads>  sliceSlotNow {}; // slot actually playing (0..7)
         std::array<std::atomic<bool>, kNumPads> sliceFill {};    // FILL held (UI -> audio)
 
