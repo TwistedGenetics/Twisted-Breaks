@@ -38,6 +38,12 @@ namespace tb::params
     inline constexpr int kV10 = 10; // parameters introduced in 0.8.x (snapshots, break bank)
     inline constexpr int kV11 = 11; // parameters introduced in 0.9.x (step features)
     inline constexpr int kV12 = 12; // parameters introduced in 0.10.x (MUTATE)
+    inline constexpr int kV13 = 13; // parameters introduced in 0.11.x (macros)
+
+    // ---- Performance macros (Phase 11): "macro_<key>" on / off per macro (MacroDefs) ----
+    inline constexpr const char* macroAmount = "macro_amount";   // int 0..100 %: MILD .. HARD
+    inline constexpr const char* macroGroup  = "macro_group";    // choice: A, B, C, D, All
+    inline constexpr const char* macroLatch  = "macro_latch";    // bool: keys / notes toggle instead of hold
 
     // ---- MUTATE (Phase 10) ------------------------------------------------------
     inline constexpr const char* mutAmount  = "mut_amount";   // int 0..100 %

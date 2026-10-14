@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 581, "581 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 592, "592 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3495,6 +3495,183 @@ namespace
         check (q.p.getEngine().getPadNote (0) == 48, "garbage state blob ignored without crashing");
     }
 
+
+    //==========================================================================
+    //  PHASE 11: performance macros
+    //==========================================================================
+    void testMacros()
+    {
+        std::cout << "\n== Phase 11: performance macros ==" << std::endl;
+        namespace mc = tb::macro;
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 592, "11 macro parameters (592 in total)");
+
+        Rig r;
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        auto blocks = [&] (int n) { for (int i = 0; i < n; ++i) runBlock (r.p, r.host, buf, midi); };
+        auto& br = r.p.getBridge();
+        auto& eng = r.p.getEngine();
+        auto live = [&] (int g) { return br.fxEngaged[(size_t) g].load() | br.fxArmed[(size_t) g].load(); };
+
+        bool allEngage = true, allRelease = true, allValues = true;
+        juce::String bad;
+        for (int m = 0; m < mc::kNumMacros; ++m)
+        {
+            const auto& d = mc::def (m);
+            setParam (r.p, mc::paramId (m), 1.0f);
+            blocks (2);
+            bool ok = true;
+            for (int g = 0; g < 4; ++g) ok &= live (g) == d.fxMask();
+            for (int i = 0; i < d.numSettings; ++i)
+                allValues &= std::abs (eng.getAppliedFxParam (0, d.settings[i].fx, d.settings[i].param) - mc::valueAt (d.settings[i], 0.6f)) < 1.0e-6f;
+            allEngage &= ok;
+            if (! ok) bad << d.key << " ";
+            setParam (r.p, mc::paramId (m), 0.0f);
+            blocks (40);
+            for (int g = 0; g < 4; ++g) allRelease &= (br.fxEngaged[(size_t) g].load() & ~((1u << tb::fx::delay) | (1u << tb::fx::reverb))) == 0;
+            r.p.requestPanic(); blocks (4);
+        }
+        check (allEngage, "each of the 8 macros switches on exactly its recipe of effects in every group (GROUP ALL) " + bad);
+        check (allValues, "...with the recipe's settings at MACRO AMOUNT 60 %");
+        check (allRelease, "...and letting go switches them off again (DELAY / REVERB tails ring out)");
+
+        // AMOUNT: mild .. hard.
+        const auto& destroy = mc::def (0);
+        setParam (r.p, tb::params::macroAmount, 0.0f);
+        setParam (r.p, mc::paramId (0), 1.0f);
+        blocks (1);
+        const float bitsMild = eng.getAppliedFxParam (0, tb::fx::crush, 0);
+        setParam (r.p, tb::params::macroAmount, 100.0f);
+        blocks (1);
+        const float bitsHard = eng.getAppliedFxParam (0, tb::fx::crush, 0);
+        check (std::abs (bitsMild - destroy.settings[3].mild) < 1.0e-6f && std::abs (bitsHard - destroy.settings[3].hard) < 1.0e-6f,
+               "MACRO AMOUNT moves the recipe from MILD to HARD while it's held (DESTROY bits " + juce::String (bitsMild, 2) + " -> " + juce::String (bitsHard, 2) + ")");
+        setParam (r.p, mc::paramId (0), 0.0f);
+        setParam (r.p, tb::params::macroAmount, 60.0f);
+        r.p.requestPanic(); blocks (40);
+
+        // GROUP: just one group.
+        setParam (r.p, tb::params::macroGroup, 1.0f);
+        setParam (r.p, mc::paramId (3), 1.0f);              // DARKEN on B
+        blocks (2);
+        check (live (1) == mc::def (3).fxMask() && live (0) == 0 && live (2) == 0 && live (3) == 0, "MACRO GROUP B: only group B gets it");
+        setParam (r.p, mc::paramId (3), 0.0f);
+        setParam (r.p, tb::params::macroGroup, 4.0f);
+        r.p.requestPanic(); blocks (40);
+
+        // Your own settings come back.
+        setParam (r.p, tb::fx::paramId (0, tb::fx::lpf), 1.0f);
+        setParam (r.p, tb::fx::paramId (0, tb::fx::lpf, 0), 0.8f);
+        blocks (2);
+        setParam (r.p, mc::paramId (3), 1.0f);
+        blocks (2);
+        const float during = eng.getAppliedFxParam (0, tb::fx::lpf, 0);
+        setParam (r.p, mc::paramId (3), 0.0f);
+        blocks (2);
+        const float after = eng.getAppliedFxParam (0, tb::fx::lpf, 0);
+        check (std::abs (during - mc::valueAt (mc::def (3).settings[0], 0.6f)) < 1.0e-6f && std::abs (after - 0.8f) < 1.0e-4f
+                 && (br.fxEngaged[0].load() & (1u << tb::fx::lpf)) != 0,
+               "a macro borrows an effect you had on (your LPF at 0.8 -> DARKEN's " + juce::String (during, 3) + "), and gives it back exactly as it was");
+        setParam (r.p, tb::fx::paramId (0, tb::fx::lpf), 0.0f);
+        r.p.requestPanic(); blocks (40);
+
+        // MIDI notes E4..B4: hold, or toggle with LATCH.
+        midi.addEvent (juce::MidiMessage::noteOn (1, mc::kFirstMidiNote + 6, (juce::uint8) 100), 0);   // JUNGLE ROLL
+        runBlock (r.p, r.host, buf, midi);
+        blocks (1);
+        const bool heldOn = (br.macroActive.load() & (1u << 6)) != 0 && live (0) == mc::def (6).fxMask();
+        midi.addEvent (juce::MidiMessage::noteOff (1, mc::kFirstMidiNote + 6), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (heldOn && br.macroActive.load() == 0, "MIDI note A#4 holds JUNGLE ROLL while it's down");
+        setParam (r.p, tb::params::macroLatch, 1.0f);
+        blocks (1);
+        midi.addEvent (juce::MidiMessage::noteOn (1, mc::kFirstMidiNote, (juce::uint8) 100), 0);
+        midi.addEvent (juce::MidiMessage::noteOff (1, mc::kFirstMidiNote), 10);
+        runBlock (r.p, r.host, buf, midi);
+        const bool latched = (br.macroActive.load() & 1u) != 0;
+        midi.addEvent (juce::MidiMessage::noteOn (1, mc::kFirstMidiNote, (juce::uint8) 100), 0);
+        runBlock (r.p, r.host, buf, midi);
+        check (latched && br.macroActive.load() == 0, "with LATCH, E4 toggles DESTROY on and off");
+        setParam (r.p, tb::params::macroLatch, 0.0f);
+        r.p.requestPanic(); blocks (40);
+
+        // Audible: DARKEN on noise, MILD vs HARD.
+        {
+            juce::AudioBuffer<float> noise (1, 48000);
+            juce::Random rnd (5);
+            for (int i = 0; i < noise.getNumSamples(); ++i) noise.setSample (0, i, rnd.nextFloat() * 0.5f - 0.25f);
+            Rig n;
+            n.load (0, writeAudio ("macro_noise", noise, 48000.0, Fmt::wavFloat));
+            setPadParam (n.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+            setPadParam (n.p, 0, tb::params::padSync, 0.0f);
+            setParam (n.p, tb::params::masterLimiter, 0.0f);
+            n.settle();
+            auto brightness = [&] (float onValue, float amount)
+            {
+                setParam (n.p, tb::params::macroAmount, amount);
+                setParam (n.p, mc::paramId (3), onValue);
+                auto out = renderTimeline (n, 30000, { { 0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) } });
+                double d = 0.0, e = 0.0;
+                for (int i = 20001; i < 30000; ++i) { const float a = out.getSample (0, i), b = out.getSample (0, i - 1); d += (a - b) * (a - b); e += a * a; }
+                renderTimeline (n, 512, { { 0, juce::MidiMessage::noteOff (1, 36) } });
+                setParam (n.p, mc::paramId (3), 0.0f);
+                n.p.requestPanic(); n.settle(); n.settle(); n.settle();
+                return e > 0.0 ? d / e : 0.0;
+            };
+            const double dry = brightness (0.0f, 60.0f), mild = brightness (1.0f, 0.0f), hard = brightness (1.0f, 100.0f);
+            check (dry > mild * 2.0 && mild > hard * 1.5,
+                   "DARKEN audibly darkens noise, more at HARD (HF ratio dry " + juce::String (dry, 3) + ", mild " + juce::String (mild, 3) + ", hard " + juce::String (hard, 3) + ")");
+        }
+
+        check (tb::SnapshotManager::isExcluded (mc::paramId (0)) && ! tb::SnapshotManager::isExcluded (tb::params::macroAmount),
+               "snapshots leave the macro keys alone (they're moves), but keep AMOUNT / GROUP / LATCH");
+    }
+
+    void testMacroView()
+    {
+        std::cout << "\n== Phase 11: MACRO page ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::FXGrid* grid = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* g = dynamic_cast<tb::ui::FXGrid*> (&c)) grid = g;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        if (grid == nullptr) { check (false, "found the FX grid"); return; }
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto mouse = [&] (juce::Point<float> pos, bool down)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            juce::MouseEvent e (src, pos, down ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(), 1.0f, 0, 0, 0, 0, grid, grid, t, pos, t, 1, false);
+            if (down) grid->mouseDown (e); else grid->mouseUp (e);
+        };
+        auto raw = [&] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+
+        mouse (grid->macroTabBounds().getCentre(), true); mouse (grid->macroTabBounds().getCentre(), false);
+        check (grid->isMacroPage() && grid->latchButton().isVisible(), "the MACRO tab shows the macro keys, AMOUNT, GROUP and LATCH");
+
+        const auto k = grid->macroKeyBounds (4).getCentre();        // TAPE STOP
+        mouse (k, true);
+        const bool down = raw (tb::macro::paramId (4)) > 0.5f;
+        mouse (k, false);
+        check (down && raw (tb::macro::paramId (4)) < 0.5f, "a macro key holds its macro while pressed");
+
+        grid->latchButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        mouse (k, true); mouse (k, false);
+        r.settle();
+        const bool latchedOn = raw (tb::macro::paramId (4)) > 0.5f;
+        mouse (k, true); mouse (k, false);
+        r.settle();
+        check (latchedOn && raw (tb::macro::paramId (4)) < 0.5f, "with LATCH a click toggles it on, another off");
+
+        mouse (grid->groupBounds (2).getCentre(), true); mouse (grid->groupBounds (2).getCentre(), false);
+        check (! grid->isMacroPage() && grid->getGroup() == 2, "a group tab goes back to the 16 FX keys of that group");
+    }
+
     //==========================================================================
     //  PHASE 10: MUTATE
     //==========================================================================
@@ -3606,7 +3783,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 581, "13 MUTATE parameters (581 in total)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 592, "13 MUTATE parameters (592 in total with the macros)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -4072,6 +4249,16 @@ namespace
             find (*ed);
             host.playing = true;
         }
+        if (out.getFileName().contains ("macro"))
+        {
+            setParam (p, tb::macro::paramId (6), 1.0f);       // JUNGLE ROLL held
+            std::function<void (juce::Component&)> findGrid = [&] (juce::Component& c)
+            {
+                if (auto* g = dynamic_cast<tb::ui::FXGrid*> (&c)) g->showMacros (true);
+                for (auto* child : c.getChildren()) findGrid (*child);
+            };
+            findGrid (*ed);
+        }
         if (seqView)
         {
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
@@ -4200,6 +4387,8 @@ int main (int argc, char* argv[])
         testMutateRules();
         testMutate();
         testMutateView();
+        testMacros();
+        testMacroView();
         testEditorDrivesState();
         testRealtimeSafety();
 

@@ -162,6 +162,10 @@ private:
     std::atomic<float>* seqResParam = nullptr;
     std::atomic<float>* seqQuantParam = nullptr;
     std::atomic<float>* seqFillParam = nullptr;
+    std::array<std::atomic<float>*, 8> macroOnParam {};
+    std::atomic<float>* macroAmountParam = nullptr;
+    std::atomic<float>* macroGroupParam  = nullptr;
+    std::atomic<float>* macroLatchParam  = nullptr;
     std::atomic<float>* bankActiveParam = nullptr;
     std::atomic<float>* bankAtParam = nullptr;
 

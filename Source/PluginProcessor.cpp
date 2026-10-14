@@ -30,6 +30,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     seqResParam    = apvts.getRawParameterValue (tb::params::seqRes);
     seqQuantParam  = apvts.getRawParameterValue (tb::params::seqQuant);
     seqFillParam   = apvts.getRawParameterValue (tb::params::seqFill);
+    for (int m = 0; m < tb::macro::kNumMacros; ++m)
+        macroOnParam[(size_t) m] = apvts.getRawParameterValue (tb::macro::paramId (m));
+    macroAmountParam = apvts.getRawParameterValue (tb::params::macroAmount);
+    macroGroupParam  = apvts.getRawParameterValue (tb::params::macroGroup);
+    macroLatchParam  = apvts.getRawParameterValue (tb::params::macroLatch);
     jassert (seqFillParam != nullptr);
     jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
     bankActiveParam = apvts.getRawParameterValue (tb::params::bankActive);
@@ -217,6 +222,12 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
     p.seqRes         = juce::roundToInt (ld (seqResParam));
     p.seqQuant       = juce::roundToInt (ld (seqQuantParam));
     p.seqFill        = ld (seqFillParam) > 0.5f;
+    p.macroOn = 0;
+    for (int m = 0; m < tb::macro::kNumMacros; ++m)
+        if (ld (macroOnParam[(size_t) m]) > 0.5f) p.macroOn |= 1u << m;
+    p.macroAmount = ld (macroAmountParam) / 100.0f;
+    p.macroGroup  = juce::roundToInt (ld (macroGroupParam));
+    p.macroLatch  = ld (macroLatchParam) > 0.5f;
     p.bankActive     = juce::jlimit (0, 7, juce::roundToInt (ld (bankActiveParam)) - 1);
     p.bankAt         = juce::roundToInt (ld (bankAtParam));
 

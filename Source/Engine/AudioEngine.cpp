@@ -182,6 +182,11 @@ namespace tb
         bankWanted = juce::jlimit (0, kBankSlots - 1, bp.bankActive);
         bankAtNow  = juce::jlimit (0, 2, bp.bankAt);
 
+        macroParamMask = bp.macroOn;
+        macroAmountNow = juce::jlimit (0.0f, 1.0f, bp.macroAmount);
+        macroGroupNow  = juce::jlimit (0, 4, bp.macroGroup);
+        macroLatchNow  = bp.macroLatch;
+
         // Group buses: level, pan, mute / solo (solo is between groups).
         bool anyGroupSolo = false;
         for (const auto& gp : bp.groups) anyGroupSolo = anyGroupSolo || gp.solo;
@@ -629,6 +634,8 @@ namespace tb
             fxHeld[(size_t) g] = 0;
             fxStepHeld[(size_t) g] = 0;
         }
+        macroMidiHeld = 0;
+        macroMidiLatch.store (0);
 
         // Later phases add: sequencer voices, stutter / beat-repeat buffers,
         // delay & reverb tails are cleared here too.
@@ -782,9 +789,27 @@ namespace tb
 
     void AudioEngine::applyFx (int g) noexcept
     {
-        groups[(size_t) g].setFx ((fxParamMask[(size_t) g] ^ fxLatch[(size_t) g].load (std::memory_order_relaxed))
-                                    | fxHeld[(size_t) g] | fxStepHeld[(size_t) g],
-                                  fxParams[(size_t) g]);
+        uint32_t mask = (fxParamMask[(size_t) g] ^ fxLatch[(size_t) g].load (std::memory_order_relaxed))
+                        | fxHeld[(size_t) g] | fxStepHeld[(size_t) g];
+        auto& params = appliedFxParams[(size_t) g];
+        params = fxParams[(size_t) g];
+
+        // Macros on this group: their effects on, their recipe's settings
+        // (a later macro wins a shared setting). Off again = your own settings.
+        const uint32_t macros = macroActiveMask();
+        if (macros != 0 && (macroGroupNow == 4 || macroGroupNow == g))
+            for (int m = 0; m < macro::kNumMacros; ++m)
+                if ((macros >> m) & 1u)
+                {
+                    const auto& d = macro::def (m);
+                    for (int i = 0; i < d.numSettings; ++i)
+                    {
+                        const auto& s = d.settings[i];
+                        mask |= 1u << s.fx;
+                        if (s.param >= 0) params[(size_t) s.fx][(size_t) s.param] = macro::valueAt (s, macroAmountNow);
+                    }
+                }
+        groups[(size_t) g].setFx (mask, params);
     }
 
     void AudioEngine::stepFx (int g, int f, bool on, double endPpq) noexcept
@@ -1042,6 +1067,17 @@ namespace tb
 
     bool AudioEngine::handleFxNote (int note, bool on) noexcept
     {
+        // Macros 1..8 on E4..B4: held, or toggled with MACRO LATCH.
+        const int m = note - macro::kFirstMidiNote;
+        if (juce::isPositiveAndBelow (m, macro::kNumMacros))
+        {
+            const uint32_t bit = 1u << m;
+            if (macroLatchNow) { if (on) macroMidiLatch.fetch_xor (bit, std::memory_order_relaxed); }
+            else               { if (on) macroMidiHeld |= bit; else macroMidiHeld &= ~bit; }
+            for (int g = 0; g < kNumGroups; ++g) applyFx (g);
+            return true;
+        }
+
         const int f = note - fx::kFirstMidiNote;
         if (! juce::isPositiveAndBelow (f, fx::kNumFx)) return false;
         const int g = fxTargetGroup.load (std::memory_order_relaxed);
@@ -1271,6 +1307,7 @@ namespace tb
             bridge.fxArmed[(size_t) g].store (groups[(size_t) g].getChain().armedMask(), std::memory_order_relaxed);
         }
         storeMax (bridge.peakRight, result.peakRight);
+        bridge.macroActive.store (macroActiveMask(), std::memory_order_relaxed);
         bridge.limiterReductionDb.store (result.maxReductionDb, std::memory_order_relaxed);
         if (result.clipped) bridge.clipCount.fetch_add (1, std::memory_order_relaxed);
 

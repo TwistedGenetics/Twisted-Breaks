@@ -33,7 +33,7 @@ namespace tb::ui
     };
 
     /** Highest development phase that is built (nav keys up to this are live). */
-    inline constexpr int kCurrentPhase = 10;
+    inline constexpr int kCurrentPhase = 11;
 
     /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button

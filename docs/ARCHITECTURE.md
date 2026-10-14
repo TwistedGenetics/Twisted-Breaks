@@ -324,6 +324,22 @@ Hand-off between breaks at slice points (spec addition A1 in
   MIDI-mappable MUTATE; it's excluded from snapshots.
 * UI: the sequencer's bottom area has STEP / MUTATE tabs.
 
+## 6i. Performance macros (Phase 11, implemented)
+
+* `Core/MacroDefs`: eight recipes (DESTROY, AMEN MANGLE, REWIND, DARKEN,
+  TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI), each a list of (effect,
+  setting, MILD value, HARD value). `macro_amount` picks the point between
+  (choices round to an index).
+* Engine: `applyFx (g)` = (parameter XOR MIDI latch) | MIDI held | step
+  held, then every active macro targeting the group (`macro_group` A-D /
+  ALL) ORs in its effects and overwrites their settings in a per-group
+  copy (`appliedFxParams`), so the user's own settings are untouched and
+  return the moment the macro is released. Active macros = parameters XOR
+  MIDI latch | MIDI held; notes E4-B4 (76-83) hold them, or toggle with
+  `macro_latch`. PANIC clears the MIDI state. Snapshots skip the macro keys.
+* UI: the PERFORMANCE FX panel's fifth tab, MACRO (keys hold / toggle the
+  `macro_<key>` parameters; lamps follow `EngineBridge::macroActive`).
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -509,4 +525,5 @@ Ableton stores in the `.als` file:
 | **8 ✅** | Snapshots (8 slots, NOW / BEAT / BAR, Program Change, automation), break bank (A2), find missing samples | 362/362 checks: recall restores params / samples / patterns, master untouched, NEXT BAR switch on the exact bar-line sample mid-block, bank switch on the beat sample-exact, state, relocate, UI, 240 switches in 2 min with the worst block at 0.5 ms and nothing leaking |
 | **9 ✅** | Step features in the main sequencer: CHANCE, RATCHET, PITCH, REV, SLICE, FX (held for the step, FX-only), conditions (A:B, FILL, FIRST), FILL key / parameter, STEP row | 399/399 checks: ratchets sample-exact, chance statistics with all-or-nothing ratchets, every condition incl. starts mid-song, pitch / reverse / slice measured and held across blocks, FX held exactly one step and unbroken back-to-back, FX-only doesn't retrigger, stop releases, old 32-bit sets load, UI edits |
 | **10 ✅** | MUTATE: controlled randomisation of both sequencers (slices, pitch, pattern, ratchet, reverse, FX, chance), AMOUNT, SCOPE, AUTO every 1-8 bars, NOW / BEAT / BAR, DRIFT, UNDO / RESET, Mutate parameter | 426/426 checks: 300 seeded mutations never touch an on-beat hit or move anything off the grid, ghosts only beside hits, targets respected, empty lanes stay empty, slice beats kept; original / undo / redo / reset / edit-becomes-original / drift accumulates; scope; parameter edge; NEXT BAR lands on the bar-line sample mid-block; AUTO 2 BARS on exactly bars 3 and 5; slice slots; UI |
-| 11+ | Macros, resample + vintage modes, Scene A/B + crossfader (one phase each) | — |
+| **11 ✅** | Performance macros: DESTROY, AMEN MANGLE, REWIND, DARKEN, TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI; AMOUNT (mild .. hard), GROUP, LATCH, MIDI E4-B4 | 441/441 checks: every macro engages exactly its recipe in every group with its settings and releases; AMOUNT mild .. hard; single group; borrowed effects return exactly; MIDI hold / latch; DARKEN measured on noise; snapshots skip them; UI |
+| 12+ | Resample + vintage modes, Scene A/B + crossfader (one phase each) | — |

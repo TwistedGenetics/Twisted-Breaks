@@ -94,6 +94,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
 - [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
 
+## Performance macros (Phase 11)
+- [ ] ✅ MACRO tab, a break playing: hold each macro key in turn: each sounds right and stops cleanly when let go (DELAY / REVERB tails ring)
+- [ ] ✅ Ride AMOUNT while holding DESTROY / DARKEN: mild to hard, no zipper noise
+- [ ] ✅ TAPE STOP and REWIND land in time with the grid; JUNGLE ROLL rolls at 1/16 (HARD: 1/32)
+- [ ] ✅ Your own LPF on at a setting, hold DARKEN, let go: the LPF is back where you left it
+- [ ] ✅ GROUP B with drums on A and a reese on B: only the reese is hit
+- [ ] ✅ iRig pads mapped to E4-B4 (or MIDI-map the `Macro ...` parameters): hold / LATCH both work
+
 ## MUTATE (Phase 10)
 - [ ] ✅ A full kit pattern, MUTATE tab, AMOUNT 35 %, AT BAR: press GO while Live plays: it changes exactly on the next bar, the beat stays put, it still grooves
 - [ ] ✅ GO a few times, UNDO (and UNDO again), RESET: back to your pattern exactly

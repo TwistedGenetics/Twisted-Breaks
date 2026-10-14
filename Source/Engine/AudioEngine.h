@@ -13,6 +13,7 @@
 #include "Engine/GroupBus.h"
 #include "Core/FxDefs.h"
 #include "Core/SequencerData.h"
+#include "Core/MacroDefs.h"
 
 namespace tb
 {
@@ -118,6 +119,11 @@ namespace tb
 
             int   bankActive = 0;    // 0..7
             int   bankAt     = 1;    // params::SwitchAt
+
+            uint32_t macroOn     = 0;     // bit per macro (parameters)
+            float    macroAmount = 0.6f;  // 0..1
+            int      macroGroup  = 4;     // 0..3, 4 = all
+            bool     macroLatch  = false;
         };
 
         static constexpr int kBankSlots = 8;
@@ -180,6 +186,13 @@ namespace tb
         uint32_t getFxLockedMask() const noexcept  { return fxLocked.load(); }
         /** UI: clear MIDI latches so the on/off parameters alone decide. */
         void clearFxLatch (int group, int fxId) noexcept;
+        /** UI: forget MIDI macro latches (the keys decide). */
+        void clearMacroLatch() noexcept { macroMidiLatch.store (0); }
+        /** What the group's chain was last told for an effect setting (tests / display). */
+        float getAppliedFxParam (int group, int fxId, int param) const noexcept
+        {
+            return appliedFxParams[(size_t) juce::jlimit (0, kNumGroups - 1, group)][(size_t) juce::jlimit (0, 15, fxId)][(size_t) juce::jlimit (0, 2, param)];
+        }
 
     private:
         void triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer = false,
@@ -279,6 +292,14 @@ namespace tb
         std::array<uint32_t, kNumGroups> fxHeld {};
         std::array<uint32_t, kNumGroups> fxStepHeld {};                       // held by sequencer steps
         std::array<std::array<double, fx::kNumFx>, kNumGroups> fxStepEnd {};  // ppq each step-held effect lets go
+        // Macros: parameters XOR MIDI latch, | MIDI held.
+        uint32_t macroParamMask = 0, macroMidiHeld = 0;
+        std::atomic<uint32_t> macroMidiLatch { 0 };
+        float macroAmountNow = 0.6f;
+        int   macroGroupNow = 4;
+        bool  macroLatchNow = false;
+        uint32_t macroActiveMask() const noexcept { return (macroParamMask ^ macroMidiLatch.load (std::memory_order_relaxed)) | macroMidiHeld; }
+        std::array<std::array<std::array<float, 3>, 16>, kNumGroups> appliedFxParams {};
         std::array<uint32_t, kNumGroups> fxParamMask {};
         std::array<std::array<std::array<float, 3>, 16>, kNumGroups> fxParams {};
         std::atomic<int>      fxTargetGroup { 0 };

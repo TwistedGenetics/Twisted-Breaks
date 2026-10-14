@@ -36,7 +36,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 8 | Snapshots, break bank, find missing samples | **done** — 362/362 automated checks |
 | 9 | Step features: chance, ratchet, pitch, reverse, slice, FX, conditions | **done** — 399/399 automated checks |
 | 10 | MUTATE: controlled randomisation of both sequencers | **done** — 426/426 automated checks |
-| 11+ | Macros, resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 11 | Performance macros | **done** — 441/441 automated checks |
+| 12+ | Resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -128,6 +129,18 @@ Sections that aren't built yet are visibly marked offline on the panel
   switch **HIT** off to throw the FX without retriggering the pad) and
   **COND**: 1:2 ... 4:4 (pass A of every B, on Live's timeline), FILL /
   !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
+* **MACROS** (0.11, the **MACRO** tab of the PERFORMANCE FX panel): eight
+  one-key moves, each several effects at once with their own settings:
+  **DESTROY** (hard drive, crushed bits, stepped sample-rate), **AMEN
+  MANGLE** (beat-repeat chops gated on the grid), **REWIND** (the last beat
+  backwards through tape), **DARKEN** (low-pass, warm tape, dark room),
+  **TAPE STOP** (slows to a halt over 1/2 bar or a bar), **PITCH DIVE**
+  (fast drop into a 1/4 delay), **JUNGLE ROLL** (1/16-1/32 stutter roll,
+  lifted) and **SCI-FI** (resonator, 3/16 echo, resonant band-pass). Hold a
+  key (or **LATCH** to toggle); **AMOUNT** goes from mild to hard and can be
+  ridden while held; **GROUP** picks A-D or ALL. Let go and your own effects
+  are back exactly as you had them. MIDI notes **E4-B4** play macros 1-8,
+  and each is an automatable `Macro ...` parameter.
 * **MUTATE** (0.10, the tab under STEP in the SEQUENCER view): one press
   (**GO**, or MIDI-map the `Mutate` parameter) makes a variation of the
   patterns that keeps the groove: hits on the beat never move, nothing goes

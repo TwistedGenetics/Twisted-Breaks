@@ -1,4 +1,5 @@
 #include "Core/Parameters.h"
+#include "Core/MacroDefs.h"
 #include "Core/EngineBridge.h"
 #include "Core/FxDefs.h"
 
@@ -199,6 +200,15 @@ namespace tb::params
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqFill, kV11 }, "Sequencer Fill", false));
+
+        // ---- Phase 11: performance macros ----
+        for (int m = 0; m < macro::kNumMacros; ++m)
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { macro::paramId (m), kV13 }, String ("Macro ") + macro::def (m).name, false));
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { macroAmount, kV13 }, "Macro Amount", 0, 100, 60,
+            AudioParameterIntAttributes().withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { macroGroup, kV13 }, "Macro Group",
+                                                            StringArray { "A", "B", "C", "D", "All" }, 4));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { macroLatch, kV13 }, "Macro Latch", false));
 
         // ---- Phase 10: MUTATE ----
         layout.add (std::make_unique<AudioParameterInt> (ParameterID { mutAmount, kV12 }, "Mutate Amount", 0, 100, 35,
