@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 568, "568 automatable parameters in total (3 master + 5 sequencer + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 581, "581 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -2043,6 +2043,7 @@ namespace
         check (down && fillParam->load() < 0.5f, "FILL (HOLD) sets Sequencer Fill while it's held, and lets go");
     }
 
+
     //==========================================================================
     //  PHASE 7.1: per-pad slice sequencer
     //==========================================================================
@@ -3495,6 +3496,329 @@ namespace
     }
 
     //==========================================================================
+    //  PHASE 10: MUTATE
+    //==========================================================================
+    void testMutateRules()
+    {
+        std::cout << "\n== Phase 10: MUTATE rules ==" << std::endl;
+        using M = tb::Mutator;
+        const uint32_t all = 0x7fu;
+
+        // A jungle-ish 16-step lane: kick / snare on beats, ghosts in between.
+        M::Lane orig {};
+        auto put = [&orig] (int k, int vel, int micro = 0) { orig[(size_t) k].on = true; orig[(size_t) k].velocity = vel; orig[(size_t) k].micro = micro; };
+        put (0, 120); put (4, 115); put (6, 60, 9); put (8, 120); put (10, 70); put (12, 115); put (15, 50, -5);
+
+        juce::Random r (1);
+        M::Lane out;
+        M::mutateLane (out, orig, 16, 4, 16, 0.0f, all, r);
+        bool same = true;
+        for (int k = 0; k < 32; ++k) same &= out[(size_t) k] == orig[(size_t) k];
+        check (same, "AMOUNT 0 %: the lane comes back exactly as written");
+
+        bool anchorsKept = true, onGrid = true, ghostsNear = true, ghostsQuiet = true, noDownbeatRoll = true, fxLastBeat = true,
+             outsideUntouched = true, inRange = true;
+        int changed = 0, ghosts = 0, drops = 0, rolls = 0, pitched = 0, fxThrows = 0, chances = 0, sliced = 0;
+        const float avg = (120 + 115 + 60 + 120 + 70 + 115 + 50) / 7.0f;
+        for (int seed = 0; seed < 300; ++seed)
+        {
+            juce::Random rr (seed);
+            M::mutateLane (out, orig, 16, 4, 12, 1.0f, all, rr);
+            bool diff = false;
+            for (int k = 0; k < 32; ++k)
+            {
+                const auto& o = orig[(size_t) k];
+                const auto& m = out[(size_t) k];
+                diff = diff || ! (o == m);
+                if (k >= 16) { outsideUntouched &= o == m; continue; }
+                if (k % 4 == 0 && o.on)
+                    anchorsKept &= m.on && m.velocity == o.velocity && m.micro == o.micro && m.slice == 0 && m.pitch == 0 && ! m.rev
+                                   && m.probability == 100 && m.fx == 0;
+                if (m.on && o.on)  onGrid &= m.micro == o.micro;
+                if (m.on && ! o.on)
+                {
+                    ++ghosts;
+                    onGrid &= m.micro == 0;
+                    ghostsNear &= orig[(size_t) ((k + 15) % 16)].on || orig[(size_t) ((k + 1) % 16)].on;
+                    ghostsQuiet &= (float) m.velocity < avg;
+                }
+                if (o.on && ! m.on) ++drops;
+                if (m.on && m.ratchet > 1) { ++rolls; noDownbeatRoll &= k % 16 != 0; }
+                if (m.on && m.pitch != 0) ++pitched;
+                if (m.on && m.slice > 0) { ++sliced; inRange &= m.slice <= 12; }
+                if (m.on && m.fx > 0) { ++fxThrows; fxLastBeat &= k % 16 >= 12; }
+                if (m.on && m.probability < 100) { ++chances; inRange &= m.probability >= 50 && m.probability <= 90; }
+            }
+            changed += diff ? 1 : 0;
+        }
+        check (anchorsKept, "300 mutations at 100 %: every hit on the beat stays exactly as written (no drop, re-slice, pitch, reverse, chance, FX)");
+        check (onGrid && ghostsNear && ghostsQuiet,
+               "nothing moves off the grid; new hits (" + juce::String (ghosts) + ") are only quieter ghosts right next to existing hits");
+        check (noDownbeatRoll && fxLastBeat && inRange && outsideUntouched,
+               "rolls never on the bar's downbeat, FX throws only in the last beat, slices / chance in range, steps past LEN untouched");
+        check (changed >= 295 && drops > 0 && rolls > 0 && pitched > 0 && fxThrows > 0 && chances > 0 && sliced > 0,
+               "...and it really varies: " + juce::String (changed) + " / 300 differ (" + juce::String (drops) + " drops, " + juce::String (rolls)
+                 + " rolls, " + juce::String (pitched) + " pitched, " + juce::String (sliced) + " re-sliced, " + juce::String (fxThrows) + " FX, "
+                 + juce::String (chances) + " chance)");
+
+        // Targets: only what's switched on changes.
+        bool onlyRatchet = true;
+        for (int seed = 0; seed < 100; ++seed)
+        {
+            juce::Random rr (seed);
+            M::mutateLane (out, orig, 16, 4, 12, 1.0f, 1u << tb::params::mutTRatchet, rr);
+            for (int k = 0; k < 32; ++k)
+            {
+                auto a = out[(size_t) k]; a.ratchet = orig[(size_t) k].ratchet;
+                onlyRatchet &= a == orig[(size_t) k];
+            }
+        }
+        check (onlyRatchet, "with only RAT switched on, nothing but ratchets changes");
+
+        M::Lane empty {};
+        M::mutateLane (out, empty, 16, 4, 16, 1.0f, all, r);
+        bool stillEmpty = true;
+        for (auto& st : out) stillEmpty &= ! st.on;
+        check (stillEmpty, "an empty lane stays empty (MUTATE never invents a part)");
+
+        // Slice sequence: beats stay, off-beats trade slices.
+        M::Slots so {};
+        for (int k = 0; k < 16; ++k) so[(size_t) k] = k % 2 == 0 ? tb::SliceStep::playing (k / 2) : tb::SliceStep {};   // 8 slices on 1/8s, ties between
+        bool beatsKept = true, slicesOk = true; int swaps = 0, repeats = 0;
+        for (int seed = 0; seed < 200; ++seed)
+        {
+            juce::Random rr (seed);
+            M::Slots sm;
+            M::mutateSlices (sm, so, 16, 4, 8, 1.0f, all, rr);
+            for (int k = 0; k < 16; ++k)
+            {
+                const auto& o = so[(size_t) k]; const auto& m = sm[(size_t) k];
+                if (k % 4 == 0) beatsKept &= m.kind == o.kind && m.slice == o.slice && m.pitch == 0 && ! m.rev && m.chance == 100;
+                if (m.kind == tb::SliceStep::play) slicesOk &= m.slice >= 0 && m.slice < 8;
+                if (o.kind == tb::SliceStep::play && m.kind == tb::SliceStep::play && m.slice != o.slice) ++swaps;
+                if (o.kind == tb::SliceStep::tie && m.kind == tb::SliceStep::play) ++repeats;
+            }
+        }
+        check (beatsKept && slicesOk && swaps > 0 && repeats > 0,
+               "slice sequences: the beats keep their slices; off-beats trade slices (" + juce::String (swaps) + ") and tied steps re-hit (" + juce::String (repeats) + ")");
+    }
+
+    void testMutate()
+    {
+        std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 581, "13 MUTATE parameters (581 in total)");
+
+        SeqRig x;
+        auto& mut = x.r.p.getMutator();
+        mut.setSeed (7);
+        auto lanes = [&x] { std::array<std::array<uint64_t, 32>, 16> a {}; for (int p = 0; p < 16; ++p) for (int k = 0; k < 32; ++k) a[(size_t) p][(size_t) k] = x.seq.getPacked (p, k); return a; };
+        x.seq.clearAll();
+        for (int k : { 0, 4, 6, 8, 10, 12, 14 }) x.step (0, k, k % 4 == 0 ? 120 : 70);
+        for (int k : { 2, 5, 10, 13 }) x.step (1, k, 90);
+        const auto original = lanes();
+        setParam (x.r.p, tb::params::mutAmount, 100.0f);
+        setParam (x.r.p, tb::params::mutAt, 0.0f);                      // NOW
+
+        mut.mutate();
+        check (mut.isWaiting(), "MUTATE arms a change for the audio thread");
+        x.r.settle();
+        mut.poll();
+        const auto first = lanes();
+        check (! mut.isWaiting() && mut.getCount() == 1 && first != original && mut.hasOriginal() && mut.canUndo(),
+               "...which lands on the next block: the lanes changed");
+        mut.mutate(); x.r.settle(); mut.poll();
+        const auto second = lanes();
+        bool beatsSame = true;
+        for (int k : { 0, 4, 8, 12 }) beatsSame &= x.seq.get (0, k).on && x.seq.get (0, k).velocity == 120;
+        check (second != first && beatsSame, "each MUTATE is a new variation (of the original: the beats are still the written ones)");
+
+        mut.undo(); x.r.settle(); mut.poll();
+        check (lanes() == first, "UNDO goes back to the previous variation");
+        mut.undo(); x.r.settle(); mut.poll();
+        check (lanes() == second, "...and UNDO again redoes");
+        mut.reset(); x.r.settle(); mut.poll();
+        check (lanes() == original, "RESET brings back the original pattern exactly");
+
+        // A hand edit becomes the new original.
+        x.step (2, 3, 100);
+        const auto edited = lanes();
+        mut.mutate(); x.r.settle(); mut.poll();
+        mut.reset(); x.r.settle(); mut.poll();
+        check (lanes() == edited, "an edit after mutating becomes the new original (RESET returns to the edited pattern)");
+
+        // DRIFT: builds on the last result. With only PITCH on, a pitched step
+        // stays pitched (pitch moves only between non-zero values), so pitched
+        // steps can only accumulate; without DRIFT each pass starts clean.
+        for (int t = 0; t < tb::params::kNumMutTargets; ++t) setParam (x.r.p, tb::params::mutTargetId (t), t == tb::params::mutTPitch ? 1.0f : 0.0f);
+        setParam (x.r.p, tb::params::mutAmount, 60.0f);
+        auto pitched = [&x] { uint32_t m = 0; for (int k = 0; k < 16; ++k) if (x.seq.get (0, k).on && x.seq.get (0, k).pitch != 0) m |= 1u << k; return m; };
+        auto runPasses = [&] (bool drift)
+        {
+            setParam (x.r.p, tb::params::mutDrift, drift ? 1.0f : 0.0f);
+            bool kept = true, lost = false;
+            uint32_t last = 0;
+            for (int i = 0; i < 12; ++i)
+            {
+                mut.mutate(); x.r.settle(); mut.poll();
+                const uint32_t now = pitched();
+                kept = kept && (now & last) == last;
+                lost = lost || (now & last) != last;
+                last = now;
+            }
+            mut.reset(); x.r.settle(); mut.poll();
+            return std::make_pair (kept, lost);
+        };
+        const auto withDrift = runPasses (true);
+        const auto noDrift   = runPasses (false);
+        check (withDrift.first && noDrift.second && lanes() == edited,
+               "DRIFT builds on the last mutation (changes accumulate), off it starts from the original each time; RESET still finds the original");
+        for (int t = 0; t < tb::params::kNumMutTargets; ++t) setParam (x.r.p, tb::params::mutTargetId (t), 1.0f);
+        setParam (x.r.p, tb::params::mutDrift, 0.0f);
+        setParam (x.r.p, tb::params::mutAmount, 100.0f);
+
+        // SCOPE: selected pad only.
+        setParam (x.r.p, tb::params::mutScope, 0.0f);
+        mut.setSelectedPad (1);
+        mut.mutate(); x.r.settle(); mut.poll();
+        auto l = lanes();
+        check (l[0] == edited[0] && l[2] == edited[2] && l[1] != edited[1], "SCOPE PAD: only the selected pad's lane changes");
+        mut.reset(); x.r.settle(); mut.poll();
+        setParam (x.r.p, tb::params::mutScope, 1.0f);
+
+        // The "Mutate" parameter (MIDI-mappable): rising edge.
+        const int before = mut.getCount();
+        setParam (x.r.p, tb::params::mutGo, 1.0f);
+        mut.poll(); x.r.settle(); mut.poll();
+        mut.poll(); x.r.settle(); mut.poll();
+        setParam (x.r.p, tb::params::mutGo, 0.0f);
+        mut.poll(); x.r.settle(); mut.poll();
+        check (mut.getCount() == before + 1, "the Mutate parameter mutates once per press (MIDI-map it to a pad)");
+        mut.reset(); x.r.settle(); mut.poll();
+
+        // Exact timing: a frame armed for the next bar lands on the bar-line sample, mid-block.
+        {
+            x.seq.clearAll();
+            for (int k = 0; k < 16; ++k) x.step (0, k, 127);       // pad 1 (left) every 1/16
+            auto* f = new tb::MutationFrame();
+            f->quant = tb::params::switchBar;
+            f->laneMask = 0x3u;
+            for (int k = 0; k < 16; ++k) { tb::SeqStep st; st.on = true; st.velocity = 127; f->seq[1][(size_t) k] = st.pack(); }   // -> pad 2 (right)
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            auto first4 = renderTimeline (x.r, 40000, {});             // into bar 1
+            mut.adoptForDeletion (x.r.p.armMutationFrame (f));
+            auto rest = renderTimeline (x.r, 80000, {});
+            x.r.host.playing = false; x.r.p.requestPanic(); x.r.settle(); mut.poll();
+            const auto left = onsets (rest, 0), right = onsets (rest, 1);
+            const int bar = 96000 - (40000 / kBlock + (40000 % kBlock ? 1 : 0)) * kBlock;   // bar line inside `rest`
+            check (! left.empty() && left.back() < bar && ! right.empty() && right.front() == bar && bar % kBlock != 0,
+                   "a mutation armed for NEXT BAR swaps the pattern on the bar-line sample, mid-block (last old hit "
+                     + juce::String (left.empty() ? -1 : left.back()) + ", first new " + juce::String (right.empty() ? -1 : right.front())
+                     + ", bar " + juce::String (bar) + ")");
+        }
+
+        // AUTO every 2 bars: lands on bars 3 and 5 (song start = bar 1), nowhere else.
+        {
+            x.seq.clearAll();
+            for (int k : { 0, 4, 6, 8, 10, 12, 14 }) x.step (0, k, 100);
+            setParam (x.r.p, tb::params::mutAuto, 2.0f);              // 2 bars
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            std::vector<int> changedAt;
+            auto v = x.seq.getVersion();
+            const int c0 = mut.getCount();
+            for (int b = 0; b < (96000 * 5 + 48000) / kBlock; ++b)
+            {
+                runBlock (x.r.p, x.r.host, buf, midi);
+                if (x.seq.getVersion() != v) { changedAt.push_back (b); v = x.seq.getVersion(); }
+                if (b % 3 == 0) mut.poll();                           // the message thread's ~30 Hz
+            }
+            mut.poll();
+            x.r.host.playing = false;
+            setParam (x.r.p, tb::params::mutAuto, 0.0f);
+            x.r.p.requestPanic(); x.r.settle(); mut.poll();
+            const std::vector<int> expect { 192000 / kBlock, 384000 / kBlock };
+            juce::StringArray got; for (int b : changedAt) got.add (juce::String (b * kBlock));
+            check (changedAt == expect && mut.getCount() == c0 + 2,
+                   "AUTO 2 BARS mutates on the bar lines of bars 3 and 5, nowhere else (blocks at " + got.joinIntoString (" ") + ")");
+            mut.reset(); x.r.settle(); mut.poll();
+        }
+
+        // Slice sequences mutate too (their current slot).
+        {
+            SliceRig y;
+            auto& m2 = y.r.p.getMutator();
+            m2.setSeed (3);
+            setParam (y.r.p, tb::params::mutAmount, 100.0f);
+            setParam (y.r.p, tb::params::mutAt, 0.0f);
+            m2.mutate(); y.r.settle(); m2.poll();
+            const auto slot = y.data.getSlot (0, 0);
+            std::array<tb::SliceStep, 32> pat;
+            std::array<tb::SliceStep, 32> def;
+            const double beats = tb::PadVoice::loopBeatsFor ((double) y.brk.getNumSamples() / 48000.0);
+            const auto info = y.r.p.getSamples().getInfo (0);
+            tb::SliceSeqData::defaultPattern (info.slices, y.brk.getNumSamples(), 48000.0, 0.25, beats, def);
+            bool beats4 = true, differs = false;
+            for (int k = 0; k < 32; ++k)
+            {
+                pat[(size_t) k] = y.data.getStep (0, 0, k);
+                if (k % 4 == 0 && def[(size_t) k].kind == tb::SliceStep::play) beats4 &= pat[(size_t) k].slice == def[(size_t) k].slice && pat[(size_t) k].kind == tb::SliceStep::play;
+                differs = differs || ! (pat[(size_t) k] == def[(size_t) k]);
+            }
+            check (slot.written && differs && beats4, "a SLICE SEQ pad's slot is mutated too: the break's beats stay, the rest is rearranged");
+            m2.reset(); y.r.settle(); m2.poll();
+            bool back = true;
+            for (int k = 0; k < 32; ++k) back &= y.data.getStep (0, 0, k) == def[(size_t) k];
+            check (back, "...and RESET gives the break back as recorded");
+        }
+    }
+
+    void testMutateView()
+    {
+        std::cout << "\n== Phase 10: MUTATE page ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::MainView* view = nullptr; tb::ui::SequencerPanel* panel = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* sp = dynamic_cast<tb::ui::SequencerPanel*> (&c)) panel = sp;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        if (! (view && panel)) { check (false, "found the sequencer panel"); return; }
+        view->showView (tb::ui::MainView::View::sequencer);
+        juce::Button* tab = nullptr;
+        for (auto* ch : panel->getChildren())
+            if (auto* b = dynamic_cast<juce::Button*> (ch)) if (b->getName() == "MUTATE") tab = b;
+        check (tab != nullptr && ! panel->mutateButton().isVisible(), "the MUTATE tab sits under STEP; its page starts hidden");
+        if (tab == nullptr) return;
+        tab->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (panel->getPage() == tb::ui::SequencerPanel::Page::mutate && panel->mutateButton().isVisible() && ! panel->fillButton().isVisible(),
+               "clicking it shows the MUTATE page in place of the STEP row");
+
+        auto* pitchOn = r.p.getParameters().getRawParameterValue (tb::params::mutTargetId (tb::params::mutTPitch));
+        const bool was = pitchOn->load() > 0.5f;
+        panel->targetButton (tb::params::mutTPitch).triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check ((pitchOn->load() > 0.5f) != was, "target keys switch their Mutate parameters (PITCH)");
+
+        auto& seq = r.p.getBridge().seq;
+        tb::SeqStep st; st.on = true;
+        for (int k = 0; k < 16; ++k) seq.set (0, k, st);
+        setParam (r.p, tb::params::mutAmount, 100.0f);
+        setParam (r.p, tb::params::mutAt, 0.0f);
+        panel->mutateButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        r.settle();
+        r.p.getMutator().poll();
+        panel->refresh();
+        check (r.p.getMutator().getCount() == 1 && panel->undoButton().isEnabled(), "the GO key mutates; UNDO lights up");
+    }
+
+    //==========================================================================
     void testEditorDrivesState()
     {
         std::cout << "\n== Plugin window -> saved state ==" << std::endl;
@@ -3673,6 +3997,16 @@ namespace
             tweak (2, 31, [] (auto& st) { st.fx = tb::fx::reverse + 1; });
             setParam (p, tb::params::seqLength, 32.0f);
             seq.setArmed (3, true);
+            if (out.getFileName().contains ("mut"))
+            {
+                setParam (p, tb::params::mutAmount, 45.0f);
+                setParam (p, tb::params::mutAuto, 3.0f);
+                setParam (p, tb::params::mutAt, 2.0f);
+                p.getMutator().setSeed (11);
+                p.getMutator().mutate (0);
+                p.applyMutationNow();
+                p.getMutator().poll();
+            }
         }
         if (fxView)
         {
@@ -3743,6 +4077,8 @@ namespace
             std::function<void (juce::Component&)> find = [&] (juce::Component& c)
             {
                 if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::sequencer);
+                if (auto* sp = dynamic_cast<tb::ui::SequencerPanel*> (&c))
+                    if (out.getFileName().contains ("mut")) sp->showPage (tb::ui::SequencerPanel::Page::mutate);
                 for (auto* child : c.getChildren()) find (*child);
             };
             find (*ed);
@@ -3861,6 +4197,9 @@ int main (int argc, char* argv[])
         testFindMissing();
         testSnapshotView();
         testSnapshotStress (tone);
+        testMutateRules();
+        testMutate();
+        testMutateView();
         testEditorDrivesState();
         testRealtimeSafety();
 

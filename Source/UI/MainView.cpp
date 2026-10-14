@@ -284,6 +284,7 @@ namespace tb::ui
             padEditor.setPad (pad);
             mixer.setSelectedPad (pad);
             sequencer.setSelectedPad (pad);
+            processor.getMutator().setSelectedPad (pad);
             sliceSeq.setPad (pad);
             snapshotPanel.setSelectedPad (pad);
             status.refresh (pad);

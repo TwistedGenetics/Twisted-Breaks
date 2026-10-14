@@ -14,6 +14,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/PadLights.cpp
     ${TB_SRC}/Core/SnapshotManager.cpp
     ${TB_SRC}/Core/BreakBank.cpp
+    ${TB_SRC}/Core/Mutator.cpp
 
     # Engine: everything that runs inside processBlock()
     ${TB_SRC}/Engine/AudioEngine.cpp

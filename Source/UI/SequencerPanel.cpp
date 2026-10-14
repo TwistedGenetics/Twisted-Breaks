@@ -157,12 +157,85 @@ namespace tb::ui
                                                                     &fxRead, &condRead, &revKey, &hitKey, &fillKey })
             addAndMakeVisible (comp);
         bindStepReadouts();
+        bindMutateControls();
+        showPage (Page::step);
         setSelectedPad (0);
+    }
+
+    void SequencerPanel::bindMutateControls()
+    {
+        auto& apvts = processor.getParameters();
+        for (int t = 0; t < params::kNumMutTargets; ++t)
+        {
+            targetKeys[(size_t) t] = std::make_unique<PushKey> (params::mutTargetKeyText[t],
+                                                                 String ("MUTATE may change: ") + params::mutTargetNames[t], Colour (0xffffa928));
+            targetKeys[(size_t) t]->setClickingTogglesState (true);
+            targetAtts[(size_t) t] = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (apvts, params::mutTargetId (t), *targetKeys[(size_t) t]);
+            addChildComponent (*targetKeys[(size_t) t]);
+        }
+        driftKey.setClickingTogglesState (true);
+        driftAtt = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (apvts, params::mutDrift, driftKey);
+
+        // Readouts drive their parameters (short VFD texts instead of the host's names).
+        auto paramModel = [this] (const char* id, int min, int max, int def, int scale, std::function<String (int)> text)
+        {
+            DragReadout::Model m;
+            m.get = [this, id, scale] { return roundToInt (processor.getParameters().getRawParameterValue (id)->load() / (float) scale); };
+            m.set = [this, id, scale] (int v)
+            {
+                if (auto* prm = processor.getParameters().getParameter (id))
+                {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost (prm->convertTo0to1 ((float) (v * scale)));
+                    prm->endChangeGesture();
+                }
+            };
+            m.min = min; m.max = max; m.def = def; m.text = std::move (text);
+            return m;
+        };
+        amountRead.bind (paramModel (params::mutAmount, 0, 20, 7, 5, [] (int v) { return String (v * 5) + "%"; }));
+        auto m = paramModel (params::mutScope, 0, 1, 1, 1, [] (int v) { return v == 0 ? String ("PAD") : String ("ALL"); });
+        m.cycleOnClick = true; scopeRead.bind (m);
+        m = paramModel (params::mutAuto, 0, 4, 0, 1, [] (int v) { return v == 0 ? String ("OFF") : String (params::mutAutoBars[jlimit (0, 4, v)]) + " BAR"; });
+        m.cycleOnClick = true; autoRead.bind (m);
+        m = paramModel (params::mutAt, 0, 2, 2, 1, [] (int v) { return v == 0 ? String ("NOW") : (v == 1 ? String ("BEAT") : String ("BAR")); });
+        m.cycleOnClick = true; atRead.bind (m);
+
+        goKey.onClick    = [this] { processor.getMutator().mutate(); refresh(); };
+        undoKey.onClick  = [this] { processor.getMutator().undo();   refresh(); };
+        resetKey.onClick = [this] { processor.getMutator().reset();  refresh(); };
+
+        stepTab.setRadioGroupId (7101);
+        mutateTab.setRadioGroupId (7101);
+        stepTab.onClick   = [this] { showPage (Page::step); };
+        mutateTab.onClick = [this] { showPage (Page::mutate); };
+
+        for (Component* comp : std::initializer_list<Component*> { &stepTab, &mutateTab })
+            addAndMakeVisible (comp);
+        for (Component* comp : std::initializer_list<Component*> { &amountRead, &scopeRead, &autoRead, &atRead, &driftKey, &goKey, &undoKey, &resetKey })
+            addChildComponent (comp);
+    }
+
+    void SequencerPanel::showPage (Page p)
+    {
+        page = p;
+        const bool step = p == Page::step;
+        stepTab.setToggleState (step, dontSendNotification);
+        mutateTab.setToggleState (! step, dontSendNotification);
+        for (Component* comp : std::initializer_list<Component*> { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead,
+                                                                    &fxRead, &condRead, &revKey, &hitKey, &fillKey })
+            comp->setVisible (step);
+        for (Component* comp : std::initializer_list<Component*> { &amountRead, &scopeRead, &autoRead, &atRead, &driftKey, &goKey, &undoKey, &resetKey })
+            comp->setVisible (! step);
+        for (auto& k : targetKeys) k->setVisible (! step);
+        repaint (inspectorArea().toNearestInt().expanded (2));
     }
 
     SequencerPanel::~SequencerPanel()
     {
         runAtt.reset();
+        driftAtt.reset();
+        for (auto& a : targetAtts) a.reset();
         lenRead.attach (nullptr); stepRead.attach (nullptr); quantRead.attach (nullptr);
     }
 
@@ -307,21 +380,44 @@ namespace tb::ui
         armKey.setBounds   (x, y, 94, h);      x += 98;
         clearKey.setBounds (x, y, jmin (68, getWidth() - x - 14), h);
 
-        // STEP row: [label] VEL CHANCE RAT PITCH SLICE MICRO / FX COND [REV] [HIT] [FILL] position
+        // Bottom area: [STEP / MUTATE tabs] then the page's two rows.
         const auto ins = inspectorArea().toNearestInt().reduced (8, 6);
-        auto row1 = ins.withHeight (40);
-        auto row2 = ins.withTrimmedTop (46).withHeight (40);
-        row1.removeFromLeft (112);              // "PAD 01 / STEP 05" plate
-        for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead })
+        auto tabs = ins.withWidth (80);
+        stepTab.setBounds (tabs.removeFromTop (40).withTrimmedTop (8));
+        mutateTab.setBounds (tabs.withTrimmedTop (14).withHeight (32));
+        const auto body = ins.withTrimmedLeft (86);
+        auto row1 = body.withHeight (40);
+        auto row2 = body.withTrimmedTop (46).withHeight (40);
+        auto key = [] (Rectangle<int>& row, int w) { return row.removeFromLeft (w).withTrimmedTop (10); };
+
+        // STEP page: VEL CHANCE RAT PITCH SLICE MICRO / FX COND [REV] [HIT] [FILL] position
         {
-            r->setBounds (row1.removeFromLeft (60));
-            row1.removeFromLeft (8);
+            auto r1 = row1, r2 = row2;
+            for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead })
+            {
+                r->setBounds (r1.removeFromLeft (60));
+                r1.removeFromLeft (8);
+            }
+            fxRead.setBounds   (r2.removeFromLeft (80));  r2.removeFromLeft (6);
+            condRead.setBounds (r2.removeFromLeft (60));  r2.removeFromLeft (8);
+            revKey.setBounds   (key (r2, 46));            r2.removeFromLeft (4);
+            hitKey.setBounds   (key (r2, 46));            r2.removeFromLeft (8);
+            fillKey.setBounds  (key (r2, 92));
         }
-        fxRead.setBounds   (row2.removeFromLeft (92));  row2.removeFromLeft (8);
-        condRead.setBounds (row2.removeFromLeft (70));  row2.removeFromLeft (10);
-        revKey.setBounds   (row2.removeFromLeft (56).withTrimmedTop (10)); row2.removeFromLeft (6);
-        hitKey.setBounds   (row2.removeFromLeft (56).withTrimmedTop (10)); row2.removeFromLeft (10);
-        fillKey.setBounds  (row2.removeFromLeft (112).withTrimmedTop (10));
+        // MUTATE page: AMOUNT + targets / SCOPE AUTO AT [DRIFT] [MUTATE] [UNDO] [RESET]
+        {
+            auto r1 = row1, r2 = row2;
+            amountRead.setBounds (r1.removeFromLeft (52)); r1.removeFromLeft (6);
+            constexpr int widths[] = { 61, 61, 52, 44, 44, 36, 53 };     // fit SLICE PITCH PATT RAT REV FX CHNC
+            for (size_t t = 0; t < targetKeys.size(); ++t) { targetKeys[t]->setBounds (key (r1, widths[t])); r1.removeFromLeft (4); }
+            scopeRead.setBounds (r2.removeFromLeft (50)); r2.removeFromLeft (6);
+            autoRead.setBounds  (r2.removeFromLeft (50)); r2.removeFromLeft (6);
+            atRead.setBounds    (r2.removeFromLeft (54)); r2.removeFromLeft (8);
+            driftKey.setBounds  (key (r2, 52));           r2.removeFromLeft (6);
+            goKey.setBounds     (key (r2, 84));           r2.removeFromLeft (6);
+            undoKey.setBounds   (key (r2, 52));           r2.removeFromLeft (6);
+            resetKey.setBounds  (key (r2, 54));
+        }
         background = {};
     }
 
@@ -397,6 +493,16 @@ namespace tb::ui
 
         const auto& tr = processor.getBridge().transport;
         const int bar = tr.bar.load (std::memory_order_relaxed), beat = tr.beat.load (std::memory_order_relaxed);
+
+        // Tabs + MUTATE page state.
+        const String tabText = "STEP " + String (selectedPad + 1).paddedLeft ('0', 2) + "." + String (selectedStep + 1).paddedLeft ('0', 2);
+        if (stepTab.getButtonText() != tabText) stepTab.setButtonText (tabText);
+        auto& mut = processor.getMutator();
+        goKey.setBlinking (mut.isWaiting());
+        goKey.tick();
+        undoKey.setEnabled (mut.canUndo());
+        resetKey.setEnabled (mut.hasOriginal());
+        for (auto* r : { &amountRead, &scopeRead, &autoRead, &atRead }) r->repaint();
 
         const auto v = seq.getVersion();
         const int step = processor.getBridge().seqStep.load();
@@ -547,29 +653,20 @@ namespace tb::ui
             }
         }
 
-        // STEP row: which step, and Live's position (the transport box is covered).
-        const auto ins = inspectorArea().reduced (8.0f, 6.0f);
-        const auto st = currentStep();
-        auto label = ins.withWidth (104.0f).withHeight (40.0f);
-        g.setColour (c::bakelite.withAlpha (0.8f));
-        g.setFont (industrialFont (10.5f));
-        g.drawText (st.on ? "STEP" : "STEP (OFF)", label.removeFromTop (12.0f), Justification::centredLeft, false);
-        g.setColour (st.on ? c::vfd : c::vfd.withAlpha (0.4f));
-        g.setFont (monoFont (14.0f));
-        g.drawText ("P" + String (selectedPad + 1).paddedLeft ('0', 2) + " S" + String (selectedStep + 1).paddedLeft ('0', 2),
-                    label, Justification::centredLeft, false);
-
-        const auto& tr = processor.getBridge().transport;
-        auto pos = ins.withTrimmedTop (46.0f).withHeight (40.0f);
-        pos = pos.removeFromRight (122.0f);
-        g.setColour (c::bakelite.withAlpha (0.8f));
-        g.setFont (industrialFont (10.5f));
-        g.drawText ("BPM   BAR.BEAT", pos.removeFromTop (12.0f), Justification::centredLeft, false);
-        paint::recess (g, pos, 3.0f);
-        g.setColour (c::vfd);
-        g.setFont (monoFont (13.0f));
-        g.drawText (String (tr.bpm.load (std::memory_order_relaxed), 1) + "  "
-                      + String (tr.bar.load (std::memory_order_relaxed) + 1).paddedLeft ('0', 3) + "." + String (tr.beat.load (std::memory_order_relaxed) + 1),
-                    pos, Justification::centred, false);
+        // STEP page: Live's position (the transport box is covered here).
+        if (page == Page::step)
+        {
+            const auto& tr = processor.getBridge().transport;
+            auto pos = inspectorArea().reduced (8.0f, 6.0f).withTrimmedTop (46.0f).withHeight (40.0f);
+            pos = pos.removeFromRight (78.0f);
+            g.setColour (c::bakelite.withAlpha (0.8f));
+            g.setFont (industrialFont (10.5f));
+            g.drawText (String (tr.bpm.load (std::memory_order_relaxed), 1) + " BPM", pos.removeFromTop (12.0f), Justification::centred, false);
+            paint::recess (g, pos, 3.0f);
+            g.setColour (c::vfd);
+            g.setFont (monoFont (13.0f));
+            g.drawText (String (tr.bar.load (std::memory_order_relaxed) + 1).paddedLeft ('0', 3) + "." + String (tr.beat.load (std::memory_order_relaxed) + 1),
+                        pos, Justification::centred, false);
+        }
     }
 }

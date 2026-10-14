@@ -5,6 +5,7 @@
 #include <functional>
 #include "UI/Controls.h"
 #include "Core/SequencerData.h"
+#include <array>
 
 class TwistedBreaksProcessor;
 
@@ -67,6 +68,10 @@ namespace tb::ui
           * cell marks: ticks on top = ratchet, dot top-right = chance,
             green corner = pitch / reverse / slice, red corner = FX,
             cyan underline = condition, outline only = FX only (no hit)
+          * MUTATE page (Phase 10, the tab under STEP): AMOUNT, what may
+            change (SLICE PITCH PATT RAT REV FX CHNC), SCOPE (selected pad /
+            all), AUTO every 1-8 bars, AT (now / beat / bar), DRIFT, and
+            MUTATE / UNDO / RESET. See Core/Mutator.
     */
     class SequencerPanel final : public juce::Component
     {
@@ -99,6 +104,14 @@ namespace tb::ui
         PushKey& hitButton()  { return hitKey; }
         PushKey& fillButton() { return fillKey; }
 
+        enum class Page { step, mutate };
+        void showPage (Page);
+        Page getPage() const noexcept { return page; }
+        PushKey& mutateButton() { return goKey; }
+        PushKey& undoButton()   { return undoKey; }
+        PushKey& resetButton()  { return resetKey; }
+        PushKey& targetButton (int t) { return *targetKeys[(size_t) t]; }
+
     private:
         juce::Rectangle<float> gridArea() const;
         juce::Rectangle<float> inspectorArea() const;
@@ -107,6 +120,7 @@ namespace tb::ui
         SeqStep currentStep() const;
         void writeStep (SeqStep);          // turns the step on
         void bindStepReadouts();
+        void bindMutateControls();
 
         TwistedBreaksProcessor& processor;
         int selectedPad = 0, selectedStep = 0;
@@ -131,6 +145,22 @@ namespace tb::ui
         PushKey revKey  { "REV",  "Play this hit backwards", juce::Colour (0xffffa928) };
         PushKey hitKey  { "HIT",  "On: the step plays the pad. Off: it only throws its FX", juce::Colour (0xffffa928) };
         PushKey fillKey { "FILL (HOLD)", "Hold: FILL steps play, !FILL steps rest (the automatable Sequencer Fill parameter)", juce::Colour (0xffff3a1c) };
+
+        // Page tabs + MUTATE page (Phase 10)
+        Page page = Page::step;
+        PushKey stepTab   { "STEP",   "Edit the selected step" };
+        PushKey mutateTab { "MUTATE", "Controlled randomisation of the patterns" };
+        DragReadout amountRead { "AMOUNT", "How much MUTATE changes (0 % = the original)" };
+        DragReadout scopeRead  { "SCOPE",  "PAD = the selected pad's lane / slice sequence, ALL = every pad" };
+        DragReadout autoRead   { "AUTO",   "Mutate by itself every 1, 2, 4 or 8 bars, on the bar line (Mutate Auto)" };
+        DragReadout atRead     { "AT",     "When the MUTATE key's change lands: now, next beat, next bar" };
+        std::array<std::unique_ptr<PushKey>, 7> targetKeys;
+        std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>, 7> targetAtts;
+        PushKey driftKey { "DRIFT", "Off: every MUTATE is a fresh variation of your pattern. On: it builds on the last one", juce::Colour (0xffffa928) };
+        PushKey goKey    { "GO", "MUTATE now / on the next beat / bar (the Mutate parameter, MIDI-mappable)", juce::Colour (0xffff3a1c) };
+        PushKey undoKey  { "UNDO",  "Back to before the last change (again: redo)" };
+        PushKey resetKey { "RESET", "Back to the original pattern" };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> driftAtt;
 
         // Cell editing
         int  editPad = -1, editStep = -1;

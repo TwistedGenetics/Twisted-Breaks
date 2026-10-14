@@ -200,6 +200,21 @@ namespace tb::params
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqFill, kV11 }, "Sequencer Fill", false));
 
+        // ---- Phase 10: MUTATE ----
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { mutAmount, kV12 }, "Mutate Amount", 0, 100, 35,
+            AudioParameterIntAttributes().withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mutScope, kV12 }, "Mutate Scope",
+                                                            StringArray { "Selected Pad", "All Pads" }, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mutAuto, kV12 }, "Mutate Auto",
+                                                            StringArray { "Off", "1 Bar", "2 Bars", "4 Bars", "8 Bars" }, 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mutAt, kV12 }, "Mutate At",
+                                                            StringArray { "Now", "Next Beat", "Next Bar" }, switchBar));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { mutDrift, kV12 }, "Mutate Drift", false));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { mutGo, kV12 }, "Mutate", false));
+        for (int t = 0; t < kNumMutTargets; ++t)
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { mutTargetId (t), kV12 },
+                                                              String ("Mutate ") + mutTargetNames[t], mutTargetDefault[t]));
+
         // ---- Phase 8: snapshots + break bank ----
         layout.add (std::make_unique<AudioParameterInt> (ParameterID { snapRecall, kV10 }, "Snapshot", 0, 8, 0,
             AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return v == 0 ? String ("-") : String (v); })));

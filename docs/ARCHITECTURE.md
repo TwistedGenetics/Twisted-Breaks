@@ -298,6 +298,32 @@ Hand-off between breaks at slice points (spec addition A1 in
   into its STEP row). STEP row = DragReadout models over the selected step;
   editing an empty step switches it on.
 
+## 6h. MUTATE (Phase 10, implemented)
+
+* `Core/Mutator` (message thread) holds the ORIGINAL (both sequencers, every
+  lane + every SLICE SEQ pad's current slot, as packed words). Any change it
+  didn't make itself (edit, live recording, snapshot recall, slot change:
+  detected by the data versions) makes the current pattern the new original.
+* Rules (`mutateLane`, `mutateSlices`, pure functions): on-beat hits are
+  anchors (only a ratchet, never on the downbeat); off-beat hits may drop;
+  ghosts only next to hits, quieter than the lane's average; micro-timing is
+  never touched; rolls / FX throws favour the last beat; slice sequences
+  trade slices between off-beat steps and re-hit tied steps. AMOUNT scales
+  every chance (0 % = identity). Targets are seven bool parameters.
+* A mutation is a `MutationFrame` (lane / slot masks + packed words) armed
+  through an atomic pointer. `processBlock` finds its boundary with
+  `switchOffset` (now / next beat / next bar, or every N bars from the song
+  start for AUTO; a loop wrap landing on the boundary counts) and splits the
+  block there (the same split as snapshots, now up to two cuts per block), so
+  it lands on the exact sample. Frames retire by block epoch; with no audio
+  running the message thread applies the frame itself.
+* UNDO = the state the last frame replaced (UNDO again re-does); RESET = the
+  original. DRIFT mutates the current pattern instead of the original.
+* AUTO: during the last beat of every N bars the Mutator arms a frame for
+  that bar line; a loop brace wrap re-arms it. `mut_go` (rising edge) is the
+  MIDI-mappable MUTATE; it's excluded from snapshots.
+* UI: the sequencer's bottom area has STEP / MUTATE tabs.
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -482,4 +508,5 @@ Ableton stores in the `.als` file:
 | **7.1 ✅** | **Per-pad slice sequencer** (spec addition A5) | 333/333 checks: untouched pattern replays the break sample-exactly, rearranged / REST / REV / RATCHET / gate / PITCH / CHANCE / MICRO / SWING / RATE timed to the sample, start / stop, free clock when stopped, slot switch at the pattern start, FILL, main-sequencer start, SWAP hand-off on the step, edit ops, screen editing, STEP REC, state |
 | **8 ✅** | Snapshots (8 slots, NOW / BEAT / BAR, Program Change, automation), break bank (A2), find missing samples | 362/362 checks: recall restores params / samples / patterns, master untouched, NEXT BAR switch on the exact bar-line sample mid-block, bank switch on the beat sample-exact, state, relocate, UI, 240 switches in 2 min with the worst block at 0.5 ms and nothing leaking |
 | **9 ✅** | Step features in the main sequencer: CHANCE, RATCHET, PITCH, REV, SLICE, FX (held for the step, FX-only), conditions (A:B, FILL, FIRST), FILL key / parameter, STEP row | 399/399 checks: ratchets sample-exact, chance statistics with all-or-nothing ratchets, every condition incl. starts mid-song, pitch / reverse / slice measured and held across blocks, FX held exactly one step and unbroken back-to-back, FX-only doesn't retrigger, stop releases, old 32-bit sets load, UI edits |
-| 10+ | MUTATE, macros, resample + vintage modes, Scene A/B + crossfader (one phase each) | — |
+| **10 ✅** | MUTATE: controlled randomisation of both sequencers (slices, pitch, pattern, ratchet, reverse, FX, chance), AMOUNT, SCOPE, AUTO every 1-8 bars, NOW / BEAT / BAR, DRIFT, UNDO / RESET, Mutate parameter | 426/426 checks: 300 seeded mutations never touch an on-beat hit or move anything off the grid, ghosts only beside hits, targets respected, empty lanes stay empty, slice beats kept; original / undo / redo / reset / edit-becomes-original / drift accumulates; scope; parameter edge; NEXT BAR lands on the bar-line sample mid-block; AUTO 2 BARS on exactly bars 3 and 5; slice slots; UI |
+| 11+ | Macros, resample + vintage modes, Scene A/B + crossfader (one phase each) | — |

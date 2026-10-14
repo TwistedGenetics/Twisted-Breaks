@@ -8,6 +8,7 @@
 #include "Core/SampleManager.h"
 #include "Core/PadLights.h"
 #include "Core/SnapshotManager.h"
+#include "Core/Mutator.h"
 #include "Core/BreakBank.h"
 
 /*
@@ -65,6 +66,16 @@ public:
     tb::PadLights&     getLights() noexcept  { return lights; }
     tb::SnapshotManager& getSnapshots() noexcept { return *snapshots; }
     tb::BreakBank&       getBank() noexcept      { return *bank; }
+    tb::Mutator&         getMutator() noexcept   { return *mutator; }
+
+    // ---- MUTATE (see Mutator) -----------------------------------------------------
+    /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
+    tb::MutationFrame* armMutationFrame (tb::MutationFrame* f) noexcept { return armedMutation.exchange (f); }
+    tb::MutationFrame* takeAppliedMutationFrame() noexcept { return appliedMutation.exchange (nullptr); }
+    bool hasArmedMutation() const noexcept { return armedMutation.load() != nullptr; }
+    bool isMutationFrameInUse (const tb::MutationFrame* f) const noexcept { return f == armedMutation.load() || f == appliedMutation.load(); }
+    /** Message thread, audio not running: apply the armed frame here. */
+    void applyMutationNow() noexcept { if (auto* f = armedMutation.load()) applyMutationFrame (f); }
 
     // ---- Snapshot switching (see SnapshotManager) ----------------------------------
     /** Message thread: arm a frame for the audio thread; returns a frame it replaced (not applied). */
@@ -130,10 +141,13 @@ private:
     tb::PadLights                       lights { bridge, engine };   // controller LEDs (iRig Pads)
     std::unique_ptr<tb::BreakBank>       bank;        // after samples: destroyed first
     std::unique_ptr<tb::SnapshotManager> snapshots;
+    std::unique_ptr<tb::Mutator>         mutator;
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;
     void applySnapshotFrame (tb::SnapshotFrame*) noexcept;
-    static int switchOffset (const tb::TransportState&, int quant, int numSamples) noexcept;
+    static int switchOffset (const tb::TransportState&, int quant, int numSamples, int bars = 1) noexcept;
+    void applyMutationFrame (tb::MutationFrame*) noexcept;
+    std::atomic<tb::MutationFrame*> armedMutation { nullptr }, appliedMutation { nullptr };
 
     std::atomic<tb::SnapshotFrame*> armedFrame { nullptr }, overrideFrame { nullptr }, appliedFrame { nullptr };
     std::atomic<uint64_t> blockEpoch { 0 };

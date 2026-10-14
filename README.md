@@ -35,7 +35,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 7.1 | Per-pad slice sequencer | **done** — 333/333 automated checks |
 | 8 | Snapshots, break bank, find missing samples | **done** — 362/362 automated checks |
 | 9 | Step features: chance, ratchet, pitch, reverse, slice, FX, conditions | **done** — 399/399 automated checks |
-| 10+ | MUTATE, macros, resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 10 | MUTATE: controlled randomisation of both sequencers | **done** — 426/426 automated checks |
+| 11+ | Macros, resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -127,6 +128,18 @@ Sections that aren't built yet are visibly marked offline on the panel
   switch **HIT** off to throw the FX without retriggering the pad) and
   **COND**: 1:2 ... 4:4 (pass A of every B, on Live's timeline), FILL /
   !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
+* **MUTATE** (0.10, the tab under STEP in the SEQUENCER view): one press
+  (**GO**, or MIDI-map the `Mutate` parameter) makes a variation of the
+  patterns that keeps the groove: hits on the beat never move, nothing goes
+  off the grid, new hits are quiet ghosts beside existing ones, rolls and
+  FX throws favour the end of the bar. Choose what may change (**SLICE**,
+  **PITCH**, **PATT**ern, **RAT**chet, **REV**, **FX**, **CHNC**), how much
+  (**AMOUNT**), **SCOPE** (selected pad or all, main lanes and SLICE SEQ
+  slots), when it lands (**AT** now / next beat / next bar, exactly on the
+  boundary) or **AUTO** every 1, 2, 4 or 8 bars. Each press is a fresh
+  variation of your pattern (**DRIFT** builds on the last one instead);
+  **UNDO** flips back and forth, **RESET** returns your pattern. Editing
+  by hand makes your edit the new original.
 * **Slice sequencer** (pad editor **SEQ** tab): rearrange a sliced break.
   Switch **SLICE SEQ** on and the pad plays its own pattern of slices when
   hit (hit again to stop). Untouched, the pattern replays the break exactly

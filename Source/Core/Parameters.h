@@ -37,6 +37,24 @@ namespace tb::params
     inline constexpr int kV9 = 9;   // parameters introduced in 0.7.x (sequencer)
     inline constexpr int kV10 = 10; // parameters introduced in 0.8.x (snapshots, break bank)
     inline constexpr int kV11 = 11; // parameters introduced in 0.9.x (step features)
+    inline constexpr int kV12 = 12; // parameters introduced in 0.10.x (MUTATE)
+
+    // ---- MUTATE (Phase 10) ------------------------------------------------------
+    inline constexpr const char* mutAmount  = "mut_amount";   // int 0..100 %
+    inline constexpr const char* mutScope   = "mut_scope";    // choice: Selected Pad / All Pads
+    inline constexpr const char* mutAuto    = "mut_auto";     // choice: Off, 1, 2, 4, 8 bars
+    inline constexpr const char* mutAt      = "mut_at";       // choice: Now / Next Beat / Next Bar (MUTATE key)
+    inline constexpr const char* mutDrift   = "mut_drift";    // bool: build on the last mutation instead of the original
+    inline constexpr const char* mutGo      = "mut_go";       // bool: rising edge = MUTATE (MIDI-mappable)
+    /** What MUTATE may change, in key order (ids "mut_t_<key>"). Append only. */
+    inline constexpr const char* mutTargetKeys[]  = { "slice", "pitch", "pattern", "ratchet", "reverse", "fx", "chance" };
+    inline constexpr const char* mutTargetNames[] = { "Slices", "Pitch", "Pattern", "Ratchet", "Reverse", "FX", "Chance" };
+    inline constexpr const char* mutTargetKeyText[] = { "SLICE", "PITCH", "PATT", "RAT", "REV", "FX", "CHNC" };   // key captions
+    inline constexpr bool        mutTargetDefault[] = { true, false, true, true, true, false, true };
+    inline constexpr int kNumMutTargets = 7;
+    enum MutTarget { mutTSlice = 0, mutTPitch, mutTPattern, mutTRatchet, mutTReverse, mutTFx, mutTChance };
+    inline constexpr int mutAutoBars[] = { 0, 1, 2, 4, 8 };
+    inline juce::String mutTargetId (int t) { return juce::String ("mut_t_") + mutTargetKeys[t]; }
 
     // ---- Snapshots & break bank (Phase 8) ----------------------------------------
     inline constexpr const char* snapRecall = "snapshot";     // int 0..8: 0 = none; changing it recalls that slot

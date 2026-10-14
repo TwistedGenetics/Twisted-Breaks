@@ -94,6 +94,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
 - [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
 
+## MUTATE (Phase 10)
+- [ ] ✅ A full kit pattern, MUTATE tab, AMOUNT 35 %, AT BAR: press GO while Live plays: it changes exactly on the next bar, the beat stays put, it still grooves
+- [ ] ✅ GO a few times, UNDO (and UNDO again), RESET: back to your pattern exactly
+- [ ] ✅ AUTO 4 BAR for a couple of minutes, with and without a 4-bar loop brace: a new variation every 4 bars, on the bar line, no glitches
+- [ ] ✅ SCOPE PAD on a SLICE SEQ break pad: only that break is rearranged (beats keep their slices)
+- [ ] ✅ Switch targets off one at a time (e.g. only RAT): only that changes; DRIFT on: variations wander further each press
+- [ ] ✅ MIDI-map `Mutate` to an iRig pad: one press = one variation
+
 ## Slice sequencer (0.7.1)
 - [ ] ✅ Break on a pad, AUTO SLICE, SEQ tab, SLICE SEQ on. Live playing: hit the pad: the break plays exactly as recorded, in time; hit again: stops
 - [ ] ✅ Change Live's tempo (e.g. 160 -> 175): the break follows the grid (re-sequenced, slices at their own speed)

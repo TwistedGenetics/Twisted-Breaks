@@ -94,6 +94,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     samples.onStateChanged = [this] { markStateChanged(); };
     bank      = std::make_unique<tb::BreakBank> (samples);
     snapshots = std::make_unique<tb::SnapshotManager> (*this);
+    mutator   = std::make_unique<tb::Mutator> (*this);
     lights.onSettingsChanged = [this] { markStateChanged(); };
 }
 
@@ -103,6 +104,9 @@ TwistedBreaksProcessor::~TwistedBreaksProcessor()
     for (auto* f : { armedFrame.exchange (nullptr), overrideFrame.exchange (nullptr), appliedFrame.exchange (nullptr) })
         if (f != nullptr) snapshots->adoptForDeletion (f);
     snapshots.reset();
+    for (auto* f : { armedMutation.exchange (nullptr), appliedMutation.exchange (nullptr) })
+        if (f != nullptr) mutator->adoptForDeletion (f);
+    mutator.reset();
     bank.reset();
 
     cancelPendingUpdate();
@@ -273,17 +277,31 @@ void TwistedBreaksProcessor::fillParamsFrom (tb::AudioEngine::BlockParams& p, co
     fillParams (p, source);
 }
 
-int TwistedBreaksProcessor::switchOffset (const tb::TransportState& ts, int quant, int n) noexcept
+int TwistedBreaksProcessor::switchOffset (const tb::TransportState& ts, int quant, int n, int bars) noexcept
 {
     // NOW (or Live stopped): this block's first sample. Otherwise the next
-    // beat / bar line, if it falls in this block (-1: not yet).
+    // beat / bar line (or every `bars` bars from the song start), if it falls
+    // in this block (-1: not yet).
     if (quant == tb::params::switchNow || ! ts.isPlaying || ts.ppqPerSample <= 0.0) return 0;
+    bars = juce::jmax (1, bars);
     const double p0     = ts.ppqAtBlockStart;
-    const double unit   = quant == tb::params::switchBeat ? 1.0 : ts.ppqPerBar();
-    const double origin = quant == tb::params::switchBeat ? 0.0 : ts.ppqOfBarStart;
+    const double unit   = quant == tb::params::switchBeat ? 1.0 : ts.ppqPerBar() * bars;
+    const double origin = quant == tb::params::switchBeat ? 0.0
+                        : ts.ppqOfBarStart - (double) (((ts.barIndex % bars) + bars) % bars) * ts.ppqPerBar();
     const double next   = origin + std::ceil ((p0 - origin) / unit - 1.0e-9) * unit;
     const int off = (int) std::lround ((next - p0) / ts.ppqPerSample);
+
+    // A loop brace / relocate that lands right on such a boundary: it's now.
+    if (ts.jumped && std::abs (next - p0) < 1.0e-3) return 0;
     return off < n ? juce::jmax (0, off) : -1;
+}
+
+void TwistedBreaksProcessor::applyMutationFrame (tb::MutationFrame* f) noexcept
+{
+    f->applyTo (bridge.seq, bridge.sliceSeq);
+    auto* expected = f;
+    armedMutation.compare_exchange_strong (expected, nullptr);
+    appliedMutation.store (f);
 }
 
 void TwistedBreaksProcessor::applySnapshotFrame (tb::SnapshotFrame* f) noexcept
@@ -324,10 +342,13 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     const auto& ts = transport.update (getPlayHead(), n);
     transport.publish (bridge.transport);
 
-    // Snapshot due in this block? 0 = now, > 0 = part-way through, -1 = not yet.
+    // Snapshot / mutation due in this block? 0 = now, > 0 = part-way through, -1 = not yet.
     auto* armed = armedFrame.load();
     const int switchAt = armed != nullptr ? switchOffset (ts, armed->quant, n) : -1;
     if (switchAt == 0) applySnapshotFrame (armed);
+    auto* mutation = armedMutation.load();
+    const int mutateAt = mutation != nullptr ? switchOffset (ts, mutation->quant, n, mutation->bars) : -1;
+    if (mutateAt == 0) applyMutationFrame (mutation);
 
     auto live = [] (const std::atomic<float>* a) { return a->load (std::memory_order_relaxed); };
     auto overlay = [this] (tb::AudioEngine::BlockParams& bp)
@@ -345,31 +366,41 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     fillParams (p, live);
     overlay (p);
 
-    if (switchAt > 0)
-    {
-        // Split the block at the boundary: old snapshot before, new after.
-        juce::AudioBuffer<float> first  (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), 0, switchAt);
-        juce::AudioBuffer<float> second (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), switchAt, n - switchAt);
-        midiFirst.clear();
-        midiSecond.clear();
-        for (const auto m : midi)
-        {
-            if (m.samplePosition < switchAt) midiFirst.addEvent (m.data, m.numBytes, m.samplePosition);
-            else                             midiSecond.addEvent (m.data, m.numBytes, m.samplePosition - switchAt);
-        }
-        auto ts2 = ts;
-        ts2.ppqAtBlockStart += switchAt * ts.ppqPerSample;
-        ts2.numSamples  = n - switchAt;
-        ts2.justStarted = ts2.justStopped = ts2.jumped = false;
+    // Split the block at the boundaries, so each change lands on its exact sample.
+    int cuts[3]; int numCuts = 0;
+    if (switchAt > 0) cuts[numCuts++] = switchAt;
+    if (mutateAt > 0 && mutateAt != switchAt) cuts[numCuts++] = mutateAt;
+    if (numCuts == 2 && cuts[1] < cuts[0]) std::swap (cuts[0], cuts[1]);
+    cuts[numCuts++] = n;
 
-        engine.process (first, midiFirst, ts, p);
-        applySnapshotFrame (armed);
-        overlay (p);
-        engine.process (second, midiSecond, ts2, p);
+    if (numCuts == 1)
+    {
+        engine.process (buffer, midi, ts, p);
     }
     else
     {
-        engine.process (buffer, midi, ts, p);
+        int pos = 0;
+        for (int c = 0; c < numCuts; ++c)
+        {
+            const int end = cuts[c];
+            juce::AudioBuffer<float> part (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), pos, end - pos);
+            midiFirst.clear();
+            for (const auto m : midi)
+                if (m.samplePosition >= pos && (m.samplePosition < end || end == n))
+                    midiFirst.addEvent (m.data, m.numBytes, m.samplePosition - pos);
+            auto tsPart = ts;
+            tsPart.ppqAtBlockStart += pos * ts.ppqPerSample;
+            tsPart.numSamples = end - pos;
+            if (pos > 0) tsPart.justStarted = tsPart.justStopped = tsPart.jumped = false;
+            engine.process (part, midiFirst, tsPart, p);
+
+            if (end < n)
+            {
+                if (end == switchAt) { applySnapshotFrame (armed); overlay (p); }
+                if (end == mutateAt) applyMutationFrame (mutation);
+            }
+            pos = end;
+        }
     }
 
     midi.clear();   // instrument: nothing passes through
