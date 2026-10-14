@@ -94,6 +94,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
 - [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
 
+## RESAMPLE + CHARACTER (Phase 12)
+- [ ] ✅ RESAMPLE key: pattern + FX playing, select an empty pad, REC (LENGTH 2 BAR, START BAR): it waits for the bar, records 2 bars, then the pad has it as a synced, sliced loop that plays back in time
+- [ ] ✅ SOURCE GRP B: only group B's sound is in the take
+- [ ] ✅ The WAV is in Music / Twisted Breaks / Resamples; save the set, reopen: the pad still has it
+- [ ] ✅ MIDI-map `Resample` to a pad and REC from the controller; CANCEL while waiting
+- [ ] ✅ CHARACTER on a kick / snare: SP-1200 and LO-FI gritty, MPC60 warm, S950 dark; pitch the pad down 12: more grit; ALL PADS
+- [ ] ✅ CPU still fine with every pad on SP-1200
+
 ## Performance macros (Phase 11)
 - [ ] ✅ MACRO tab, a break playing: hold each macro key in turn: each sounds right and stops cleanly when let go (DELAY / REVERB tails ring)
 - [ ] ✅ Ride AMOUNT while holding DESTROY / DARKEN: mild to hard, no zipper noise

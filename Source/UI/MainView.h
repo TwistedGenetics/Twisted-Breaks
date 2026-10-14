@@ -11,6 +11,7 @@
 #include "UI/SequencerPanel.h"
 #include "UI/SliceSeqPanel.h"
 #include "UI/SnapshotPanel.h"
+#include "UI/ResamplePanel.h"
 #include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
@@ -33,7 +34,7 @@ namespace tb::ui
     };
 
     /** Highest development phase that is built (nav keys up to this are live). */
-    inline constexpr int kCurrentPhase = 11;
+    inline constexpr int kCurrentPhase = 12;
 
     /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button
@@ -86,7 +87,7 @@ namespace tb::ui
         void resized() override;
 
         /** What fills the screen area: the CRT, the group MIXER or the FX editor. */
-        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots };
+        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots, resample };
         void showView (View);
         View getView() const noexcept { return view; }
 
@@ -113,6 +114,7 @@ namespace tb::ui
         SequencerPanel   sequencer;
         SliceSeqPanel    sliceSeq;
         SnapshotPanel    snapshotPanel;
+        ResamplePanel    resamplePanel;
         uint32_t         shownSeqVersion = 0;
         View             view = View::crt;
         NeedleMeter      meter;

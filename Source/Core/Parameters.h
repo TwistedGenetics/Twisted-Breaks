@@ -39,6 +39,16 @@ namespace tb::params
     inline constexpr int kV11 = 11; // parameters introduced in 0.9.x (step features)
     inline constexpr int kV12 = 12; // parameters introduced in 0.10.x (MUTATE)
     inline constexpr int kV13 = 13; // parameters introduced in 0.11.x (macros)
+    inline constexpr int kV14 = 14; // parameters introduced in 0.12.x (resample, character)
+
+    // ---- RESAMPLE (Phase 12) ----------------------------------------------------
+    inline constexpr const char* rsmpSource = "rsmp_source";  // choice: Master, Group A..D
+    inline constexpr const char* rsmpBars   = "rsmp_bars";    // choice: 1, 2, 4, 8 bars
+    inline constexpr const char* rsmpStart  = "rsmp_start";   // choice: Now / Next Bar
+    inline constexpr const char* rsmpLoop   = "rsmp_loop";    // bool: the new pad plays as a synced loop
+    inline constexpr const char* rsmpSlice  = "rsmp_slice";   // bool: AUTO SLICE the result
+    inline constexpr const char* rsmpRec    = "rsmp_rec";     // bool: rising edge = REC (MIDI-mappable)
+    inline constexpr int rsmpBarCounts[] = { 1, 2, 4, 8 };
 
     // ---- Performance macros (Phase 11): "macro_<key>" on / off per macro (MacroDefs) ----
     inline constexpr const char* macroAmount = "macro_amount";   // int 0..100 %: MILD .. HARD
@@ -122,6 +132,9 @@ namespace tb::params
 
     // ---- Per pad (0.8: break bank) -----------------------------------------------
     inline constexpr const char* padFollowBank = "bank";   // bool: play the active bank break instead of its own sample
+
+    // ---- Per pad (0.12: vintage sampler character) ---------------------------------
+    inline constexpr const char* padCharacter = "char";    // choice: Clean / SP-1200 / MPC60 / S950 / Lo-Fi (PadVoice::character)
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB

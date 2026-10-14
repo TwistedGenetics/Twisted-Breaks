@@ -37,6 +37,72 @@ namespace tb
         return best;
     }
 
+    //==========================================================================
+    //  CHARACTER: vintage sampler modes
+    //==========================================================================
+    const PadVoice::Character& PadVoice::character (int i) noexcept
+    {
+        static const Character table[kNumCharacters] = {
+            { "CLEAN",   0.0,     0,  2, 0.0f },
+            { "SP-1200", 26040.0, 12, 0, 0.0f },
+            { "MPC60",   40000.0, 12, 1, 15000.0f },
+            { "S950",    31250.0, 12, 1, 9000.0f },
+            { "LO-FI",   11025.0, 8,  0, 0.0f },
+        };
+        return table[juce::jlimit (0, kNumCharacters - 1, i)];
+    }
+
+    float PadVoice::readCharacter (const Character& c, const float* d, int n, double pos, double sourceRate) noexcept
+    {
+        if (c.rate <= 0.0 && c.bits == 0) return hermite (d, n, pos);
+
+        auto linearAt = [d, n] (double p)
+        {
+            const int i0 = juce::jlimit (0, n - 1, (int) std::floor (p));
+            const int i1 = juce::jmin (n - 1, i0 + 1);
+            const float f = (float) (p - std::floor (p));
+            return d[i0] + (d[i1] - d[i0]) * f;
+        };
+
+        float v;
+        if (c.rate > 0.0)
+        {
+            // The machine's own sample grid: index k sits at source position k * step.
+            const double step = sourceRate / c.rate;
+            const double k = pos / step;
+            const double k0 = std::floor (k);
+            const float s0 = linearAt (k0 * step);
+            if (c.interp == 0) v = s0;                                    // drop-sample: hold each stored sample
+            else               v = s0 + (linearAt ((k0 + 1.0) * step) - s0) * (float) (k - k0);
+        }
+        else
+        {
+            v = c.interp == 2 ? hermite (d, n, pos) : linearAt (pos);
+        }
+
+        if (c.bits > 0)
+        {
+            const float q = (float) (1 << (c.bits - 1));
+            v = juce::jlimit (-1.0f, 1.0f - 1.0f / q, std::round (v * q) / q);
+        }
+        return v;
+    }
+
+    void PadVoice::setCharacter (int c) noexcept
+    {
+        c = juce::jlimit (0, kNumCharacters - 1, c);
+        if (c != characterIndex) { lp1L = lp2L = lp1R = lp2R = 0.0f; }
+        characterIndex = c;
+        const float hz = character (c).lowpassHz;
+        lpCoef = hz > 0.0f ? (float) (1.0 - std::exp (-juce::MathConstants<double>::twoPi * hz / hostRate)) : 0.0f;
+    }
+
+    float PadVoice::read (const float* d, int n, double pos) const noexcept
+    {
+        if (characterIndex == 0) return hermite (d, n, pos);
+        return readCharacter (character (characterIndex), d, n, pos, buffer != nullptr ? buffer->sourceSampleRate : hostRate);
+    }
+
     void PadVoice::prepare (double rate) noexcept
     {
         hostRate        = rate > 0.0 ? rate : 44100.0;
@@ -97,6 +163,9 @@ namespace tb
         syncPeriod   = s.loop ? s.syncPeriodBeats : 0.0;
         regionStart  = s.regionStart;
         regionEnd    = s.regionEnd;
+        characterIndex = -1;
+        setCharacter (s.character);
+        lp1L = lp2L = lp1R = lp2R = 0.0f;
         velocityGain = juce::jlimit (0.0f, 1.0f, level);
         releaseGain  = 1.0f;
         releaseStep  = 1.0f / juce::jmax (1.0f, (float) (hostRate * 0.005));
@@ -142,6 +211,7 @@ namespace tb
     void PadVoice::update (const Settings& s) noexcept
     {
         if (! active) return;
+        setCharacter (s.character);
         increment.setTargetValue (s.increment);
         gainL.setTargetValue (s.gainLeft);
         gainR.setTargetValue (s.gainRight);
@@ -228,8 +298,8 @@ namespace tb
                 while (position >= (double) hi) position -= span;
                 while (position <  (double) lo) position += span;
 
-                l = hermite (srcL, len, position);
-                r = stereo ? hermite (srcR, len, position) : l;
+                l = read (srcL, len, position);
+                r = stereo ? read (srcR, len, position) : l;
 
                 // Seam crossfade: blend toward the audio that would come next
                 // after the wrap, so the jump back is inaudible.
@@ -241,8 +311,8 @@ namespace tb
                         const float  t   = 1.0f - (float) (toEdge / (double) xf);
                         const double alt = reverse ? (double) hi + (position - (double) lo)
                                                    : (double) lo - ((double) hi - position);
-                        const float al = hermite (srcL, len, alt);
-                        const float ar = stereo ? hermite (srcR, len, alt) : al;
+                        const float al = read (srcL, len, alt);
+                        const float ar = stereo ? read (srcR, len, alt) : al;
                         l = l + (al - l) * t;
                         r = r + (ar - r) * t;
                     }
@@ -256,8 +326,15 @@ namespace tb
                 if (remaining <= 0.0) { kill(); break; }
                 if (remaining < (double) edgeFadeSamples) env *= (float) (remaining / (double) edgeFadeSamples);
 
-                l = hermite (srcL, len, position);
-                r = stereo ? hermite (srcR, len, position) : l;
+                l = read (srcL, len, position);
+                r = stereo ? read (srcR, len, position) : l;
+            }
+
+            // The machine's output filter (2-pole).
+            if (lpCoef > 0.0f)
+            {
+                lp1L += lpCoef * (l - lp1L);  lp2L += lpCoef * (lp1L - lp2L);  l = lp2L;
+                lp1R += lpCoef * (r - lp1R);  lp2R += lpCoef * (lp1R - lp2R);  r = lp2R;
             }
 
             if (releasing)

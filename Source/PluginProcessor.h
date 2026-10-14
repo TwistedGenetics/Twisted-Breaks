@@ -9,6 +9,7 @@
 #include "Core/PadLights.h"
 #include "Core/SnapshotManager.h"
 #include "Core/Mutator.h"
+#include "Core/Resampler.h"
 #include "Core/BreakBank.h"
 
 /*
@@ -67,6 +68,7 @@ public:
     tb::SnapshotManager& getSnapshots() noexcept { return *snapshots; }
     tb::BreakBank&       getBank() noexcept      { return *bank; }
     tb::Mutator&         getMutator() noexcept   { return *mutator; }
+    tb::Resampler&       getResampler() noexcept { return *resampler; }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -142,6 +144,7 @@ private:
     std::unique_ptr<tb::BreakBank>       bank;        // after samples: destroyed first
     std::unique_ptr<tb::SnapshotManager> snapshots;
     std::unique_ptr<tb::Mutator>         mutator;
+    std::unique_ptr<tb::Resampler>       resampler;
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;
     void applySnapshotFrame (tb::SnapshotFrame*) noexcept;
@@ -192,6 +195,7 @@ private:
         std::atomic<float>* sliceSeq = nullptr;
         std::atomic<float>* sliceSlot = nullptr;
         std::atomic<float>* followBank = nullptr;
+        std::atomic<float>* character = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

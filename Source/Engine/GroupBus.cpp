@@ -50,7 +50,8 @@ namespace tb
         return input;
     }
 
-    float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock& clock) noexcept
+    float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock& clock,
+                             juce::AudioBuffer<float>* tap) noexcept
     {
         numSamples = juce::jmin (numSamples, spanLength);
 
@@ -95,6 +96,13 @@ namespace tb
                 if (outR != nullptr) outR[i] += vr;
                 peak = juce::jmax (peak, std::abs (vl), std::abs (vr));
             }
+        }
+        // RESAMPLE tap: the same output, added into the recorder's scratch.
+        if (tap != nullptr && destStart + numSamples <= tap->getNumSamples())
+        {
+            const float l = gainL.getCurrentValue(), r = gainR.getCurrentValue();
+            tap->addFrom (0, destStart, inL, numSamples, l);
+            tap->addFrom (1, destStart, inR, numSamples, r);
         }
         return peak;
     }

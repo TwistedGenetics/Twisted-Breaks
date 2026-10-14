@@ -43,7 +43,9 @@ namespace tb
         void setFx (uint32_t onMask, const std::array<std::array<float, 3>, 16>& params) noexcept { chain.setTargets (onMask, params); }
 
         /** FX, then level / pan, adding into `dest` at `destStart`. Returns the post-fader peak. */
-        float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock&) noexcept;
+        /** `tap` (optional): the group's output is also added there (RESAMPLE). */
+        float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock&,
+                       juce::AudioBuffer<float>* tap = nullptr) noexcept;
 
         /** PANIC: silence the effects (tails, repeats) too. */
         void panicFx() noexcept { chain.reset(); }

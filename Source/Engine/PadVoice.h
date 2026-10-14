@@ -30,6 +30,17 @@ namespace tb
 
         Holds a SampleBuffer::Ptr, so the buffer stays alive while it plays;
         dropping that reference on the audio thread is safe (see SampleBuffer).
+
+        CHARACTER (Phase 12): vintage sampler modes. The sample is read as if
+        the machine had stored it at its own rate and bit depth, so pitching
+        down stretches its steps (the classic gritty SP / MPC drums) and
+        pitching up aliases, as on the hardware:
+
+            CLEAN    float, 4-point Hermite (default)
+            SP-1200  26.04 kHz, 12 bit, no interpolation (drop-sample)
+            MPC60    40 kHz, 12 bit, linear, gentle 2-pole low-pass ~15 kHz
+            S950     31.25 kHz, 12 bit, linear, darker 2-pole low-pass ~9 kHz
+            LO-FI    11.025 kHz, 8 bit, no interpolation
     */
     class PadVoice
     {
@@ -44,7 +55,19 @@ namespace tb
             double increment   = 1.0; // source samples per output sample
             float  gainLeft    = 1.0f;
             float  gainRight   = 1.0f;
+            int    character   = 0;   // params::Character (0 = CLEAN)
         };
+
+        struct Character
+        {
+            const char* name;
+            double rate;      // the machine's sample rate (0 = the file's own)
+            int    bits;      // 0 = float
+            int    interp;    // 0 none (drop-sample), 1 linear, 2 Hermite
+            float  lowpassHz; // output filter, 2-pole (0 = none)
+        };
+        static constexpr int kNumCharacters = 5;
+        static const Character& character (int i) noexcept;
 
         void prepare (double hostSampleRate) noexcept;
 
@@ -63,7 +86,7 @@ namespace tb
         /** Live updates once per block (speed, gain, pan, region edges). */
         void update (const Settings&) noexcept;
         /** Gain / pan only (slice-sequencer voices keep their own region and speed). */
-        void updateGains (const Settings& s) noexcept { if (active) { gainL.setTargetValue (s.gainLeft); gainR.setTargetValue (s.gainRight); } }
+        void updateGains (const Settings& s) noexcept { if (active) { setCharacter (s.character); gainL.setTargetValue (s.gainLeft); gainR.setTargetValue (s.gainRight); } }
 
         /** Re-locks a synced loop to the host position at the start of this block. */
         void syncTo (double ppq) noexcept;
@@ -82,6 +105,8 @@ namespace tb
         float renderAdding (juce::AudioBuffer<float>& out, int startSample, int numSamples) noexcept;
 
         static float hermite (const float* data, int length, double pos) noexcept;
+        /** One channel at source position `pos` through character `c` (no output filter). */
+        static float readCharacter (const Character& c, const float* data, int length, double pos, double sourceRate) noexcept;
 
         /**
             How many beats a loop region spans, for tempo sync. Picks the
@@ -119,5 +144,11 @@ namespace tb
         float fadeInStep        = 1.0f;
         float releaseGain       = 1.0f;
         float releaseStep       = 0.005f;
+
+        int   characterIndex    = 0;
+        float lpCoef            = 0.0f;                 // output filter (0 = off)
+        float lp1L = 0, lp2L = 0, lp1R = 0, lp2R = 0;
+        void  setCharacter (int c) noexcept;
+        float read (const float* data, int length, double pos) const noexcept;
     };
 }

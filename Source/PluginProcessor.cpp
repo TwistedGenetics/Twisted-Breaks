@@ -66,9 +66,10 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.sliceSeq  = apvts.getRawParameterValue (padId (pad, padSliceSeq));
         pp.sliceSlot = apvts.getRawParameterValue (padId (pad, padSliceSlot));
         pp.followBank = apvts.getRawParameterValue (padId (pad, padFollowBank));
+        pp.character  = apvts.getRawParameterValue (padId (pad, padCharacter));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
-                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank);
+                 && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -100,6 +101,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     bank      = std::make_unique<tb::BreakBank> (samples);
     snapshots = std::make_unique<tb::SnapshotManager> (*this);
     mutator   = std::make_unique<tb::Mutator> (*this);
+    resampler = std::make_unique<tb::Resampler> (*this);
     lights.onSettingsChanged = [this] { markStateChanged(); };
 }
 
@@ -112,6 +114,7 @@ TwistedBreaksProcessor::~TwistedBreaksProcessor()
     for (auto* f : { armedMutation.exchange (nullptr), appliedMutation.exchange (nullptr) })
         if (f != nullptr) mutator->adoptForDeletion (f);
     mutator.reset();
+    resampler.reset();
     bank.reset();
 
     cancelPendingUpdate();
@@ -261,6 +264,7 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.sliceSeq  = ld (src.sliceSeq) > 0.5f;
         dst.sliceSlot = juce::jlimit (0, 7, juce::roundToInt (ld (src.sliceSlot)) - 1);
         dst.followBank = ld (src.followBank) > 0.5f;
+        dst.character  = juce::roundToInt (ld (src.character));
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)

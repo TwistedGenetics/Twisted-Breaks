@@ -90,6 +90,7 @@ namespace tb
             bool  sliceSeq  = false; // a hit starts / stops the slice sequence
             int   sliceSlot = 0;     // 0..7
             bool  followBank = false; // play the active bank break
+            int   character = 0;      // PadVoice::character (vintage mode)
         };
 
         struct GroupParams
@@ -194,7 +195,29 @@ namespace tb
             return appliedFxParams[(size_t) juce::jlimit (0, kNumGroups - 1, group)][(size_t) juce::jlimit (0, 15, fxId)][(size_t) juce::jlimit (0, 2, param)];
         }
 
+        // ---- RESAMPLE recorder (Phase 12) ------------------------------------
+        /*
+            Records the master output (source 0) or a group's output (1..4)
+            for `bars` bars, from the next bar line (or straight away) into a
+            buffer allocated in prepare() (kMaxResampleSeconds). States:
+            0 idle, 1 armed, 2 recording, 3 done (the message thread copies
+            the take, then calls resampleTaken()).
+        */
+        static constexpr double kMaxResampleSeconds = 32.0;
+        enum ResampleState { rsIdle = 0, rsArmed = 1, rsRecording = 2, rsDone = 3 };
+        /** Message thread. False if a take is still being recorded / collected. */
+        bool armResample (int source, int bars, bool atBar) noexcept;
+        void cancelResample() noexcept           { rsCancel.store (true); }
+        int  getResampleState() const noexcept   { return rsState.load(); }
+        int  getResampleWritten() const noexcept { return rsWritten.load(); }
+        int  getResampleLength() const noexcept  { return rsLength.load(); }
+        /** Message thread, in state rsDone: the take (first getResampleLength() samples). */
+        const juce::AudioBuffer<float>& getResampleTake() const noexcept { return rsBuffer; }
+        void resampleTaken() noexcept            { int d = rsDone; rsState.compare_exchange_strong (d, rsIdle); }
+        double getSampleRate() const noexcept    { return sampleRate; }
+
     private:
+        void resampleCapture (const juce::AudioBuffer<float>& master, const TransportState&, int numSamples) noexcept;
         void triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer = false,
                          const SeqStep* step = nullptr) noexcept;
         /** A step's pitch / reverse / slice, as voice settings for this pad. */
@@ -336,6 +359,13 @@ namespace tb
 
         bool   lastPanicParam = false;
         double sampleRate     = 44100.0;
+
+        // RESAMPLE
+        juce::AudioBuffer<float> rsBuffer, rsTap;
+        std::atomic<int>  rsState { rsIdle }, rsWritten { 0 }, rsLength { 0 };
+        std::atomic<int>  rsSource { 0 }, rsBars { 2 };
+        std::atomic<bool> rsAtBar { true }, rsCancel { false };
+        bool rsTapActive = false;
 
         // Scope decimation
         int   scopeDecimation = 8;

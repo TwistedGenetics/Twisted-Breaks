@@ -133,6 +133,11 @@ namespace tb::params
             // ---- 0.8: break bank ----
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padFollowBank), kV10 }, prefix + "Follow Bank", false));
+
+            // ---- 0.12: vintage character ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padCharacter), kV14 }, prefix + "Character",
+                StringArray { "Clean", "SP-1200", "MPC60", "S950", "Lo-Fi" }, 0));
         }
     }
 
@@ -200,6 +205,17 @@ namespace tb::params
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqFill, kV11 }, "Sequencer Fill", false));
+
+        // ---- Phase 12: RESAMPLE ----
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { rsmpSource, kV14 }, "Resample Source",
+                                                            StringArray { "Master", "Group A", "Group B", "Group C", "Group D" }, 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { rsmpBars, kV14 }, "Resample Length",
+                                                            StringArray { "1 Bar", "2 Bars", "4 Bars", "8 Bars" }, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { rsmpStart, kV14 }, "Resample Start",
+                                                            StringArray { "Now", "Next Bar" }, 1));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { rsmpLoop, kV14 }, "Resample As Loop", true));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { rsmpSlice, kV14 }, "Resample Auto Slice", true));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { rsmpRec, kV14 }, "Resample", false));
 
         // ---- Phase 11: performance macros ----
         for (int m = 0; m < macro::kNumMacros; ++m)

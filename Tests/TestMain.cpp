@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 592, "592 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 614, "614 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 4 snapshot / bank + 22 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3496,6 +3496,215 @@ namespace
     }
 
 
+
+    //==========================================================================
+    //  PHASE 12: vintage CHARACTER + RESAMPLE
+    //==========================================================================
+    void testCharacter()
+    {
+        std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
+        using V = tb::PadVoice;
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "16 CHARACTER + 6 RESAMPLE parameters (614 in total)");
+
+        // The read path on its own: a 48 kHz ramp.
+        std::vector<float> ramp (4800);
+        for (int i = 0; i < 4800; ++i) ramp[(size_t) i] = -0.9f + 1.8f * (float) i / 4799.0f;
+        const float* d = ramp.data();
+        bool clean = true;
+        for (double pos = 10.0; pos < 4700.0; pos += 7.37) clean &= std::abs (V::readCharacter (V::character (0), d, 4800, pos, 48000.0) - V::hermite (d, 4800, pos)) < 1.0e-7f;
+        check (clean, "CLEAN reads exactly as before (4-point Hermite)");
+
+        // A steep sawtooth too, so 8-bit steps don't hide the 11 kHz ones.
+        std::vector<float> saw (4800);
+        for (int i = 0; i < 4800; ++i) saw[(size_t) i] = -0.9f + 1.8f * (float) (i % 480) / 479.0f;
+        auto stats = [&] (int c, double inc, const float* d = nullptr)
+        {
+            if (d == nullptr) d = ramp.data();
+            // Output-rate run lengths of held values, and the bit grid.
+            int runs = 0, samples = 0; bool onGrid = true; float last = 99.0f;
+            const float q = (float) (1 << (V::character (c).bits - 1));
+            for (double pos = 100.0; pos < 4000.0; pos += inc)
+            {
+                const float v = V::readCharacter (V::character (c), d, 4800, pos, 48000.0);
+                onGrid &= std::abs (v * q - std::round (v * q)) < 1.0e-3f;
+                if (v != last) ++runs;
+                last = v; ++samples;
+            }
+            return std::make_pair ((double) samples / runs, onGrid);
+        };
+        const auto sp  = stats (1, 1.0), spDown = stats (1, 0.5), lofi = stats (4, 1.0, saw.data());
+        check (sp.second && std::abs (sp.first - 48000.0 / 26040.0) < 0.05,
+               "SP-1200: 12-bit values, each held for one 26.04 kHz sample (" + juce::String (sp.first, 3) + " output samples)");
+        check (std::abs (spDown.first / sp.first - 2.0) < 0.05, "...an octave down, each step is held twice as long: the gritty pitched-down sound");
+        check (lofi.second && std::abs (lofi.first - 48000.0 / 11025.0) < 0.1, "LO-FI: 8-bit, 11 kHz steps (" + juce::String (lofi.first, 2) + ")");
+
+        // Through a pad: noise, CLEAN vs MPC60 vs S950 (their output filters).
+        juce::AudioBuffer<float> noise (1, 48000);
+        juce::Random rnd (9);
+        for (int i = 0; i < noise.getNumSamples(); ++i) noise.setSample (0, i, rnd.nextFloat() * 0.5f - 0.25f);
+        Rig r;
+        r.load (0, writeAudio ("char_noise", noise, 48000.0, Fmt::wavFloat));
+        setParam (r.p, tb::params::masterLimiter, 0.0f);
+        setPadParam (r.p, 0, tb::params::padFixVel, 1.0f);
+        r.settle();
+        auto hf = [&] (int character)
+        {
+            setPadParam (r.p, 0, tb::params::padCharacter, (float) character);
+            r.settle();
+            auto out = renderTimeline (r, 12000, { { 0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) } });
+            double dd = 0.0, e = 0.0;
+            for (int i = 1001; i < 11000; ++i) { const float a = out.getSample (0, i), b = out.getSample (0, i - 1); dd += (a - b) * (a - b); e += a * a; }
+            r.p.requestPanic(); r.settle();
+            return std::make_pair (dd / e, out);
+        };
+        const auto c0 = hf (0), mpc = hf (2), s950 = hf (3), sp12 = hf (1);
+        check (c0.first > mpc.first * 1.2 && mpc.first > s950.first * 1.5,
+               "MPC60's soft low-pass and S950's darker one (HF ratio clean " + juce::String (c0.first, 3) + ", MPC60 " + juce::String (mpc.first, 3)
+                 + ", S950 " + juce::String (s950.first, 3) + ")");
+        bool grid = true;
+        for (int i = 2000; i < 10000; ++i) { const float v = sp12.second.getSample (0, i) * 2048.0f; grid &= std::abs (v - std::round (v)) < 2.0e-3f; }
+        check (grid, "a pad set to SP-1200 really plays 12-bit sample values (full level, centre pan)");
+    }
+
+    void testResample()
+    {
+        std::cout << "\n== Phase 12: RESAMPLE ==" << std::endl;
+        SeqRig x;
+        auto& rs = x.r.p.getResampler();
+        auto& eng = x.r.p.getEngine();
+        const auto folder = testDir().getChildFile ("resamples");
+        folder.deleteRecursively();
+        rs.setFolder (folder);
+        setParam (x.r.p, tb::params::masterLimiter, 0.0f);
+        setPadParam (x.r.p, 1, tb::params::padPan, 0.0f);
+        x.seq.clearAll();
+        for (int k : { 0, 4, 6, 10, 12 }) x.step (0, k, 127);
+        for (int k : { 2, 8, 14 }) x.step (1, k, 90);
+
+        auto waitSaved = [&] (int count)
+        {
+            for (int i = 0; i < 500 && rs.getCount() < count; ++i) { rs.poll(); juce::MessageManager::getInstance()->runDispatchLoopUntil (10); }
+            waitForLoads (x.r.p);
+            x.r.settle();
+            for (int i = 0; i < 300; ++i) { rs.poll(); juce::MessageManager::getInstance()->runDispatchLoopUntil (5); if (! x.r.p.getSamples().isBusy()) break; }
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+            rs.poll();
+            waitForLoads (x.r.p);
+        };
+
+        // NEXT BAR, 1 bar, the master, onto pad 4. Live starts half-way through bar 1.
+        setParam (x.r.p, tb::params::rsmpBars, 0.0f);
+        setParam (x.r.p, tb::params::rsmpStart, 1.0f);
+        rs.setSelectedPad (3);
+        rs.record();
+        check (rs.getState() == tb::Resampler::State::armed, "REC arms the recorder");
+        x.r.host.ppq = 2.0; x.r.host.playing = true;
+        auto out = renderTimeline (x.r, 96000 + 48000 + 2048, {});
+        x.r.host.playing = false;
+        rs.poll();
+        const bool done = eng.getResampleState() == tb::AudioEngine::rsDone || rs.getState() == tb::Resampler::State::saving;
+        bool exact = eng.getResampleLength() == 96000;
+        const auto& take = eng.getResampleTake();
+        for (int i = 0; i < 96000 && exact; i += 7) exact &= take.getSample (0, i) == out.getSample (0, 48000 + i) && take.getSample (1, i) == out.getSample (1, 48000 + i);
+        check (done && exact, "it records exactly one bar of what you hear, from the bar-line sample (48000) on");
+        waitSaved (1);
+        const auto f = rs.getLastFile();
+        std::unique_ptr<juce::AudioFormatReader> rd;
+        { juce::AudioFormatManager fm; fm.registerBasicFormats(); rd.reset (fm.createReaderFor (f)); }
+        check (f.existsAsFile() && f.isAChildOf (folder) && rd != nullptr && rd->lengthInSamples == 96000 && rd->bitsPerSample == 24 && rd->numChannels == 2,
+               "...saves it as a 24-bit stereo WAV in the resample folder (" + f.getFileName() + ")");
+        const auto info = x.r.p.getSamples().getInfo (3);
+        auto raw = [&] (int pad, const char* id) { return x.r.p.getParameters().getRawParameterValue (tb::params::padId (pad, id))->load(); };
+        check (info.buffer != nullptr && info.file == f && juce::roundToInt (raw (3, tb::params::padMode)) == tb::params::modeLoop && raw (3, tb::params::padSync) > 0.5f,
+               "...and puts it on pad 4 as a tempo-synced loop");
+        check (info.slices.count >= 4, "...AUTO SLICEd at its hits (" + juce::String (info.slices.count) + " slices)");
+        rd.reset();
+
+        // Pad 4 plays it back in time: resample == what the pattern played.
+        x.seq.clearAll();
+        x.r.p.requestPanic(); x.r.settle();
+
+        // A group only, starting NOW with Live stopped.
+        x.seq.clearAll();
+        setPadParam (x.r.p, 1, tb::params::padGroup, 1.0f);           // pad 2 on B
+        x.r.settle();
+        setParam (x.r.p, tb::params::rsmpSource, 2.0f);                // Group B
+        setParam (x.r.p, tb::params::rsmpStart, 0.0f);
+        rs.setSelectedPad (5);
+        rs.record();
+        auto out2 = renderTimeline (x.r, 96000 + 4096, { { 100, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) },        // pad 1 (A)
+                                                         { 30000, juce::MidiMessage::noteOn (1, 37, (juce::uint8) 127) } });   // pad 2 (B)
+        rs.poll();
+        const auto& t2 = eng.getResampleTake();
+        const auto o2 = onsets (t2, 0);
+        check (eng.getResampleLength() == 96000 && o2 == std::vector<int> { 30000 },
+               "GROUP B with Live stopped: starts at once, 1 bar at 120 BPM, and holds only group B's hit (" + listOf (o2) + ")");
+        waitSaved (2);
+        check (x.r.p.getSamples().getInfo (5).buffer != nullptr, "...onto pad 6");
+        setParam (x.r.p, tb::params::rsmpSource, 0.0f);
+
+        // CANCEL while armed, and the Resample parameter.
+        setParam (x.r.p, tb::params::rsmpStart, 1.0f);
+        rs.record();
+        rs.cancel();
+        x.r.settle();
+        check (rs.getState() == tb::Resampler::State::idle && rs.getCount() == 2, "CANCEL drops an armed take");
+        setParam (x.r.p, tb::params::rsmpRec, 1.0f);
+        rs.poll();
+        check (rs.getState() == tb::Resampler::State::armed, "the Resample parameter arms it too (MIDI-map it to a pad)");
+        setParam (x.r.p, tb::params::rsmpRec, 0.0f);
+        rs.cancel(); x.r.settle(); rs.poll();
+
+        // The set reloads it like any sample.
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        waitForLoads (q);
+        check (q.getSamples().getInfo (3).file == f && q.getSamples().getInfo (3).buffer != nullptr, "a saved set reloads the resample from its file");
+    }
+
+    void testResampleView()
+    {
+        std::cout << "\n== Phase 12: RESAMPLE view ==" << std::endl;
+        Rig r;
+        r.p.getResampler().setFolder (testDir().getChildFile ("resamples_ui"));
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::MainView* view = nullptr; tb::ui::ResamplePanel* panel = nullptr; juce::Button* key = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* rp = dynamic_cast<tb::ui::ResamplePanel*> (&c)) panel = rp;
+            if (auto* sk = dynamic_cast<tb::ui::SelectorKey*> (&c)) if (sk->getName() == "RESAMPLE") key = sk;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (view && panel && key && key->isEnabled(), "a 7th top-rail key, RESAMPLE, is online");
+        if (! (view && panel && key)) return;
+        key->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (panel->isVisible() && view->getView() == tb::ui::MainView::View::resample, "it opens the RESAMPLE view in the screen area");
+
+        panel->characterButton (3).triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        auto ch = [&] (int pad) { return juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::padId (pad, tb::params::padCharacter))->load()); };
+        check (ch (0) == 3 && ch (1) == 0, "a CHARACTER key sets the selected pad's mode (S950)");
+        panel->allPadsButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        bool all = true;
+        for (int p = 0; p < 16; ++p) all &= ch (p) == 3;
+        check (all, "ALL PADS gives every pad that CHARACTER");
+
+        panel->recButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (r.p.getResampler().getState() == tb::Resampler::State::armed, "REC arms the recorder");
+        panel->cancelButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        r.settle();
+        check (r.p.getResampler().getState() == tb::Resampler::State::idle, "CANCEL stops it");
+    }
+
     //==========================================================================
     //  PHASE 11: performance macros
     //==========================================================================
@@ -3503,7 +3712,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 592, "11 macro parameters (592 in total)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "11 macro parameters (614 in total with Phase 12)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -3783,7 +3992,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 592, "13 MUTATE parameters (592 in total with the macros)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "13 MUTATE parameters (614 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -4249,6 +4458,20 @@ namespace
             find (*ed);
             host.playing = true;
         }
+        if (out.getFileName().contains ("resample"))
+        {
+            setPadParam (p, 0, tb::params::padCharacter, 1.0f);       // pad 1 on SP-1200
+            setParam (p, tb::params::rsmpBars, 1.0f);
+            p.getResampler().setFolder (testDir().getChildFile ("snap_resamples"));
+            p.getResampler().setSelectedPad (0);
+            p.getResampler().record();
+            std::function<void (juce::Component&)> findView = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::resample);
+                for (auto* child : c.getChildren()) findView (*child);
+            };
+            findView (*ed);
+        }
         if (out.getFileName().contains ("macro"))
         {
             setParam (p, tb::macro::paramId (6), 1.0f);       // JUNGLE ROLL held
@@ -4389,6 +4612,9 @@ int main (int argc, char* argv[])
         testMutateView();
         testMacros();
         testMacroView();
+        testCharacter();
+        testResample();
+        testResampleView();
         testEditorDrivesState();
         testRealtimeSafety();
 

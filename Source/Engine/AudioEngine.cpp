@@ -41,6 +41,12 @@ namespace tb
         for (auto& g : groups)
             g.prepare (sampleRate, juce::jmax (512, maxBlockSize));
 
+        // RESAMPLE: the whole take and a group tap, allocated now (never on the audio thread).
+        rsBuffer.setSize (2, (int) std::ceil (kMaxResampleSeconds * sampleRate));
+        rsBuffer.clear();
+        rsTap.setSize (2, juce::jmax (8192, maxBlockSize));
+        rsState.store (rsIdle);
+
         // Scope shows roughly the same time window at any sample rate.
         scopeDecimation = juce::jmax (1, (int) std::round (sampleRate / 5512.5));
         scopeScratch.assign ((size_t) (maxBlockSize / scopeDecimation + 2), 0.0f);
@@ -258,6 +264,7 @@ namespace tb
             s.regionEnd   = s1;
             s.reverse     = pp.reverse;
             s.loop        = pp.mode == params::modeLoop;
+            s.character   = juce::jlimit (0, PadVoice::kNumCharacters - 1, pp.character);
 
             const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
             const double fileRate = buf->sourceSampleRate / sampleRate;
@@ -1163,8 +1170,10 @@ namespace tb
                 clock.ppqPerBar    = transportNow->ppqPerBar();
                 clock.playing      = transportNow->isPlaying && transportNow->ppqPerSample > 0.0;
             }
+            const int tapGroup = rsTapActive ? rsSource.load (std::memory_order_relaxed) - 1 : -1;
             for (int g = 0; g < kNumGroups; ++g)
-                groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g], groups[(size_t) g].mixInto (buffer, start, n, clock));
+                groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g],
+                                                    groups[(size_t) g].mixInto (buffer, start, n, clock, g == tapGroup ? &rsTap : nullptr));
 
             start += n;
             num   -= n;
@@ -1201,6 +1210,14 @@ namespace tb
         lastPanicParam = params.panicParam;
         if (bridge.panicRequested.exchange (false) || panicEdge)
             panic();
+
+        // ---- RESAMPLE from a group: its output is gathered while rendering.
+        {
+            const int st = rsState.load (std::memory_order_relaxed);
+            rsTapActive = (st == rsArmed || st == rsRecording) && rsSource.load (std::memory_order_relaxed) > 0
+                          && numSamples <= rsTap.getNumSamples();
+            if (rsTapActive) rsTap.clear (0, numSamples);
+        }
 
         // ---- Sequencer steps due in this block (sample positions, sorted).
         collectSequencerEvents (transport, params, numSamples);
@@ -1292,6 +1309,7 @@ namespace tb
         master.setGainDb (params.masterGainDb);
         master.setLimiterEnabled (params.limiterEnabled);
         const auto result = master.process (buffer, numSamples);
+        resampleCapture (buffer, transport, numSamples);
 
         // ---- Publish to the UI (relaxed atomics; display only)
         auto storeMax = [] (std::atomic<float>& a, float v)
@@ -1351,5 +1369,63 @@ namespace tb
             }
         }
         bridge.pushScope (scopeScratch.data(), n);
+    }
+    //==========================================================================
+    //  RESAMPLE
+    //==========================================================================
+    bool AudioEngine::armResample (int source, int bars, bool atBar) noexcept
+    {
+        const int st = rsState.load();
+        if (st == rsRecording || st == rsDone) return false;
+        rsSource.store (juce::jlimit (0, kNumGroups, source));
+        rsBars.store (juce::jlimit (1, 64, bars));
+        rsAtBar.store (atBar);
+        rsCancel.store (false);
+        rsWritten.store (0);
+        rsState.store (rsArmed);
+        return true;
+    }
+
+    void AudioEngine::resampleCapture (const juce::AudioBuffer<float>& out, const TransportState& t, int numSamples) noexcept
+    {
+        int st = rsState.load (std::memory_order_relaxed);
+        if (st == rsIdle || st == rsDone) return;
+        if (rsCancel.exchange (false)) { rsState.store (rsIdle); return; }
+
+        int from = 0;
+        if (st == rsArmed)
+        {
+            const bool playing = t.isPlaying && t.ppqPerSample > 0.0;
+            const double barPpq = t.ppqPerBar();
+            const int bars = rsBars.load (std::memory_order_relaxed);
+            if (playing && rsAtBar.load (std::memory_order_relaxed))
+            {
+                const double p0 = t.ppqAtBlockStart;
+                const double next = t.ppqOfBarStart + std::ceil ((p0 - t.ppqOfBarStart) / barPpq - 1.0e-9) * barPpq;
+                from = (int) std::lround ((next - p0) / t.ppqPerSample);
+                if (from >= numSamples) return;                 // the bar line is in a later block
+                from = juce::jmax (0, from);
+            }
+            const double samples = playing ? bars * barPpq / t.ppqPerSample
+                                           : bars * barPpq * 60.0 / juce::jmax (1.0, t.bpm) * sampleRate;
+            rsLength.store (juce::jlimit (1, rsBuffer.getNumSamples(), (int) std::lround (samples)), std::memory_order_relaxed);
+            rsWritten.store (0, std::memory_order_relaxed);
+            rsState.store (rsRecording, std::memory_order_relaxed);
+        }
+
+        // Recording: what you hear (the master, after the limiter) or one group.
+        const int src = rsSource.load (std::memory_order_relaxed);
+        const auto& in = src == 0 ? out : rsTap;
+        if (src > 0 && ! rsTapActive) return;
+        const int written = rsWritten.load (std::memory_order_relaxed);
+        const int n = juce::jmin (numSamples - from, rsLength.load (std::memory_order_relaxed) - written);
+        if (n > 0)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                rsBuffer.copyFrom (ch, written, in, juce::jmin (ch, in.getNumChannels() - 1), from, n);
+            rsWritten.store (written + n, std::memory_order_relaxed);
+        }
+        if (written + juce::jmax (0, n) >= rsLength.load (std::memory_order_relaxed))
+            rsState.store (rsDone, std::memory_order_release);
     }
 }

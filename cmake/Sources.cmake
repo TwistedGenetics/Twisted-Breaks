@@ -15,6 +15,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/SnapshotManager.cpp
     ${TB_SRC}/Core/BreakBank.cpp
     ${TB_SRC}/Core/Mutator.cpp
+    ${TB_SRC}/Core/Resampler.cpp
 
     # Engine: everything that runs inside processBlock()
     ${TB_SRC}/Engine/AudioEngine.cpp
@@ -41,5 +42,6 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/SequencerPanel.cpp
     ${TB_SRC}/UI/SliceSeqPanel.cpp
     ${TB_SRC}/UI/SnapshotPanel.cpp
+    ${TB_SRC}/UI/ResamplePanel.cpp
     ${TB_SRC}/UI/MainView.cpp
 )

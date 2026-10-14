@@ -37,7 +37,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 9 | Step features: chance, ratchet, pitch, reverse, slice, FX, conditions | **done** — 399/399 automated checks |
 | 10 | MUTATE: controlled randomisation of both sequencers | **done** — 426/426 automated checks |
 | 11 | Performance macros | **done** — 441/441 automated checks |
-| 12+ | Resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 12 | RESAMPLE + vintage CHARACTER modes | **done** — 464/464 automated checks |
+| 13 | Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -129,6 +130,18 @@ Sections that aren't built yet are visibly marked offline on the panel
   switch **HIT** off to throw the FX without retriggering the pad) and
   **COND**: 1:2 ... 4:4 (pass A of every B, on Live's timeline), FILL /
   !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
+* **RESAMPLE** (0.12, the 7th top-rail key): **REC** records what you hear
+  (**SOURCE** MASTER) or one group for **LENGTH** 1, 2, 4 or 8 bars, from
+  the next bar line (**START** BAR) or straight away, onto the selected pad:
+  saved as a 24-bit WAV in *Music / Twisted Breaks / Resamples* (so the set
+  reloads it), set up as a tempo-synced loop (**AS LOOP**) and sliced
+  (**AUTO SLICE**). Resample a mangled break, then chop it again. REC is
+  also the MIDI-mappable `Resample` parameter.
+* **CHARACTER** (same view, per pad): vintage sampler modes, **CLEAN**,
+  **SP-1200** (26 kHz, 12 bit, no interpolation), **MPC60** (40 kHz, 12 bit,
+  soft low-pass), **S950** (31 kHz, 12 bit, darker low-pass), **LO-FI**
+  (11 kHz, 8 bit). Like the real machines, pitching a pad down makes it
+  grittier. **ALL PADS** copies a pad's character to the whole kit.
 * **MACROS** (0.11, the **MACRO** tab of the PERFORMANCE FX panel): eight
   one-key moves, each several effects at once with their own settings:
   **DESTROY** (hard drive, crushed bits, stepped sample-rate), **AMEN

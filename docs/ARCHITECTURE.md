@@ -340,6 +340,29 @@ Hand-off between breaks at slice points (spec addition A1 in
 * UI: the PERFORMANCE FX panel's fifth tab, MACRO (keys hold / toggle the
   `macro_<key>` parameters; lamps follow `EngineBridge::macroActive`).
 
+## 6j. RESAMPLE and vintage CHARACTER (Phase 12, implemented)
+
+* CHARACTER (`PadVoice::character`, per-pad `char` parameter): the read
+  path emulates the machine storing the sample at its own rate and bit
+  depth: position -> the machine's sample grid (k = pos x rate / fileRate),
+  drop-sample (SP-1200, LO-FI) or linear between its samples (MPC60, S950),
+  quantised to 12 / 8 bits, then a 2-pole output low-pass (MPC60 ~15 kHz,
+  S950 ~9 kHz). Because it's done at read time, pitching down holds each
+  stored sample longer: the pitched-down SP / MPC grit. CLEAN is unchanged
+  (Hermite). Custom voices (slice hits, tweaked steps) follow it too.
+* RESAMPLE recorder (`AudioEngine`): a 32-second stereo buffer and a group
+  tap allocated in prepare(). Armed from the message thread; starts on the
+  next bar-line sample (or the block it's armed in), records the master
+  after the limiter, or one group's post-fader output (`GroupBus::mixInto`
+  tap), for N bars at the current tempo; states idle / armed / recording /
+  done in atomics.
+* `Core/Resampler` (message thread): on `done` copies the take, writes a
+  24-bit WAV (background thread) to Music / Twisted Breaks / Resamples,
+  loads it onto the target pad through SampleManager (so sets reload it),
+  sets LOOP + SYNC (AS LOOP) and AUTO SLICEs it. `rsmp_rec` (rising edge) is
+  the MIDI-mappable REC.
+* UI: the 7th top-rail key RESAMPLE (`ResamplePanel`).
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -526,4 +549,5 @@ Ableton stores in the `.als` file:
 | **9 ✅** | Step features in the main sequencer: CHANCE, RATCHET, PITCH, REV, SLICE, FX (held for the step, FX-only), conditions (A:B, FILL, FIRST), FILL key / parameter, STEP row | 399/399 checks: ratchets sample-exact, chance statistics with all-or-nothing ratchets, every condition incl. starts mid-song, pitch / reverse / slice measured and held across blocks, FX held exactly one step and unbroken back-to-back, FX-only doesn't retrigger, stop releases, old 32-bit sets load, UI edits |
 | **10 ✅** | MUTATE: controlled randomisation of both sequencers (slices, pitch, pattern, ratchet, reverse, FX, chance), AMOUNT, SCOPE, AUTO every 1-8 bars, NOW / BEAT / BAR, DRIFT, UNDO / RESET, Mutate parameter | 426/426 checks: 300 seeded mutations never touch an on-beat hit or move anything off the grid, ghosts only beside hits, targets respected, empty lanes stay empty, slice beats kept; original / undo / redo / reset / edit-becomes-original / drift accumulates; scope; parameter edge; NEXT BAR lands on the bar-line sample mid-block; AUTO 2 BARS on exactly bars 3 and 5; slice slots; UI |
 | **11 ✅** | Performance macros: DESTROY, AMEN MANGLE, REWIND, DARKEN, TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI; AMOUNT (mild .. hard), GROUP, LATCH, MIDI E4-B4 | 441/441 checks: every macro engages exactly its recipe in every group with its settings and releases; AMOUNT mild .. hard; single group; borrowed effects return exactly; MIDI hold / latch; DARKEN measured on noise; snapshots skip them; UI |
-| 12+ | Resample + vintage modes, Scene A/B + crossfader (one phase each) | — |
+| **12 ✅** | RESAMPLE (master or a group, 1-8 bars from the bar line, onto a pad as a synced, sliced loop, saved as WAV) + vintage CHARACTER per pad (CLEAN, SP-1200, MPC60, S950, LO-FI) | 464/464 checks: character read path (bit grid, machine-rate steps, pitched-down holds twice as long, output filters measured), 12-bit values through a pad; the take equals one bar of the output from the bar-line sample, 24-bit WAV, loaded as a synced loop, sliced, group-only take, stopped / NOW, cancel, parameter, reload from the set; UI |
+| 13 | Scene A/B + crossfader | — |
