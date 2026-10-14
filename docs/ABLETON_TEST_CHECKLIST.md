@@ -85,6 +85,15 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ REC Q 1/32: off-grid hits play back where you played them
 - [ ] ✅ Save, close, reopen: the pattern comes back; automate `Sequencer Run` to drop the pattern in and out
 
+## Step features (Phase 9)
+- [ ] ✅ Hat lane: RAT x3 / x4 on a few steps: rolls in time with a Drum Rack hat on 1/32s
+- [ ] ✅ CHANCE 50 % on ghost snares: varies each time round, ratchets come all-or-nothing
+- [ ] ✅ PITCH / REV / SLICE on a break pad's steps (pad in SLICE or one-shot mode): the right slice, direction and pitch, next plain step normal
+- [ ] ✅ FX STUTTER, HIT off, on the last step of a bar while a break loop runs: stutters for exactly that step, the loop isn't restarted
+- [ ] ✅ COND 1:2 / 2:2 / 3:4 with a 4-bar loop brace: same steps every time round; FIRST plays once after pressing play
+- [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
+- [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
+
 ## Slice sequencer (0.7.1)
 - [ ] ✅ Break on a pad, AUTO SLICE, SEQ tab, SLICE SEQ on. Live playing: hit the pad: the break plays exactly as recorded, in time; hit again: stops
 - [ ] ✅ Change Live's tempo (e.g. 160 -> 175): the break follows the grid (re-sequenced, slices at their own speed)

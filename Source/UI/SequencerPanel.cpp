@@ -112,8 +112,9 @@ namespace tb::ui
     //==========================================================================
     namespace
     {
-        constexpr float kHeaderH = 44.0f;
-        constexpr float kLabelW  = 30.0f;
+        constexpr float kHeaderH    = 44.0f;
+        constexpr float kLabelW     = 30.0f;
+        constexpr float kInspectorH = 96.0f;
     }
 
     SequencerPanel::SequencerPanel (TwistedBreaksProcessor& p) : processor (p)
@@ -137,8 +138,25 @@ namespace tb::ui
             processor.markStateChanged();
         };
 
-        for (Component* comp : std::initializer_list<Component*> { &runKey, &lenRead, &stepRead, &quantRead, &armKey, &clearKey })
+        revKey.onClick = [this] { auto st = currentStep(); st.rev = ! st.rev; writeStep (st); };
+        hitKey.onClick = [this] { auto st = currentStep(); st.hit = ! (st.on && st.hit); writeStep (st); };
+
+        // FILL (HOLD): the parameter, so it can be MIDI-mapped / automated in Live too.
+        fillKey.onStateChange = [this]
+        {
+            auto* prm = processor.getParameters().getParameter (params::seqFill);
+            const bool down = fillKey.isDown();
+            if (prm == nullptr || (prm->getValue() > 0.5f) == down) return;
+            prm->beginChangeGesture();
+            prm->setValueNotifyingHost (down ? 1.0f : 0.0f);
+            prm->endChangeGesture();
+        };
+
+        for (Component* comp : std::initializer_list<Component*> { &runKey, &lenRead, &stepRead, &quantRead, &armKey, &clearKey,
+                                                                    &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead,
+                                                                    &fxRead, &condRead, &revKey, &hitKey, &fillKey })
             addAndMakeVisible (comp);
+        bindStepReadouts();
         setSelectedPad (0);
     }
 
@@ -156,6 +174,89 @@ namespace tb::ui
         repaint();
     }
 
+    void SequencerPanel::selectStep (int pad, int step)
+    {
+        selectedStep = jlimit (0, SequencerData::kSteps - 1, step);
+        if (pad != selectedPad)
+        {
+            setSelectedPad (pad);
+            if (onSelectPad) onSelectPad (selectedPad);
+        }
+        shownVersion = 0xffffffff;
+        refresh();
+        repaint();
+    }
+
+    DragReadout& SequencerPanel::readout (const String& caption)
+    {
+        for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead, &fxRead, &condRead })
+            if (r->getName() == caption) return *r;
+        jassertfalse;
+        return velRead;
+    }
+
+    SeqStep SequencerPanel::currentStep() const
+    {
+        return processor.getBridge().seq.get (selectedPad, selectedStep);
+    }
+
+    void SequencerPanel::writeStep (SeqStep st)
+    {
+        st.on = true;                         // editing an empty step switches it on
+        processor.getBridge().seq.set (selectedPad, selectedStep, st);
+        processor.markStateChanged();
+        refresh();
+        repaint();
+    }
+
+    void SequencerPanel::bindStepReadouts()
+    {
+        auto field = [this] (std::function<int (const SeqStep&)> get, std::function<void (SeqStep&, int)> set)
+        {
+            DragReadout::Model m;
+            m.get = [this, get] { return get (currentStep()); };
+            m.set = [this, set] (int v) { auto st = currentStep(); if (! st.on) st = SeqStep {}; set (st, v); writeStep (st); };
+            return m;
+        };
+        auto sign = [] (int v) { return (v > 0 ? "+" : "") + String (v); };
+
+        auto m = field ([] (const SeqStep& s) { return s.velocity; }, [] (SeqStep& s, int v) { s.velocity = v; });
+        m.min = 1; m.max = 127; m.def = 100;
+        velRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return roundToInt (s.probability / 5.0f); }, [] (SeqStep& s, int v) { s.probability = v * 5; });
+        m.min = 0; m.max = 20; m.def = 20; m.text = [] (int v) { return String (v * 5) + "%"; };
+        chanceRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.ratchet; }, [] (SeqStep& s, int v) { s.ratchet = v; });
+        m.min = 1; m.max = 4; m.def = 1; m.cycleOnClick = true; m.text = [] (int v) { return "x" + String (v); };
+        ratRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.pitch; }, [] (SeqStep& s, int v) { s.pitch = v; });
+        m.min = -24; m.max = 24; m.def = 0; m.cycleOnClick = false; m.text = sign;
+        pitchRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.slice; }, [] (SeqStep& s, int v) { s.slice = v; });
+        m.min = 0; m.max = 16; m.def = 0; m.text = [] (int v) { return v == 0 ? String ("PAD") : String (v); };
+        sliceRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.micro; }, [] (SeqStep& s, int v) { s.micro = v; });
+        m.min = -64; m.max = 63; m.def = 0; m.text = sign;
+        microRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.fx; }, [] (SeqStep& s, int v) { s.fx = v; });
+        m.min = 0; m.max = fx::kNumFx; m.def = 0; m.text = [] (int v) { return v == 0 ? String ("-") : String (fx::def (v - 1).label); };
+        fxRead.bind (m);
+
+        m = field ([] (const SeqStep& s) { return s.cond; }, [] (SeqStep& s, int v) { s.cond = v; });
+        m.min = 0; m.max = kNumSeqConds - 1; m.def = 0; m.text = [] (int v) { return String (kSeqCondNames[jlimit (0, kNumSeqConds - 1, v)]); };
+        condRead.bind (m);
+
+        for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead, &fxRead, &condRead })
+            r->setName (r == &velRead ? "VEL" : r == &chanceRead ? "CHANCE" : r == &ratRead ? "RAT" : r == &pitchRead ? "PITCH"
+                      : r == &sliceRead ? "SLICE" : r == &microRead ? "MICRO" : r == &fxRead ? "FX" : "COND");
+    }
+
     int SequencerPanel::lengthNow() const
     {
         return jlimit (1, 32, roundToInt (processor.getParameters().getRawParameterValue (params::seqLength)->load()));
@@ -163,7 +264,12 @@ namespace tb::ui
 
     Rectangle<float> SequencerPanel::gridArea() const
     {
-        return getLocalBounds().toFloat().reduced (14.0f, 0.0f).withTrimmedTop (kHeaderH + 4.0f).withTrimmedBottom (12.0f);
+        return getLocalBounds().toFloat().reduced (14.0f, 0.0f).withTrimmedTop (kHeaderH + 4.0f).withTrimmedBottom (kInspectorH + 22.0f);
+    }
+
+    Rectangle<float> SequencerPanel::inspectorArea() const
+    {
+        return getLocalBounds().toFloat().reduced (14.0f, 0.0f).withTrimmedBottom (12.0f).removeFromBottom (kInspectorH);
     }
 
     Rectangle<float> SequencerPanel::laneLabelBounds (int pad) const
@@ -200,6 +306,22 @@ namespace tb::ui
         quantRead.setBounds (x, y - 6, 56, h + 6); x += 62;
         armKey.setBounds   (x, y, 94, h);      x += 98;
         clearKey.setBounds (x, y, jmin (68, getWidth() - x - 14), h);
+
+        // STEP row: [label] VEL CHANCE RAT PITCH SLICE MICRO / FX COND [REV] [HIT] [FILL] position
+        const auto ins = inspectorArea().toNearestInt().reduced (8, 6);
+        auto row1 = ins.withHeight (40);
+        auto row2 = ins.withTrimmedTop (46).withHeight (40);
+        row1.removeFromLeft (112);              // "PAD 01 / STEP 05" plate
+        for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead })
+        {
+            r->setBounds (row1.removeFromLeft (60));
+            row1.removeFromLeft (8);
+        }
+        fxRead.setBounds   (row2.removeFromLeft (92));  row2.removeFromLeft (8);
+        condRead.setBounds (row2.removeFromLeft (70));  row2.removeFromLeft (10);
+        revKey.setBounds   (row2.removeFromLeft (56).withTrimmedTop (10)); row2.removeFromLeft (6);
+        hitKey.setBounds   (row2.removeFromLeft (56).withTrimmedTop (10)); row2.removeFromLeft (10);
+        fillKey.setBounds  (row2.removeFromLeft (112).withTrimmedTop (10));
         background = {};
     }
 
@@ -216,6 +338,12 @@ namespace tb::ui
 
         int pad, step;
         if (! cellAt (e.position, pad, step)) return;
+        selectStep (pad, step);
+
+        // Right-click / shift-click: just select it for the STEP row.
+        editSelectOnly = e.mods.isPopupMenu() || e.mods.isShiftDown();
+        if (editSelectOnly) { editPad = -1; return; }
+
         auto& seq = processor.getBridge().seq;
         auto st = seq.get (pad, step);
         editPad = pad; editStep = step; editDragged = false;
@@ -261,13 +389,31 @@ namespace tb::ui
         armKey.setBlinking (seq.isArmed (selectedPad) && processor.getBridge().seqStep.load() >= 0);
         armKey.tick();
 
+        const auto st = currentStep();
+        revKey.setToggleState (st.on && st.rev, dontSendNotification);
+        hitKey.setToggleState (st.on && st.hit, dontSendNotification);
+        const bool fill = processor.getParameters().getRawParameterValue (params::seqFill)->load() > 0.5f;
+        fillKey.setToggleState (fill, dontSendNotification);
+
+        const auto& tr = processor.getBridge().transport;
+        const int bar = tr.bar.load (std::memory_order_relaxed), beat = tr.beat.load (std::memory_order_relaxed);
+
         const auto v = seq.getVersion();
         const int step = processor.getBridge().seqStep.load();
         const int len = lengthNow();
         if (v != shownVersion || step != shownStep || len != shownLen)
         {
+            if (v != shownVersion)
+                for (auto* r : { &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead, &fxRead, &condRead })
+                    r->repaint();
             shownVersion = v; shownStep = step; shownLen = len;
             repaint (gridArea().toNearestInt().expanded (2));
+            repaint (inspectorArea().toNearestInt().withWidth (130));
+        }
+        if (bar != shownBar || beat != shownBeat || fill != shownFill)
+        {
+            shownBar = bar; shownBeat = beat; shownFill = fill;
+            repaint (inspectorArea().toNearestInt().withTrimmedLeft (inspectorArea().toNearestInt().getWidth() - 130));
         }
     }
 
@@ -293,6 +439,7 @@ namespace tb::ui
                 paint::rivet (bg, pt, 4.2f, rnd);
             paint::labelPlate (bg, { 18.0f, 12.0f, 124.0f, 22.0f }, "SEQUENCER", {}, paint::PlateStyle::bakelite, rnd);
             paint::recess (bg, gridArea().expanded (4.0f, 3.0f), 4.0f);
+            paint::recess (bg, inspectorArea(), 4.0f);
         }
         g.drawImage (background, getLocalBounds().toFloat());
 
@@ -331,16 +478,60 @@ namespace tb::ui
                 g.fillRect (cell);
                 if (st.on)
                 {
+                    const float a = inLen ? 1.0f : 0.3f;
                     const float vel = (float) st.velocity / 127.0f;
-                    g.setColour (c::amber.withAlpha (inLen ? 0.35f : 0.12f));
-                    g.fillRect (cell);
-                    g.setColour (c::amber.withAlpha (inLen ? 1.0f : 0.3f));
-                    g.fillRect (cell.withTop (cell.getBottom() - cell.getHeight() * (0.25f + 0.75f * vel)));
+                    if (st.hit)
+                    {
+                        g.setColour (c::amber.withAlpha (0.35f * a));
+                        g.fillRect (cell);
+                        g.setColour (c::amber.withAlpha (a));
+                        g.fillRect (cell.withTop (cell.getBottom() - cell.getHeight() * (0.25f + 0.75f * vel)));
+                    }
+                    else
+                    {
+                        g.setColour (c::amber.withAlpha (0.8f * a));        // FX only: no hit, just the outline
+                        g.drawRect (cell.reduced (0.5f), 1.0f);
+                    }
                     if (st.micro != 0)       // played off the grid: a tick shows where
                     {
                         g.setColour (Colours::black.withAlpha (0.7f));
                         const float x = cell.getCentreX() + cell.getWidth() * (float) st.micro / 128.0f;
                         g.drawVerticalLine (roundToInt (x), cell.getY(), cell.getBottom());
+                    }
+                    if (st.ratchet > 1)      // ratchet: dividers along the top
+                    {
+                        g.setColour (Colours::black.withAlpha (0.85f));
+                        for (int j = 1; j < st.ratchet; ++j)
+                        {
+                            const float x = cell.getX() + cell.getWidth() * (float) j / (float) st.ratchet;
+                            g.fillRect (x - 0.5f, cell.getY(), 1.2f, cell.getHeight() * 0.45f);
+                        }
+                    }
+                    if (st.probability < 100)    // chance: a hollow dot top-right
+                    {
+                        g.setColour (Colours::black.withAlpha (0.85f));
+                        g.fillEllipse (cell.getRight() - 5.0f, cell.getY() + 1.0f, 4.0f, 4.0f);
+                        g.setColour (c::vfd.withAlpha (a));
+                        g.fillEllipse (cell.getRight() - 4.0f, cell.getY() + 2.0f, 2.0f * (float) st.probability / 100.0f + 0.4f, 2.0f);
+                    }
+                    if (st.hasSoundTweak())     // pitch / reverse / slice: green corner
+                    {
+                        Path tri;
+                        tri.addTriangle (cell.getRight(), cell.getBottom(), cell.getRight() - 5.0f, cell.getBottom(), cell.getRight(), cell.getBottom() - 5.0f);
+                        g.setColour (c::phosphor.withAlpha (a));
+                        g.fillPath (tri);
+                    }
+                    if (st.fx > 0)              // FX: red corner
+                    {
+                        Path tri;
+                        tri.addTriangle (cell.getX(), cell.getY(), cell.getX() + 5.0f, cell.getY(), cell.getX(), cell.getY() + 5.0f);
+                        g.setColour (c::red.withAlpha (a));
+                        g.fillPath (tri);
+                    }
+                    if (st.cond != condAlways)  // condition: cyan underline
+                    {
+                        g.setColour (Colour (0xff4fd8ff).withAlpha (a));
+                        g.fillRect (cell.getX() + 1.0f, cell.getBottom() - 1.6f, cell.getWidth() - 2.0f, 1.6f);
                     }
                 }
                 if (! inLen)
@@ -348,7 +539,37 @@ namespace tb::ui
                     g.setColour (Colours::black.withAlpha (0.45f));
                     g.fillRect (cell);
                 }
+                if (p == selectedPad && s == selectedStep)
+                {
+                    g.setColour (c::vfd);
+                    g.drawRect (cell.expanded (1.0f), 1.5f);
+                }
             }
         }
+
+        // STEP row: which step, and Live's position (the transport box is covered).
+        const auto ins = inspectorArea().reduced (8.0f, 6.0f);
+        const auto st = currentStep();
+        auto label = ins.withWidth (104.0f).withHeight (40.0f);
+        g.setColour (c::bakelite.withAlpha (0.8f));
+        g.setFont (industrialFont (10.5f));
+        g.drawText (st.on ? "STEP" : "STEP (OFF)", label.removeFromTop (12.0f), Justification::centredLeft, false);
+        g.setColour (st.on ? c::vfd : c::vfd.withAlpha (0.4f));
+        g.setFont (monoFont (14.0f));
+        g.drawText ("P" + String (selectedPad + 1).paddedLeft ('0', 2) + " S" + String (selectedStep + 1).paddedLeft ('0', 2),
+                    label, Justification::centredLeft, false);
+
+        const auto& tr = processor.getBridge().transport;
+        auto pos = ins.withTrimmedTop (46.0f).withHeight (40.0f);
+        pos = pos.removeFromRight (122.0f);
+        g.setColour (c::bakelite.withAlpha (0.8f));
+        g.setFont (industrialFont (10.5f));
+        g.drawText ("BPM   BAR.BEAT", pos.removeFromTop (12.0f), Justification::centredLeft, false);
+        paint::recess (g, pos, 3.0f);
+        g.setColour (c::vfd);
+        g.setFont (monoFont (13.0f));
+        g.drawText (String (tr.bpm.load (std::memory_order_relaxed), 1) + "  "
+                      + String (tr.bar.load (std::memory_order_relaxed) + 1).paddedLeft ('0', 3) + "." + String (tr.beat.load (std::memory_order_relaxed) + 1),
+                    pos, Justification::centred, false);
     }
 }

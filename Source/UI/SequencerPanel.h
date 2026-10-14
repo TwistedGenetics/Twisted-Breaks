@@ -4,6 +4,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <functional>
 #include "UI/Controls.h"
+#include "Core/SequencerData.h"
 
 class TwistedBreaksProcessor;
 
@@ -45,21 +46,27 @@ namespace tb::ui
     };
 
     /*
-        SequencerPanel  (SEQUENCER view, Phase 7)
+        SequencerPanel  (SEQUENCER view, Phases 7 + 9)
         --------------
-        The 32-step pattern, one lane per pad, in the CRT's place:
+        The 32-step pattern, one lane per pad, over the transport + CRT area:
 
             [SEQUENCER] [RUN] LEN 16  STEP 1/16  REC Q 1/16  [ARM PAD 01] [CLEAR]
             01 |#..#|..#.|#..#|.... | ....
             02 |..#.|... ...                 amber = step on (fill = velocity)
             ...                              column glow = playhead
+            PAD 01 STEP 05  VEL CHANCE RAT PITCH SLICE MICRO      <- the selected
+            FX  COND  [REV] [HIT]  [FILL (HOLD)]   170.0  013.3.1    step (Phase 9)
 
-          * click a cell: step on / off; drag up / down on a step: velocity
+          * click a cell: step on / off (and select it); drag up / down on a
+            step: velocity; right-click or shift-click: select without toggling
           * click a lane number: select that pad (editor, ARM, CLEAR follow)
-          * ARM: hits on the selected pad (mouse or MIDI) are recorded into
-            its lane while Live plays, quantised to REC Q
-          * LEN / STEP / REC Q / RUN are automatable parameters; the pattern
-            itself is saved with the set
+          * the STEP row edits the selected step: CHANCE, RATCHET, PITCH,
+            SLICE, MICRO, FX (held for the step; HIT off = FX only), COND
+            (1:2 .. 4:4, FILL, FIRST ...), REV. Editing an empty step turns it on.
+          * FILL (HOLD) = the automatable "Sequencer Fill" parameter
+          * cell marks: ticks on top = ratchet, dot top-right = chance,
+            green corner = pitch / reverse / slice, red corner = FX,
+            cyan underline = condition, outline only = FX only (no hit)
     */
     class SequencerPanel final : public juce::Component
     {
@@ -68,7 +75,7 @@ namespace tb::ui
         ~SequencerPanel() override;
 
         void setSelectedPad (int pad);
-        std::function<void (int)> onSelectPad;     // a lane number was clicked
+        std::function<void (int)> onSelectPad;     // a lane number / a cell was clicked
 
         void refresh();     // ~30 Hz
         void paint (juce::Graphics&) override;
@@ -81,13 +88,28 @@ namespace tb::ui
         juce::Rectangle<float> cellBounds (int pad, int step) const;
         juce::Rectangle<float> laneLabelBounds (int pad) const;
 
+        /** The step being edited by the STEP row. */
+        void selectStep (int pad, int step);
+        int  getSelectedStep() const noexcept { return selectedStep; }
+        int  getSelectedPad() const noexcept  { return selectedPad; }
+
+        /** STEP-row controls (tests drive them like a user would). */
+        DragReadout& readout (const juce::String& caption);
+        PushKey& revButton()  { return revKey; }
+        PushKey& hitButton()  { return hitKey; }
+        PushKey& fillButton() { return fillKey; }
+
     private:
         juce::Rectangle<float> gridArea() const;
+        juce::Rectangle<float> inspectorArea() const;
         bool cellAt (juce::Point<float>, int& pad, int& step) const;
         int  lengthNow() const;
+        SeqStep currentStep() const;
+        void writeStep (SeqStep);          // turns the step on
+        void bindStepReadouts();
 
         TwistedBreaksProcessor& processor;
-        int selectedPad = 0;
+        int selectedPad = 0, selectedStep = 0;
 
         PushKey     runKey   { "RUN", "Sequencer plays with Live's transport (automatable)", juce::Colour (0xff7dff5a) };
         DragReadout lenRead  { "LEN",   "Pattern length in steps (1-32): drag, scroll or double-click for 16" };
@@ -97,13 +119,27 @@ namespace tb::ui
         PushKey     clearKey { "CLEAR", "Clear the selected pad's lane" };
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> runAtt;
 
+        // STEP row (Phase 9)
+        DragReadout velRead    { "VEL",    "Velocity of the selected step" };
+        DragReadout chanceRead { "CHANCE", "Probability the step plays (rolled each time round)" };
+        DragReadout ratRead    { "RAT",    "Ratchet: 1-4 hits spread across the step (click to cycle)" };
+        DragReadout pitchRead  { "PITCH",  "Pitch of this hit in semitones, on top of the pad's" };
+        DragReadout sliceRead  { "SLICE",  "PAD = the pad's own sound, 1-16 = play that slice of its break" };
+        DragReadout microRead  { "MICRO",  "Nudge the step early / late (1/128 step)" };
+        DragReadout fxRead     { "FX",     "Effect held on the pad's group for the length of the step" };
+        DragReadout condRead   { "COND",   "Condition: ALWAYS, A:B (pass A of every B), FILL, !FILL, FIRST, !FIRST" };
+        PushKey revKey  { "REV",  "Play this hit backwards", juce::Colour (0xffffa928) };
+        PushKey hitKey  { "HIT",  "On: the step plays the pad. Off: it only throws its FX", juce::Colour (0xffffa928) };
+        PushKey fillKey { "FILL (HOLD)", "Hold: FILL steps play, !FILL steps rest (the automatable Sequencer Fill parameter)", juce::Colour (0xffff3a1c) };
+
         // Cell editing
         int  editPad = -1, editStep = -1;
-        bool editWasOn = false, editDragged = false;
+        bool editWasOn = false, editDragged = false, editSelectOnly = false;
         int  editStartVel = 100;
 
         uint32_t shownVersion = 0xffffffff;
-        int shownStep = -2, shownLen = -1;
+        int shownStep = -2, shownLen = -1, shownBar = -1, shownBeat = -1;
+        bool shownFill = false;
         juce::Image background;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerPanel)

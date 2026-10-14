@@ -12,6 +12,7 @@
 #include "Engine/MasterSection.h"
 #include "Engine/GroupBus.h"
 #include "Core/FxDefs.h"
+#include "Core/SequencerData.h"
 
 namespace tb
 {
@@ -113,6 +114,7 @@ namespace tb
             int   seqLength = 16;
             int   seqRes    = 1;     // index into params::seqResPpq
             int   seqQuant  = 2;     // index into params::seqQuantPpq
+            bool  seqFill   = false; // FILL held (step conditions)
 
             int   bankActive = 0;    // 0..7
             int   bankAt     = 1;    // params::SwitchAt
@@ -180,7 +182,10 @@ namespace tb
         void clearFxLatch (int group, int fxId) noexcept;
 
     private:
-        void triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer = false) noexcept;
+        void triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer = false,
+                         const SeqStep* step = nullptr) noexcept;
+        /** A step's pitch / reverse / slice, as voice settings for this pad. */
+        PadVoice::Settings tweakedSettings (int pad, const SeqStep&) const noexcept;
         void startVoice (int pad, float level, int sampleOffset, double startAt = -1.0,
                          const PadVoice::Settings* custom = nullptr) noexcept;
         void startPad (int pad, float level, int sampleOffset, double startAt = -1.0) noexcept;
@@ -206,10 +211,15 @@ namespace tb
         bool handleFxNote (int note, bool on) noexcept;
 
         // ---- Sequencer
-        enum class SeqKind : uint8_t { bankSwitch, padHit, sliceRelease, sliceHit };   // order = priority on a tie
+        // Order = priority on a tie. A step FX's ON comes before the previous
+        // step's OFF, so the same effect on back-to-back steps runs unbroken.
+        enum class SeqKind : uint8_t { bankSwitch, stepFxOn, stepFxOff, padHit, sliceRelease, sliceHit };
         struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; };
         void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
         void insertEvent (const SeqEvent&) noexcept;
+        void applyFx (int group) noexcept;          // param XOR latch | MIDI held | step held
+        void stepFx (int group, int fxId, bool on, double endPpq) noexcept;
+        void clearStepFx() noexcept;
 
         // ---- Slice sequencer
         struct SliceRun
@@ -267,6 +277,8 @@ namespace tb
         // FX state from MIDI: latched (LOCKED notes) and held (MOMENTARY notes).
         std::array<std::atomic<uint32_t>, kNumGroups> fxLatch {};
         std::array<uint32_t, kNumGroups> fxHeld {};
+        std::array<uint32_t, kNumGroups> fxStepHeld {};                       // held by sequencer steps
+        std::array<std::array<double, fx::kNumFx>, kNumGroups> fxStepEnd {};  // ppq each step-held effect lets go
         std::array<uint32_t, kNumGroups> fxParamMask {};
         std::array<std::array<std::array<float, 3>, 16>, kNumGroups> fxParams {};
         std::atomic<int>      fxTargetGroup { 0 };
@@ -276,6 +288,11 @@ namespace tb
         int seqEventCount = 0;
         int seqCursor = 0;          // next event to play; inserts never go before it
         std::array<int64_t, kNumPads> seqSkipOnce {};    // absolute step just live-recorded: don't double it this pass
+        std::array<int64_t, kNumPads> seqRollStep {};    // absolute step whose CHANCE was rolled ...
+        std::array<bool,    kNumPads> seqRollPlays {};   // ... and whether it plays (ratchets follow it)
+        bool    seqWasPlaying = false;
+        int64_t seqFirstPass = 0;                        // pattern pass Live started in (FIRST condition)
+        std::array<std::array<bool, kVoicesPerPad>, kNumPads> voiceCustom {};   // voice runs its own settings (step tweak / slice seq)
         std::array<SliceRun, kNumPads> sliceRun {};
         std::array<bool, kNumPads> padSliceSeq {};
         std::array<int,  kNumPads> padSliceSlot {};

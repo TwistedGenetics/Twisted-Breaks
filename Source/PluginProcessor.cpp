@@ -29,6 +29,8 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     seqLengthParam = apvts.getRawParameterValue (tb::params::seqLength);
     seqResParam    = apvts.getRawParameterValue (tb::params::seqRes);
     seqQuantParam  = apvts.getRawParameterValue (tb::params::seqQuant);
+    seqFillParam   = apvts.getRawParameterValue (tb::params::seqFill);
+    jassert (seqFillParam != nullptr);
     jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
     bankActiveParam = apvts.getRawParameterValue (tb::params::bankActive);
     bankAtParam     = apvts.getRawParameterValue (tb::params::bankAt);
@@ -210,6 +212,7 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
     p.seqLength      = juce::roundToInt (ld (seqLengthParam));
     p.seqRes         = juce::roundToInt (ld (seqResParam));
     p.seqQuant       = juce::roundToInt (ld (seqQuantParam));
+    p.seqFill        = ld (seqFillParam) > 0.5f;
     p.bankActive     = juce::jlimit (0, 7, juce::roundToInt (ld (bankActiveParam)) - 1);
     p.bankAt         = juce::roundToInt (ld (bankAtParam));
 

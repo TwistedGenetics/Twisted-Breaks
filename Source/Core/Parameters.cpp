@@ -198,6 +198,7 @@ namespace tb::params
                                                             StringArray { "1/8", "1/16", "1/32" }, 1));
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqFill, kV11 }, "Sequencer Fill", false));
 
         // ---- Phase 8: snapshots + break bank ----
         layout.add (std::make_unique<AudioParameterInt> (ParameterID { snapRecall, kV10 }, "Snapshot", 0, 8, 0,

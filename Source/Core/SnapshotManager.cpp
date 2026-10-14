@@ -26,7 +26,7 @@ namespace tb
     bool SnapshotManager::isExcluded (const juce::String& id)
     {
         return id.startsWith ("master_") || id == params::snapRecall || id == params::snapAt
-            || id == params::bankActive || id == params::bankAt;
+            || id == params::bankActive || id == params::bankAt || id == params::seqFill;
     }
 
     //==========================================================================

@@ -28,6 +28,8 @@ namespace tb::ui
         const Rectangle<int> transport   { 626, 166,  544, 108 };
 
         const Rectangle<int> scope       { 612, 292,  572, 232 };
+        // SEQUENCER view (Phase 9): the transport box + the CRT area, for the STEP row.
+        const Rectangle<int> seqView     { 612, 132,  572, 392 };
 
         const Rectangle<int> fxPanel     { 612, 534,  268, 250 };
         const Rectangle<int> fxGrid      { 626, 572,  240, 198 };
@@ -308,7 +310,7 @@ namespace tb::ui
         waveform.setBounds (layout::scope);
         mixer.setBounds (layout::scope);
         fxEditor.setBounds (layout::scope);
-        sequencer.setBounds (layout::scope);
+        sequencer.setBounds (layout::seqView);
         sliceSeq.setBounds (layout::scope);
         snapshotPanel.setBounds (layout::scope);
         padEditor.setBounds (layout::padEditor);
@@ -404,6 +406,7 @@ namespace tb::ui
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
+        transportDisplay.setVisible (v != View::sequencer);   // the sequencer shows BPM / position itself
         sliceSeq.setVisible (v == View::sliceSeq);
         snapshotPanel.setVisible (v == View::snapshots);
         updateNavLamps();

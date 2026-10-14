@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 567, "567 automatable parameters in total (3 master + 4 sequencer + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 568, "568 automatable parameters in total (3 master + 5 sequencer + 4 snapshot / bank + 21 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -1532,7 +1532,7 @@ namespace
         std::cout << "\n== Phase 7: 32-step sequencer ==" << std::endl;
         {
             tb::SeqStep st; st.on = true; st.velocity = 77; st.micro = -64; st.probability = 55; st.ratchet = 3; st.pitch = -12;
-            check (tb::SeqStep::unpack (st.pack()) == st, "a step packs into 32 bits and back (velocity, micro-timing, future fields)");
+            check (tb::SeqStep::unpack (st.pack()) == st, "a step packs into its 64-bit word and back (velocity, micro-timing, chance, ratchet, pitch)");
         }
 
         SeqRig x;
@@ -1727,6 +1727,320 @@ namespace
         clear->triggerClick();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
         check (! seq.laneHasSteps (6), "CLEAR empties pad 7's lane");
+    }
+
+
+    //==========================================================================
+    //  PHASE 9: per-step features of the main sequencer
+    //==========================================================================
+    /** Loud run lengths: (onset, samples until it goes quiet) on a channel. */
+    std::vector<std::pair<int, int>> bursts (const juce::AudioBuffer<float>& b, int ch = 0, float thresh = 1.0e-4f)
+    {
+        std::vector<std::pair<int, int>> o;
+        int start = -1, quiet = 1000;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const bool loud = std::abs (b.getSample (ch, i)) > thresh;
+            if (loud && quiet >= 200) { if (start >= 0) o.back().second = i - quiet - start; start = i; o.push_back ({ i, 0 }); }
+            if (loud) o.back().second = i - start + 1;
+            quiet = loud ? 0 : quiet + 1;
+        }
+        return o;
+    }
+
+    void testStepFeatures()
+    {
+        std::cout << "\n== Phase 9: step features (chance, ratchet, pitch, reverse, slice, FX, conditions) ==" << std::endl;
+        {
+            tb::SeqStep st; st.on = true; st.velocity = 90; st.micro = 17; st.probability = 35; st.ratchet = 4; st.pitch = -24;
+            st.rev = true; st.slice = 16; st.fx = 16; st.cond = tb::condNotFirst; st.hit = false;
+            check (tb::SeqStep::unpack (st.pack()) == st && tb::SeqStep::unpack (st.pack()).fx == 16 && ! tb::SeqStep::unpack (st.pack()).hit,
+                   "every step field packs into the 64-bit word and back");
+
+            // A 0.7 / 0.8 set: 32-bit words (on, velocity 100, chance 100).
+            const uint64_t old = 1u | (100u << 1) | (100u << 16) | (32u << 25);
+            const auto o = tb::SeqStep::unpack (old);
+            check (o.on && o.velocity == 100 && o.probability == 100 && o.ratchet == 1 && o.pitch == 0 && ! o.rev && o.slice == 0
+                     && o.fx == 0 && o.cond == tb::condAlways && o.hit,
+                   "a step saved by 0.7 / 0.8 loads as the same plain step (new fields off)");
+            juce::ValueTree t ("SEQ"), lane ("LANE");
+            lane.setProperty ("pad", 3, nullptr);
+            lane.setProperty ("steps", juce::String::toHexString ((juce::int64) old) + ",0", nullptr);
+            t.appendChild (lane, nullptr);
+            tb::SequencerData d;
+            d.fromValueTree (t);
+            check (d.get (3, 0) == o && ! d.get (3, 1).on, "...and an old saved SEQ tree reads straight in");
+            tb::SequencerData e;
+            d.set (3, 5, st);
+            e.fromValueTree (d.toValueTree());
+            check (e.get (3, 5) == st, "the new fields are saved with the set and read back");
+        }
+
+        SeqRig x;
+        auto stepWith = [&x] (int pad, int s, std::function<void (tb::SeqStep&)> f)
+        {
+            tb::SeqStep st; st.on = true; st.velocity = 127; f (st); x.seq.set (pad, s, st);
+        };
+
+        // ---- Ratchets: evenly across the step, sample-exact (1/16 = 6000).
+        x.seq.clearAll();
+        stepWith (0, 0, [] (auto& s) { s.ratchet = 3; });
+        stepWith (0, 1, [] (auto& s) { s.ratchet = 4; });
+        auto o = onsets (x.run (14000));
+        check (o == std::vector<int> { 0, 2000, 4000, 6000, 7500, 9000, 10500 }, "RATCHET x3 / x4: hits every 1/3 and 1/4 of the step (" + listOf (o) + ")");
+
+        // ---- Chance.
+        x.seq.clearAll();
+        stepWith (0, 0, [] (auto& s) { s.probability = 0; s.ratchet = 2; });
+        check (onsets (x.run (12000)).empty(), "CHANCE 0 %: the step (and its ratchets) never play");
+        x.seq.clearAll();
+        setParam (x.r.p, tb::params::seqLength, 1.0f);           // one step = one pass: 64 rolls in 384000 samples
+        stepWith (0, 0, [] (auto& s) { s.probability = 50; s.ratchet = 2; });
+        o = onsets (x.run (64 * 6000));
+        int plays = 0; bool whole = true;
+        for (int pass = 0; pass < 64; ++pass)
+        {
+            int n = 0;
+            for (int t : o) n += (t >= pass * 6000 && t < (pass + 1) * 6000) ? 1 : 0;
+            plays += n > 0 ? 1 : 0;
+            whole = whole && (n == 0 || n == 2);
+        }
+        check (plays >= 20 && plays <= 44 && whole,
+               "CHANCE 50 %: " + juce::String (plays) + " of 64 passes play, and a step's ratchets play all-or-nothing");
+        setParam (x.r.p, tb::params::seqLength, 4.0f);           // 1 pass = 24000 samples
+
+        // ---- Conditions (pass counted on Live's timeline).
+        auto condOnsets = [&] (int cond, double startPpq = 0.0, int samples = 95000)   // 4 passes (blocks round up)
+        {
+            x.seq.clearAll();
+            stepWith (0, 0, [cond] (auto& s) { s.cond = cond; });
+            x.r.host.ppq = startPpq;
+            x.r.host.playing = true;
+            auto out = renderTimeline (x.r, samples, {});
+            x.r.host.playing = false;
+            x.r.p.requestPanic();
+            x.r.settle();
+            return onsets (out);
+        };
+        { const auto co = condOnsets (tb::cond1of2); check (co == std::vector<int> { 0, 48000 }, "1:2 plays on passes 1 and 3 (" + listOf (co) + ")"); }
+        { const auto co = condOnsets (tb::cond2of2); check (co == std::vector<int> { 24000, 72000 }, "2:2 plays on passes 2 and 4 (" + listOf (co) + ")"); }
+        { const auto co = condOnsets (tb::cond3of4); check (co == std::vector<int> { 48000 }, "3:4 plays on pass 3 of 4 only (" + listOf (co) + ")"); }
+        { const auto co = condOnsets (tb::cond1of3); check (co == std::vector<int> { 0, 72000 }, "1:3 plays on passes 1 and 4 (" + listOf (co) + ")"); }
+        { const auto co = condOnsets (tb::condFirst); check (co == std::vector<int> { 0 }, "FIRST plays only on the pass Live started in (" + listOf (co) + ")"); }
+        { const auto co = condOnsets (tb::condNotFirst); check (co == std::vector<int> { 24000, 48000, 72000 }, "!FIRST skips that pass (" + listOf (co) + ")"); }
+        o = condOnsets (tb::condFirst, 8.0, 71000);                                       // start at pass 9 (1 pass = 1 beat)
+        check (o == std::vector<int> { 0 }, "FIRST follows where Live starts (from beat 9: plays there, then not) (" + listOf (o) + ")");
+        o = condOnsets (tb::cond1of2, 1.0, 71000);                                        // start at pass 2
+        check (o == std::vector<int> { 24000 }, "A:B is on the song position, so a restart mid-song stays in step (" + listOf (o) + ")");
+        check (condOnsets (tb::condFill).empty(), "FILL steps rest while FILL isn't held");
+        setParam (x.r.p, tb::params::seqFill, 1.0f);
+        check (condOnsets (tb::condFill).size() == 4 && condOnsets (tb::condNotFill).empty(), "holding FILL (the Sequencer Fill parameter) plays FILL steps and rests !FILL ones");
+        setParam (x.r.p, tb::params::seqFill, 0.0f);
+        check (condOnsets (tb::condNotFill).size() == 4, "...and !FILL steps play again when it's let go");
+        setParam (x.r.p, tb::params::seqLength, 16.0f);
+
+        // ---- Pitch / reverse / slice: a 4000-sample ramp (0 -> 0.8).
+        {
+            Rig r;
+            juce::AudioBuffer<float> ramp (1, 4000);
+            for (int i = 0; i < 4000; ++i) ramp.setSample (0, i, 0.05f + 0.75f * (float) i / 3999.0f);
+            r.load (0, writeAudio ("step_ramp", ramp, 48000.0, Fmt::wavFloat));
+            r.host.bpm = 120.0;
+            setParam (r.p, tb::params::masterLimiter, 0.0f);
+            r.settle();
+            auto& seq = r.p.getBridge().seq;
+            auto runIt = [&r] (int n)
+            {
+                r.host.ppq = 0.0; r.host.playing = true;
+                auto out = renderTimeline (r, n, {});
+                r.host.playing = false; r.p.requestPanic(); r.settle();
+                return out;
+            };
+            auto set = [&seq] (int s, std::function<void (tb::SeqStep&)> f) { tb::SeqStep st; st.on = true; st.velocity = 127; f (st); seq.set (0, s, st); };
+            set (0, [] (auto& s) { s.pitch = 12; });
+            set (1, [] (auto&) {});
+            set (2, [] (auto& s) { s.pitch = -12; });
+            auto out = runIt (30000);
+            auto b = bursts (out);
+            const bool pitchOk = b.size() == 3 && std::abs (b[0].second - 2000) <= 2 && std::abs (b[1].second - 4000) <= 2
+                                 && std::abs (b[2].second - 8000) <= 2 && b[0].first == 0 && b[1].first == 6000 && b[2].first == 12000;
+            juce::String desc;
+            for (auto& [s0, n] : b) desc << s0 << ":" << n << " ";
+            check (pitchOk, "PITCH +12 plays the hit at double speed (2000 samples), the next plain step at the pad's own (4000), -12 at half (8000) ("
+                              + desc.trim() + ")");
+            check (std::abs (out.getSample (0, 1000) - (0.05f + 0.75f * 2000.0f / 3999.0f)) < 0.01f,
+                   "...and the pitched hit holds its speed across blocks (halfway through the ramp at 1000 samples)");
+
+            seq.clearAll();
+            set (0, [] (auto& s) { s.rev = true; });
+            set (1, [] (auto&) {});
+            out = runIt (12000);
+            check (out.getSample (0, 60) > 0.75f && out.getSample (0, 3800) < 0.1f && out.getSample (0, 6060) < 0.07f,
+                   "REV plays that hit backwards (top of the ramp first), the next step forwards again ("
+                     + juce::String (out.getSample (0, 60), 3) + " " + juce::String (out.getSample (0, 3800), 3) + " " + juce::String (out.getSample (0, 6060), 3) + ")");
+
+            // SLICE: no markers = 16 equal slices of 250 samples.
+            seq.clearAll();
+            set (0, [] (auto& s) { s.slice = 9; });
+            out = runIt (6000);
+            b = bursts (out);
+            check (b.size() == 1 && std::abs (b[0].second - 250) <= 2 && std::abs (out.getSample (0, 60) - (0.05f + 0.75f * 2060.0f / 3999.0f)) < 0.01f,
+                   "SLICE 9 plays just that slice of the pad (samples 2000-2250) (" + juce::String ((int) b.size()) + " " + (b.empty() ? juce::String() : juce::String (b[0].second)) + " " + juce::String (out.getSample (0, 60), 3) + ")");
+
+            seq.clearAll();
+            set (0, [] (auto& s) { s.slice = 3; s.rev = true; s.pitch = 12; });
+            out = runIt (6000);
+            b = bursts (out);
+            check (b.size() == 1 && std::abs (b[0].second - 125) <= 2 && out.getSample (0, 50) > out.getSample (0, 110) + 0.05f,
+                   "...combined: slice 3, reversed, an octave up (125 samples, falling)");
+        }
+
+        // ---- FX steps: a looping tone on group A; MUTE thrown on steps 3-4, FX only.
+        {
+            SeqRig y;
+            juce::AudioBuffer<float> tone (1, 4800);
+            for (int i = 0; i < 4800; ++i) tone.setSample (0, i, 0.3f * std::sin (juce::MathConstants<float>::twoPi * (float) i / 48.0f));
+            y.r.load (2, writeAudio ("step_tone", tone, 48000.0, Fmt::wavFloat));
+            setPadParam (y.r.p, 2, tb::params::padMode, (float) tb::params::modeLoop);
+            setPadParam (y.r.p, 2, tb::params::padSync, 0.0f);
+            y.r.settle();
+            auto& seq = y.seq;
+            tb::SeqStep hit; hit.on = true; hit.velocity = 127;
+            seq.clearAll();
+            seq.set (2, 0, hit);
+            tb::SeqStep m; m.on = true; m.fx = tb::fx::mute + 1; m.hit = false;
+            seq.set (2, 2, m); seq.set (2, 3, m);
+            y.r.host.ppq = 0.0; y.r.host.playing = true;
+            auto out = renderTimeline (y.r, 30000, {});
+            auto peakIn = [&out] (int a, int b) { float p = 0; for (int i = a; i < b; ++i) p = juce::jmax (p, std::abs (out.getSample (0, i))); return p; };
+            // MUTE's own 10 ms crossfade follows each edge.
+            check (peakIn (8000, 11990) > 0.2f && peakIn (12600, 24000) < 1.0e-4f && peakIn (24600, 30000) > 0.2f && peakIn (24000, 24100) > 0.0f,
+                   "FX steps hold MUTE on the pad's group from step 3 to the end of step 4 (12000-24000): back-to-back steps without a gap, then it lets go ("
+                     + juce::String (peakIn (8000, 11990), 3) + " " + juce::String (peakIn (12600, 24000), 5) + " " + juce::String (peakIn (24600, 30000), 3) + ")");
+            // The loop was never retriggered (HIT off): its phase carries straight on.
+            const float expect = 0.3f * std::sin (juce::MathConstants<float>::twoPi * (float) (26000 % 48) / 48.0f);
+            check (std::abs (out.getSample (0, 26000) - expect) < 0.02f, "...FX-only steps don't retrigger the pad (the loop runs on underneath)");
+
+            seq.clearAll();
+            seq.set (2, 0, hit);
+            seq.set (2, 1, m);
+            y.r.host.ppq = 0.0;
+            renderTimeline (y.r, 8000, {});                               // MUTE held (step 2) ...
+            const bool heldNow = (y.r.p.getBridge().fxEngaged[0].load() & 1u) != 0;
+            y.r.host.playing = false;                                     // ... and Live stops mid-step
+            renderTimeline (y.r, 4096, {});
+            check (heldNow && (y.r.p.getBridge().fxEngaged[0].load() & 1u) == 0, "stopping Live lets go of a step-held effect");
+            y.r.p.requestPanic(); y.r.settle();
+
+            // Chance applies to the FX too.
+            seq.clearAll();
+            seq.set (2, 0, hit);
+            m.probability = 0;
+            seq.set (2, 2, m);
+            y.r.host.ppq = 0.0; y.r.host.playing = true;
+            out = renderTimeline (y.r, 20000, {});
+            y.r.host.playing = false; y.r.p.requestPanic(); y.r.settle();
+            check (peakIn (12600, 17900) > 0.2f, "...and a step that doesn't play (CHANCE 0) doesn't throw its FX");
+        }
+
+        // ---- Live recording keeps a step's settings.
+        {
+            SeqRig z;
+            z.seq.clearAll();
+            tb::SeqStep st; st.on = true; st.ratchet = 3; st.fx = 5; st.cond = tb::cond1of2; st.velocity = 20;
+            z.seq.set (0, 2, st);
+            z.seq.setArmed (0, true);
+            z.run (16000, { { 12000, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100) } });
+            const auto got = z.seq.get (0, 2);
+            check (got.on && got.velocity == 100 && got.ratchet == 3 && got.fx == 5 && got.cond == tb::cond1of2,
+                   "recording a hit onto a step keeps its ratchet / FX / condition (new velocity " + juce::String (got.velocity) + ")");
+            z.seq.setArmed (0, false);
+        }
+    }
+
+    void testStepEditorView()
+    {
+        std::cout << "\n== Phase 9: SEQUENCER step row ==" << std::endl;
+        Rig r;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::MainView* view = nullptr; tb::ui::SequencerPanel* panel = nullptr; tb::ui::TransportDisplay* trans = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* v = dynamic_cast<tb::ui::MainView*> (&c)) view = v;
+            if (auto* sp = dynamic_cast<tb::ui::SequencerPanel*> (&c)) panel = sp;
+            if (auto* td = dynamic_cast<tb::ui::TransportDisplay*> (&c)) trans = td;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (view && panel && trans, "found the sequencer panel");
+        if (! (view && panel && trans)) return;
+        view->showView (tb::ui::MainView::View::sequencer);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (panel->getHeight() > 380 && ! trans->isVisible(), "the SEQUENCER view takes the transport box too (" + juce::String (panel->getHeight()) + " px), for the STEP row");
+        view->showView (tb::ui::MainView::View::crt);
+        check (trans->isVisible(), "...and the transport box is back in the other views");
+        view->showView (tb::ui::MainView::View::sequencer);
+
+        auto& seq = r.p.getBridge().seq;
+        seq.clearAll();
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Component* comp, juce::Point<float> pos, juce::ModifierKeys mods)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            return juce::MouseEvent (src, pos, mods, 1.0f, 0, 0, 0, 0, comp, comp, t, pos, t, 1, false);
+        };
+        const auto c = panel->cellBounds (4, 9).getCentre();
+        panel->mouseDown (ev (panel, c, juce::ModifierKeys::leftButtonModifier)); panel->mouseUp (ev (panel, c, {}));
+        check (seq.get (4, 9).on && panel->getSelectedPad() == 4 && panel->getSelectedStep() == 9,
+               "clicking a cell switches it on and selects it for the STEP row (pad 5, step 10)");
+        panel->mouseDown (ev (panel, c, juce::ModifierKeys::rightButtonModifier)); panel->mouseUp (ev (panel, c, {}));
+        check (seq.get (4, 9).on, "right-click selects a lit step without switching it off");
+
+        // Drive the readouts like a user: scroll / click.
+        auto wheel = [&] (juce::Component& comp, int notches)
+        {
+            juce::MouseWheelDetails w { 0.0f, notches > 0 ? 0.1f : -0.1f, false, false, false };
+            for (int i = 0; i < std::abs (notches); ++i)
+                comp.mouseWheelMove (ev (&comp, comp.getLocalBounds().getCentre().toFloat(), {}), w);
+        };
+        auto click = [&] (juce::Component& comp)
+        {
+            const auto p = comp.getLocalBounds().getCentre().toFloat();
+            comp.mouseDown (ev (&comp, p, juce::ModifierKeys::leftButtonModifier));
+            comp.mouseUp (ev (&comp, p, {}));
+        };
+        click (panel->readout ("RAT")); click (panel->readout ("RAT"));
+        wheel (panel->readout ("CHANCE"), -5);
+        wheel (panel->readout ("PITCH"), 7);
+        wheel (panel->readout ("SLICE"), 3);
+        wheel (panel->readout ("FX"), tb::fx::stutter + 1);
+        wheel (panel->readout ("COND"), tb::cond3of4);
+        wheel (panel->readout ("MICRO"), -10);
+        panel->revButton().triggerClick();
+        panel->hitButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto st = seq.get (4, 9);
+        check (st.ratchet == 3 && st.probability == 75 && st.pitch == 7 && st.slice == 3 && st.fx == tb::fx::stutter + 1
+                 && st.cond == tb::cond3of4 && st.micro == -10 && st.rev && ! st.hit,
+               "the STEP row edits RATCHET, CHANCE, PITCH, SLICE, FX, COND, MICRO, REV and HIT of the selected step");
+
+        // Editing an empty step switches it on.
+        const auto e = panel->cellBounds (7, 3).getCentre();
+        panel->mouseDown (ev (panel, e, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::shiftModifier)));
+        panel->mouseUp (ev (panel, e, {}));
+        check (! seq.get (7, 3).on && panel->getSelectedStep() == 3, "shift-click selects an empty step without switching it on");
+        wheel (panel->readout ("PITCH"), -5);
+        check (seq.get (7, 3).on && seq.get (7, 3).pitch == -5, "editing an empty step's setting switches it on");
+
+        // FILL (HOLD) drives the automatable parameter.
+        auto* fillParam = r.p.getParameters().getRawParameterValue (tb::params::seqFill);
+        juce::Component& fill = panel->fillButton();
+        const auto fp = fill.getLocalBounds().getCentre().toFloat();
+        fill.mouseDown (ev (&fill, fp, juce::ModifierKeys::leftButtonModifier));
+        const bool down = fillParam->load() > 0.5f;
+        fill.mouseUp (ev (&fill, fp, {}));
+        check (down && fillParam->load() < 0.5f, "FILL (HOLD) sets Sequencer Fill while it's held, and lets go");
     }
 
     //==========================================================================
@@ -3347,6 +3661,16 @@ namespace
             put (3, "x.x.x.oxx.x.x.x.x.x.x.oxx.x.x.ox", 90);
             put (5, "..............x...............x.", 100);
             { tb::SeqStep st; st.on = true; st.velocity = 80; st.micro = -64; seq.set (4, 7, st); }
+            // Phase 9 step features.
+            auto tweak = [&seq] (int pad, int s, std::function<void (tb::SeqStep&)> f) { auto st = seq.get (pad, s); st.on = true; f (st); seq.set (pad, s, st); };
+            tweak (0, 0,  [] (auto& st) { st.velocity = 110; st.ratchet = 2; st.probability = 75; st.pitch = 5; st.cond = tb::cond1of2; });
+            tweak (0, 12, [] (auto& st) { st.velocity = 100; st.slice = 7; st.rev = true; });
+            tweak (0, 28, [] (auto& st) { st.fx = tb::fx::stutter + 1; st.hit = false; });
+            tweak (3, 7,  [] (auto& st) { st.ratchet = 3; });
+            tweak (3, 23, [] (auto& st) { st.ratchet = 4; st.cond = tb::condFill; });
+            tweak (3, 13, [] (auto& st) { st.probability = 50; });
+            tweak (3, 29, [] (auto& st) { st.probability = 35; });
+            tweak (2, 31, [] (auto& st) { st.fx = tb::fx::reverse + 1; });
             setParam (p, tb::params::seqLength, 32.0f);
             seq.setArmed (3, true);
         }
@@ -3527,6 +3851,8 @@ int main (int argc, char* argv[])
         testSequencer();
         testLiveRecord();
         testSequencerView();
+        testStepFeatures();
+        testStepEditorView();
         testSliceSequencer();
         testSliceSeqEditing();
         testSliceSeqSwap();

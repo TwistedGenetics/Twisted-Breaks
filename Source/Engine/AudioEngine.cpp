@@ -5,6 +5,7 @@
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace tb
 {
@@ -195,7 +196,7 @@ namespace tb
             fxParamMask[(size_t) g] = mask;
             fxParams[(size_t) g]    = gp.fxParam;
             // On = parameter (mouse / automation) XOR a MIDI latch, or held from MIDI.
-            groups[(size_t) g].setFx ((mask ^ fxLatch[(size_t) g].load (std::memory_order_relaxed)) | fxHeld[(size_t) g], gp.fxParam);
+            applyFx (g);
         }
 
         for (int p = 0; p < kNumPads; ++p)
@@ -278,12 +279,16 @@ namespace tb
                               ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
             GroupBus::panGains (g, pp.pan, s.gainLeft, s.gainRight);
 
-            for (auto& v : voices[(size_t) p])
+            for (int i = 0; i < kVoicesPerPad; ++i)
+            {
+                auto& v = voices[(size_t) p][(size_t) i];
                 if (v.isActive() && v.getBuffer() == buf)
                 {
-                    if (padSliceSeq[(size_t) p]) v.updateGains (s);    // slice hits keep their own region / pitch
-                    else                         v.update (s);
+                    // Slice hits and tweaked steps keep their own region / pitch.
+                    if (padSliceSeq[(size_t) p] || voiceCustom[(size_t) p][(size_t) i]) v.updateGains (s);
+                    else                                                                 v.update (s);
                 }
+            }
         }
     }
 
@@ -313,7 +318,7 @@ namespace tb
         else                           startVoice (pad, level, sampleOffset, startAt);
     }
 
-    void AudioEngine::triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer) noexcept
+    void AudioEngine::triggerPad (int pad, float velocity, int sampleOffset, bool fromSequencer, const SeqStep* step) noexcept
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
@@ -366,7 +371,45 @@ namespace tb
             else if (! fromSequencer)             stopSliceSeq (pad);
             return;
         }
+
+        // A sequencer step with its own pitch / reverse / slice.
+        if (step != nullptr && step->hasSoundTweak())
+        {
+            const auto s = tweakedSettings (pad, *step);
+            startVoice (pad, level, sampleOffset, -1.0, &s);
+            return;
+        }
         startVoice (pad, level, sampleOffset);
+    }
+
+    PadVoice::Settings AudioEngine::tweakedSettings (int pad, const SeqStep& st) const noexcept
+    {
+        PadVoice::Settings s = padSettings[(size_t) pad];
+        const auto* buf = padSample[(size_t) pad].get();
+        if (buf == nullptr) return s;
+        const double fileRate = buf->sourceSampleRate / sampleRate;
+
+        if (st.slice > 0)
+        {
+            // SLICE n: that slice of the pad's break (equal 1/16ths if it has no
+            // markers), one-shot from its start, at the pad's own pitch.
+            const int len = buf->getNumSamples();
+            const auto table = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (len, 16) : padSlices[(size_t) pad];
+            const auto r = table.region ((st.slice - 1) % juce::jmax (1, table.count), len);
+            s.regionStart = r.getStart();
+            s.regionEnd   = juce::jmax (r.getStart() + kMinRegion, r.getEnd());
+            s.loop = false;
+            s.syncPeriodBeats = 0.0;
+            s.increment = fileRate * std::pow (2.0, (double) padPitchNow[(size_t) pad] / 12.0);
+        }
+        if (st.pitch != 0)
+        {
+            // A pitched hit runs free at its own speed (off the loop grid for this hit).
+            s.syncPeriodBeats = 0.0;
+            s.increment *= std::pow (2.0, (double) st.pitch / 12.0);
+        }
+        if (st.rev) s.reverse = ! s.reverse;
+        return s;
     }
 
     void AudioEngine::startVoice (int pad, float level, int sampleOffset, double startAt,
@@ -388,6 +431,7 @@ namespace tb
         cur = (cur + 1) % kVoicesPerPad;
         slots[(size_t) cur].kill();
         slots[(size_t) cur].start (sample, custom != nullptr ? *custom : padSettings[(size_t) pad], level, ppqHere, playing, startAt);
+        voiceCustom[(size_t) pad][(size_t) cur] = custom != nullptr;
     }
 
     //==========================================================================
@@ -583,6 +627,7 @@ namespace tb
             groups[(size_t) g].panicFx();
             fxLatch[(size_t) g].store (0);
             fxHeld[(size_t) g] = 0;
+            fxStepHeld[(size_t) g] = 0;
         }
 
         // Later phases add: sequencer voices, stutter / beat-repeat buffers,
@@ -663,6 +708,8 @@ namespace tb
         if (! seqRecording)
         {
             bridge.seqStep.store (-1, std::memory_order_relaxed);
+            if (seqWasPlaying) clearStepFx();          // Live stopped: step-held FX let go
+            seqWasPlaying = false;
             return;
         }
 
@@ -670,14 +717,21 @@ namespace tb
         // restart, a loop-brace wrap or a relocate lands on the right step.
         const double p0 = t.ppqAtBlockStart;
         const double p1 = p0 + numSamples * t.ppqPerSample;
-        const auto mod = [this] (int64_t k) { const int64_t L = seqLengthNow; return (int) (((k % L) + L) % L); };
-        bridge.seqStep.store (mod ((int64_t) std::floor (p0 / seqStepPpq + 1.0e-9)), std::memory_order_relaxed);
+        const int64_t L = seqLengthNow;
+        const auto mod  = [L] (int64_t k) { return (int) (((k % L) + L) % L); };
+        const auto pass = [L] (int64_t k) { return k >= 0 ? k / L : -((-k + L - 1) / L); };
+        const int64_t kNow = (int64_t) std::floor (p0 / seqStepPpq + 1.0e-9);
+        bridge.seqStep.store (mod (kNow), std::memory_order_relaxed);
+        if (! seqWasPlaying) seqFirstPass = pass (kNow);       // Live just started: this is the FIRST pass
+        seqWasPlaying = true;
 
-        if (! bp.seqRun) return;
+        if (! bp.seqRun) { clearStepFx(); return; }
 
         auto& data = bridge.seq;
         const int64_t kFirst = (int64_t) std::floor (p0 / seqStepPpq) - 1;     // micro-timing can pull a step earlier
         const int64_t kLast  = (int64_t) std::ceil  (p1 / seqStepPpq) + 1;
+        auto inBlock  = [&] (double ppq) { return ppq >= p0 - 1.0e-9 && ppq < p1 - 1.0e-9; };
+        auto offsetOf = [&] (double ppq) { return juce::jlimit (0, numSamples - 1, (int) std::lround ((ppq - p0) / t.ppqPerSample)); };
 
         for (int64_t k = kFirst; k <= kLast; ++k)
         {
@@ -688,12 +742,74 @@ namespace tb
                 if (! st.on || k == seqSkipOnce[(size_t) pad]) continue;
 
                 const double when = ((double) k + st.micro / 128.0) * seqStepPpq;
-                if (when < p0 - 1.0e-9 || when >= p1 - 1.0e-9) continue;
+                const double end  = when + seqStepPpq;
+                const int r = juce::jlimit (1, 4, st.ratchet);
+                const double sub = seqStepPpq / r;
 
-                const int offset = juce::jlimit (0, numSamples - 1, (int) std::lround ((when - p0) / t.ppqPerSample));
-                insertEvent ({ offset, pad, (float) st.velocity / 127.0f, SeqKind::padHit, 0, 0 });
+                // Anything of this step in the block? (first hit, a ratchet, the FX release)
+                bool touches = st.fx > 0 && inBlock (end);
+                for (int j = 0; j < r && ! touches; ++j) touches = inBlock (when + j * sub);
+                if (! touches) continue;
+
+                // CONDITION (pattern pass on Live's timeline) and CHANCE, decided
+                // once when the step's first hit comes due; ratchets follow it.
+                if (inBlock (when))
+                {
+                    bool plays = seqConditionPasses (st.cond, pass (k), bp.seqFill, pass (k) == seqFirstPass);
+                    if (plays && st.probability < 100) plays = seqRandom.nextInt (100) < st.probability;
+                    seqRollStep[(size_t) pad]  = k;
+                    seqRollPlays[(size_t) pad] = plays;
+                }
+                if (seqRollStep[(size_t) pad] != k || ! seqRollPlays[(size_t) pad]) continue;
+
+                const uint64_t packed = st.pack();
+                for (int j = 0; j < r && st.hit; ++j)
+                    if (inBlock (when + j * sub))
+                        insertEvent ({ offsetOf (when + j * sub), pad, (float) st.velocity / 127.0f, SeqKind::padHit, packed, 0 });
+
+                // FX: held on the pad's group for the length of the step.
+                if (st.fx > 0)
+                {
+                    const int g = padGroup[(size_t) pad];
+                    uint64_t endBits;
+                    std::memcpy (&endBits, &end, sizeof end);
+                    if (inBlock (when)) insertEvent ({ offsetOf (when), g, 0.0f, SeqKind::stepFxOn,  endBits, (uint32_t) (st.fx - 1) });
+                    if (inBlock (end))  insertEvent ({ offsetOf (end),  g, 0.0f, SeqKind::stepFxOff, endBits, (uint32_t) (st.fx - 1) });
+                }
             }
         }
+    }
+
+    void AudioEngine::applyFx (int g) noexcept
+    {
+        groups[(size_t) g].setFx ((fxParamMask[(size_t) g] ^ fxLatch[(size_t) g].load (std::memory_order_relaxed))
+                                    | fxHeld[(size_t) g] | fxStepHeld[(size_t) g],
+                                  fxParams[(size_t) g]);
+    }
+
+    void AudioEngine::stepFx (int g, int f, bool on, double endPpq) noexcept
+    {
+        if (! juce::isPositiveAndBelow (g, kNumGroups) || ! juce::isPositiveAndBelow (f, fx::kNumFx)) return;
+        auto& until = fxStepEnd[(size_t) g][(size_t) f];
+        const uint32_t bit = 1u << f;
+        if (on)
+        {
+            until = (fxStepHeld[(size_t) g] & bit) != 0 ? juce::jmax (until, endPpq) : endPpq;
+            fxStepHeld[(size_t) g] |= bit;
+        }
+        else
+        {
+            // Only the step that holds it last lets go (a later step may have taken it on).
+            if ((fxStepHeld[(size_t) g] & bit) == 0 || until > endPpq + 1.0e-9) return;
+            fxStepHeld[(size_t) g] &= ~bit;
+        }
+        applyFx (g);
+    }
+
+    void AudioEngine::clearStepFx() noexcept
+    {
+        for (int g = 0; g < kNumGroups; ++g)
+            if (fxStepHeld[(size_t) g] != 0) { fxStepHeld[(size_t) g] = 0; applyFx (g); }
     }
 
     void AudioEngine::insertEvent (const SeqEvent& e) noexcept
@@ -908,12 +1024,16 @@ namespace tb
         const int64_t k  = (int64_t) std::llround (x);
         const int micro  = juce::jlimit (-64, 63, (int) std::lround ((x - (double) k) * 128.0));
 
-        SeqStep st;
+        // Recording over a step keeps its settings (pitch, ratchet, FX ...).
+        const int64_t L = seqLengthNow;
+        const int idx = (int) (((k % L) + L) % L);
+        SeqStep st = bridge.seq.get (pad, idx);
+        if (! st.on) st = {};
         st.on = true;
+        st.hit = true;
         st.velocity = juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f));
         st.micro = micro;
-        const int64_t L = seqLengthNow;
-        bridge.seq.set (pad, (int) (((k % L) + L) % L), st);
+        bridge.seq.set (pad, idx, st);
 
         // That step may still be ahead in this pass (hit a little early):
         // you've just played it, so the sequencer mustn't play it again now.
@@ -938,8 +1058,7 @@ namespace tb
         }
 
         // Apply now (sample-accurate) rather than next block.
-        groups[(size_t) g].setFx ((fxParamMask[(size_t) g] ^ fxLatch[(size_t) g].load (std::memory_order_relaxed)) | fxHeld[(size_t) g],
-                                  fxParams[(size_t) g]);
+        applyFx (g);
         return true;
     }
 
@@ -1076,8 +1195,19 @@ namespace tb
                         switchBank (e.pad);
                         break;
                     case SeqKind::padHit:
-                        triggerPad (e.pad, e.velocity, e.offset, true);
+                    {
+                        const auto st = SeqStep::unpack (e.step);
+                        triggerPad (e.pad, e.velocity, e.offset, true, &st);
                         break;
+                    }
+                    case SeqKind::stepFxOn:
+                    case SeqKind::stepFxOff:
+                    {
+                        double end;
+                        std::memcpy (&end, &e.step, sizeof end);
+                        stepFx (e.pad, (int) e.gen, e.kind == SeqKind::stepFxOn, end);
+                        break;
+                    }
                     case SeqKind::sliceHit:
                         if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)
                             sliceHit (e.pad, SliceStep::unpack (e.step), e.velocity, e.offset);

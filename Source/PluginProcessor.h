@@ -147,6 +147,7 @@ private:
     std::atomic<float>* seqLengthParam = nullptr;
     std::atomic<float>* seqResParam = nullptr;
     std::atomic<float>* seqQuantParam = nullptr;
+    std::atomic<float>* seqFillParam = nullptr;
     std::atomic<float>* bankActiveParam = nullptr;
     std::atomic<float>* bankAtParam = nullptr;
 

@@ -36,6 +36,7 @@ namespace tb::params
     inline constexpr int kV8 = 8;   // parameters introduced in 0.6.x (performance FX)
     inline constexpr int kV9 = 9;   // parameters introduced in 0.7.x (sequencer)
     inline constexpr int kV10 = 10; // parameters introduced in 0.8.x (snapshots, break bank)
+    inline constexpr int kV11 = 11; // parameters introduced in 0.9.x (step features)
 
     // ---- Snapshots & break bank (Phase 8) ----------------------------------------
     inline constexpr const char* snapRecall = "snapshot";     // int 0..8: 0 = none; changing it recalls that slot
@@ -49,6 +50,7 @@ namespace tb::params
     inline constexpr const char* seqLength = "seq_length";   // int 1..32 steps
     inline constexpr const char* seqRes    = "seq_res";      // choice: 1/8, 1/16, 1/32 per step
     inline constexpr const char* seqQuant  = "seq_quant";    // choice: live-record quantise 1/4, 1/8, 1/16, 1/32
+    inline constexpr const char* seqFill   = "seq_fill";     // bool: FILL held (steps with FILL / !FILL conditions)
     inline constexpr double seqResPpq[]   = { 0.5, 0.25, 0.125 };
     inline constexpr double seqQuantPpq[] = { 1.0, 0.5, 0.25, 0.125 };
 

@@ -34,7 +34,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 7 | 32-step sequencer + live recording | **done** — 296/296 automated checks |
 | 7.1 | Per-pad slice sequencer | **done** — 333/333 automated checks |
 | 8 | Snapshots, break bank, find missing samples | **done** — 362/362 automated checks |
-| 9+ | Later ideas | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SPEC_ADDITIONS.md](docs/SPEC_ADDITIONS.md) |
+| 9 | Step features: chance, ratchet, pitch, reverse, slice, FX, conditions | **done** — 399/399 automated checks |
+| 10+ | MUTATE, macros, resample + vintage modes, Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -118,6 +119,14 @@ Sections that aren't built yet are visibly marked offline on the panel
   select it) and hits from the mouse or MIDI are recorded while Live plays,
   quantised to **REC Q** (1/4, 1/8, 1/16, 1/32; finer than the step size
   is kept as micro-timing). Patterns are saved with the set.
+  **Step features (0.9):** the STEP row under the grid edits the selected
+  step (click a cell; right-click or shift-click to select without
+  switching it off): **CHANCE** (rolled each time round), **RAT**chet 1-4,
+  **PITCH** ±24, **SLICE** (play slice 1-16 of the pad's break), **REV**,
+  **MICRO**, **FX** (that effect held on the pad's group for the step;
+  switch **HIT** off to throw the FX without retriggering the pad) and
+  **COND**: 1:2 ... 4:4 (pass A of every B, on Live's timeline), FILL /
+  !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
 * **Slice sequencer** (pad editor **SEQ** tab): rearrange a sliced break.
   Switch **SLICE SEQ** on and the pad plays its own pattern of slices when
   hit (hit again to stop). Untouched, the pattern replays the break exactly

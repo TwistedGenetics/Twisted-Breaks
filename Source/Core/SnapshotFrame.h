@@ -36,7 +36,7 @@ namespace tb
         std::array<SampleBuffer*, kNumPads>     raw {};        // the same, for the audio thread
         std::array<SliceTable, kNumPads>        slices {};
 
-        std::array<std::array<uint32_t, SequencerData::kSteps>, kNumPads> seq {};
+        std::array<std::array<uint64_t, SequencerData::kSteps>, kNumPads> seq {};
         std::array<std::array<std::array<uint64_t, SliceSeqData::kSteps>, SliceSeqData::kSlots>, kNumPads> sliceSteps {};
         std::array<std::array<uint32_t, SliceSeqData::kSlots>, kNumPads> sliceSlots {};
 

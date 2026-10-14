@@ -256,10 +256,9 @@ Hand-off between breaks at slice points (spec addition A1 in
 
 ## 6d. Sequencer (Phase 7, implemented)
 
-* `Core/SequencerData`: 16 lanes x 32 steps, each step ONE packed 32-bit
-  atomic (on, velocity, micro-timing in 1/128 step, and probability /
-  ratchet / pitch fields reserved for later), shared by UI, audio and state
-  code with no locks or queues. Arm flags live there too.
+* `Core/SequencerData`: 16 lanes x 32 steps, each step ONE packed atomic
+  word (32 bits in 0.7 / 0.8, 64 bits from 0.9: see 6g), shared by UI,
+  audio and state code with no locks or queues. Arm flags live there too.
 * Steps sit on Live's absolute grid: step k starts at k x STEP ppq, played
   as `k mod LEN`, so starts, stops, relocates and loop-brace wraps need no
   special handling. Each block, `collectSequencerEvents` lists the steps due
@@ -272,6 +271,32 @@ Hand-off between breaks at slice points (spec addition A1 in
 * UI: `SequencerPanel` in the screen area (16 x 32 grid, velocity drag,
   playhead, LEN / STEP / REC Q readouts, RUN, ARM, CLEAR). Recorded steps
   bump the data version; the UI marks the host state dirty.
+
+## 6g. Step features (Phase 9, implemented)
+
+* The step word grew to 64 bits (`SeqStep`): on, velocity, micro, CHANCE,
+  RATCHET 1-4, PITCH, REV, SLICE 0-16, FX 0-16, COND, and HIT (bit 47 is
+  "no hit", so 0 = hit). Old 32-bit words and saved hex strings read in
+  unchanged; the snapshot frame carries the 64-bit words.
+* `collectSequencerEvents`: CONDITION is decided from the pattern pass on
+  Live's timeline (`floor(k / LEN)`), so A:B steps repeat with a loop brace
+  and survive relocates; FIRST = the pass Live started in. CHANCE is rolled
+  once, when the step's first hit comes due, and remembered per pad
+  (`seqRollStep`) so ratchets follow it across block edges. RATCHET hits are
+  `stepPpq / r` apart, each its own `padHit` event carrying the packed step.
+* Pitch / reverse / slice: `triggerPad` builds the voice settings for that
+  hit (`tweakedSettings`); the voice is flagged custom so the per-block
+  settings update only touches its gains (the same path slice-sequencer hits
+  use). SWAP and SLICE SEQ pads ignore these three (they own their playback).
+* FX: `stepFxOn` / `stepFxOff` events (ON sorts before OFF on a tie) hold the
+  effect on the pad's group (`fxStepHeld`, OR'ed with MIDI held / latched /
+  parameter state in `applyFx`). Each holder records its end ppq, so only
+  the last step holding an effect lets it go: back-to-back steps run
+  unbroken. Live stopping, RUN off or PANIC releases them.
+* FILL = the `seq_fill` parameter (kV11), excluded from snapshots.
+* UI: the SEQUENCER view covers the transport box too (BPM / position move
+  into its STEP row). STEP row = DragReadout models over the selected step;
+  editing an empty step switches it on.
 
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
@@ -456,4 +481,5 @@ Ableton stores in the `.als` file:
 | **7 ✅** | 32-step sequencer (16 lanes, velocity, length, step size, RUN), live record with quantise | 296/296 checks: steps sample-exact mid-block, length / step size, micro-timing, stopped / RUN off silent, jumps and restarts land on the right step, recording at 1/4–1/32 (finer kept as micro-timing) without double hits, mouse + MIDI, state, grid editing |
 | **7.1 ✅** | **Per-pad slice sequencer** (spec addition A5) | 333/333 checks: untouched pattern replays the break sample-exactly, rearranged / REST / REV / RATCHET / gate / PITCH / CHANCE / MICRO / SWING / RATE timed to the sample, start / stop, free clock when stopped, slot switch at the pattern start, FILL, main-sequencer start, SWAP hand-off on the step, edit ops, screen editing, STEP REC, state |
 | **8 ✅** | Snapshots (8 slots, NOW / BEAT / BAR, Program Change, automation), break bank (A2), find missing samples | 362/362 checks: recall restores params / samples / patterns, master untouched, NEXT BAR switch on the exact bar-line sample mid-block, bank switch on the beat sample-exact, state, relocate, UI, 240 switches in 2 min with the worst block at 0.5 ms and nothing leaking |
-| 9+ | Scene A/B + crossfader, per-step probability/ratchets, MUTATE, macros, resample, vintage modes | — |
+| **9 ✅** | Step features in the main sequencer: CHANCE, RATCHET, PITCH, REV, SLICE, FX (held for the step, FX-only), conditions (A:B, FILL, FIRST), FILL key / parameter, STEP row | 399/399 checks: ratchets sample-exact, chance statistics with all-or-nothing ratchets, every condition incl. starts mid-song, pitch / reverse / slice measured and held across blocks, FX held exactly one step and unbroken back-to-back, FX-only doesn't retrigger, stop releases, old 32-bit sets load, UI edits |
+| 10+ | MUTATE, macros, resample + vintage modes, Scene A/B + crossfader (one phase each) | — |
