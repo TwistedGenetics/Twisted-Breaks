@@ -186,7 +186,9 @@ Notes for the build:
 
 ## A6. Sequence pads — launch a pad's sequence by hitting it, and SWAP between sequences
 
-**Status: not built yet (prompt + plan).**
+**Status: not built yet (prompt + plan).** Decided with Jamie: a SEQ pad
+plays its own lane, so its sequence triggers only its own sound (no
+multi-lane "pattern pads"). SWAP FROM defaults to SAME STEP.
 
 Prompt:
 
