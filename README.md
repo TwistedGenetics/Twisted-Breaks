@@ -41,7 +41,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 11 | Performance macros | **done** — 441/441 automated checks |
 | 12 | RESAMPLE + vintage CHARACTER modes | **done** — 464/464 automated checks |
 | 13 | Scene A / B + crossfader | **done** — 485/485 automated checks |
-| 0.14 | Sequence pads: launch a pad's sequence by hitting it, SWAP between sequences | **done** — 506/506 automated checks |
+| 0.14 | Sequence pads: launch a pad's sequence by hitting it, SWAP between sequences; 0.14.1: launched sequences follow Live's playhead | **done** — 507/507 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -135,8 +135,9 @@ Sections that aren't built yet are visibly marked offline on the panel
   !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
 * **SEQUENCE PADS** (0.14): set a pad's MODE to **SEQ1** or **SEQL** and
   hitting it plays its sequencer lane once or looped (its lane no longer
-  runs by itself). **LAUNCH** (NOW / 1/16 / BEAT / BAR) sets where it
-  starts, **LEN** gives it its own length. Hit a looping one again to stop
+  runs by itself). It always plays in time with Live's playhead (the step
+  under it, lined up with the bar); **LAUNCH** (NOW / 1/16 / BEAT / BAR)
+  sets when it comes in, **LEN** gives it its own length. Hit a looping one again to stop
   it on the next boundary. Put SEQ pads in a **SWAP** group and they cut
   each other's sequences on the next STEP, 1/16, beat or bar, carrying on
   from the same step (or from step 1 with **FROM STEP 1**).

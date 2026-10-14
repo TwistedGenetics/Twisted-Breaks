@@ -353,7 +353,12 @@ namespace tb
     void AudioEngine::startPad (int pad, float level, int sampleOffset, double startAt) noexcept
     {
         // SEQ pads: startAt is the lane's anchor (clock ppq of its step 1), or -1 = its LAUNCH boundary.
-        if (isSeqPad (pad))            launchLane (pad, sampleOffset, startAt >= 0.0 ? startAt : launchBoundary (pad, sampleOffset), level);
+        if (isSeqPad (pad))
+        {
+            // A SWAP hand-off passes the anchor (and starts right here); otherwise its LAUNCH boundary, on the grid.
+            const double b = startAt >= 0.0 ? clockAt (sampleOffset) : launchBoundary (pad, sampleOffset);
+            launchLane (pad, sampleOffset, startAt >= 0.0 ? startAt : gridAnchor (pad, b), b, level);
+        }
         else if (padSliceSeq[(size_t) pad]) startSliceSeq (pad, sampleOffset);
         else                           startVoice (pad, level, sampleOffset, startAt);
     }
@@ -655,11 +660,9 @@ namespace tb
             // A sequence taking over: SAME STEP carries on from the same position
             // (the outgoing sequence's, or the pattern's place on the grid); STEP 1
             // starts from the top, right here.
+            // SAME STEP: the step under Live's playhead (the song grid); STEP 1: from the top, right here.
             const double now = clockAt (sampleOffset);
-            const double len = laneLength (to) * seqStepPpq;
-            if (padSwapFrom[(size_t) to] == 1)                                   at = now;
-            else if (owner >= 0 && isSeqPad (owner) && laneRun[(size_t) owner].running) at = laneRun[(size_t) owner].anchor;
-            else                                                                  at = std::floor ((now + 1.0e-9) / len) * len;
+            at = padSwapFrom[(size_t) to] == 1 ? now : gridAnchor (to, now);
         }
         else
         {
@@ -799,14 +802,19 @@ namespace tb
         }
         else if (clockPlaying && t.jumped)
         {
-            // Loop-brace wrap / relocate: launched sequences carry straight on.
+            // Loop-brace wrap / relocate: launched sequences follow Live's playhead to
+            // the new place (the step under it); pending stops / restarts keep their distance.
             const double delta = clock0 - freePpq;
-            for (auto& r : laneRun)
-                if (r.running)
-                {
-                    r.anchor += delta; r.nextAnchor += delta;
-                    if (r.endPpq < 1.0e299) r.endPpq += delta;
-                }
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                auto& r = laneRun[(size_t) p];
+                if (! r.running) continue;
+                const bool fromTop = std::abs (std::remainder (r.anchor, laneLength (p) * seqStepPpq)) > 1.0e-6;   // a FROM STEP 1 hand-off
+                r.start += delta; r.nextStart += delta;
+                if (r.endPpq < 1.0e299) r.endPpq += delta;
+                r.anchor     = fromTop ? r.anchor + delta : gridAnchor (p, clock0);
+                r.nextAnchor = gridAnchor (p, r.nextStart);
+            }
         }
         clockWasPlaying = clockPlaying;
         for (int p = 0; p < kNumPads; ++p)
@@ -923,7 +931,13 @@ namespace tb
         return origin + std::ceil ((c - origin) / q - 1.0e-9) * q;
     }
 
-    void AudioEngine::launchLane (int pad, int sampleOffset, double anchor, float hitVel) noexcept
+    double AudioEngine::gridAnchor (int pad, double ppq) const noexcept
+    {
+        const double len = juce::jmax (1, laneLength (pad)) * seqStepPpq;
+        return std::floor ((ppq + 1.0e-9) / len) * len;
+    }
+
+    void AudioEngine::launchLane (int pad, int sampleOffset, double anchor, double start, float hitVel) noexcept
     {
         auto& r = laneRun[(size_t) pad];
         const uint32_t gen = r.gen + 1;
@@ -932,6 +946,7 @@ namespace tb
         r.running = true;
         r.once    = padMode[(size_t) pad] == params::modeSeqOne;
         r.anchor  = anchor;
+        r.start   = start;
         r.hitVel  = juce::jlimit (0.0f, 1.0f, hitVel);
         addLaneEvents (pad, sampleOffset);
     }
@@ -939,16 +954,27 @@ namespace tb
     void AudioEngine::hitSeqPad (int pad, float velocity, int sampleOffset) noexcept
     {
         auto& r = laneRun[(size_t) pad];
+
+        // Live stopped and nothing else on the free clock: start it here, so the
+        // pattern's grid (and its step 1) begins with this hit.
+        if (! clockPlaying && ! r.running)
+        {
+            bool others = false;
+            for (int p = 0; p < kNumPads; ++p)
+                others = others || laneRun[(size_t) p].running || sliceRun[(size_t) p].running;
+            if (! others) clock0 = -sampleOffset * clockDppq;
+        }
+
         const double b = launchBoundary (pad, sampleOffset);
         if (! r.running)
         {
-            launchLane (pad, sampleOffset, b, velocity);
+            launchLane (pad, sampleOffset, gridAnchor (pad, b), b, velocity);
             return;
         }
         if (r.once)
         {
-            // SEQ ONE again: start over from step 1 at the next boundary.
-            r.hasNext = true; r.nextAnchor = b; r.endPpq = b; r.releaseAtEnd = false;
+            // SEQ ONE again: another full pass from the next boundary (still in time with the playhead).
+            r.hasNext = true; r.nextStart = b; r.nextAnchor = gridAnchor (pad, b); r.endPpq = b; r.releaseAtEnd = false;
             r.hitVel = juce::jlimit (0.0f, 1.0f, velocity);
         }
         else if (r.releaseAtEnd)
@@ -982,23 +1008,27 @@ namespace tb
         const StepCtx ctx { p0, p1, clock0, clockDppq, step, blockLength, seqFillNow };
         auto& data = bridge.seq;
 
-        auto segment = [&] (double a, double e)
+        // A segment: steps on the grid from `a`, playing from `from` (the launch) until `e`.
+        // SEQ ONE plays one full pass (LEN steps) from its launch, in time with the playhead.
+        auto segment = [&] (double a, double from, double e)
         {
-            const double cut = r.once ? juce::jmin (e, a + L * step) : e;
-            const int64_t iFirst = juce::jmax ((int64_t) 0, (int64_t) std::floor ((p0 - a) / step) - 1);
+            const double cut = r.once ? juce::jmin (e, from + L * step) : e;
+            const int64_t iFirst = juce::jmax ((int64_t) 0, (int64_t) std::floor ((juce::jmax (p0, from) - a) / step) - 1);
             const int64_t iLast  = (int64_t) std::ceil ((p1 - a) / step) + 1;
             for (int64_t i = iFirst; i <= iLast; ++i)
             {
                 const double stepStart = a + (double) i * step;
                 if (stepStart >= cut - 1.0e-9) break;
+                if (stepStart < from - 1.0e-9) continue;              // before the launch
                 const auto st = data.get (pad, (int) (i % L));
                 if (! st.on) continue;
-                emitStep (ctx, pad, st, stepStart, i / L, i < L, (int64_t) std::llround (stepStart * 1024.0),
+                // Passes count on the grid (like the free lanes); FIRST = the first time round after the launch.
+                emitStep (ctx, pad, st, stepStart, i / L, stepStart < from + L * step - 1.0e-9, (int64_t) std::llround (stepStart * 1024.0),
                           r.rollKey, r.rollPlays, r.hitVel, pad, r.gen);
             }
         };
-        segment (r.anchor, r.endPpq);
-        if (r.hasNext) segment (r.nextAnchor, 1.0e300);
+        segment (r.anchor, r.start, r.endPpq);
+        if (r.hasNext) segment (r.nextAnchor, r.nextStart, 1.0e300);
 
         // A stop cuts the sound right there.
         if (r.releaseAtEnd && r.endPpq >= p0 - 1.0e-9 && r.endPpq < p1 - 1.0e-9)
@@ -1017,16 +1047,17 @@ namespace tb
             if (r.running)
             {
                 const double len = laneLength (p) * seqStepPpq;
-                if (r.hasNext && c1 > r.nextAnchor + 1.0e-9)    { r.anchor = r.nextAnchor; r.hasNext = false; r.endPpq = 1.0e300; }
+                if (r.hasNext && c1 > r.nextStart + 1.0e-9)     { r.anchor = r.nextAnchor; r.start = r.nextStart; r.hasNext = false; r.endPpq = 1.0e300; }
                 else if (! r.hasNext && c1 > r.endPpq + 1.0e-9) { r.running = false; }
-                if (r.running && r.once && ! r.hasNext && c1 > r.anchor + len + 1.0e-9) r.running = false;
+                if (r.running && r.once && ! r.hasNext && c1 > r.start + len + 1.0e-9) r.running = false;
             }
             if (r.running && seqStepPpq > 0.0)
             {
                 const double at = c1 - 1.0e-9;
                 if (at >= r.anchor)
                     step = (int) ((int64_t) std::floor ((at - r.anchor) / seqStepPpq) % juce::jmax (1, laneLength (p)));
-                queued = at < r.anchor || r.hasNext || r.releaseAtEnd;
+                queued = at < r.start || r.hasNext || r.releaseAtEnd;
+                if (at < r.start) step = -1;
             }
             bridge.laneStep[(size_t) p].store (step, std::memory_order_relaxed);
             laneQueued[(size_t) p] = queued;

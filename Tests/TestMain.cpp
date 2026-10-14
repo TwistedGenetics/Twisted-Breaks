@@ -3529,26 +3529,43 @@ namespace
         lane (0, { 0, 2 });
         x.r.settle();
         auto o = onsets (run (170000, { hit (30000) }), 0);
-        check (o == std::vector<int> { 48000, 60000, 144000, 156000 },
-               "SEQ LOOP: nothing until the pad is hit; a hit at 30000 starts its lane on the next beat (48000) and it loops every 16 steps (" + list (o) + ")");
+        check (o == std::vector<int> { 96000, 108000 },
+               "SEQ LOOP: nothing until the pad is hit; hit at 30000 it comes in on the next beat in time with Live's playhead "
+               "(steps 1 and 3 land on the bar, 96000 / 108000) (" + list (o) + ")");
 
         setPad (0, tb::params::padMode, (float) tb::params::modeSeqOne);
         x.r.settle();
         o = onsets (run (250000, { hit (30000) }), 0);
-        check (o == std::vector<int> { 48000, 60000 }, "SEQ ONE: the lane plays once, then stops (" + list (o) + ")");
+        check (o == std::vector<int> { 96000, 108000 }, "SEQ ONE: one full pass from the launch (48000-144000) in time with the playhead, then stops (" + list (o) + ")");
 
-        const std::pair<int, std::vector<int>> launches[] = { { tb::params::launchNow, { 31000, 43000 } }, { tb::params::launchSixteenth, { 36000, 48000 } },
-                                                              { tb::params::launchBar, { 96000, 108000 } } };
+        // LAUNCH: when it comes in. It always plays the step under the playhead.
+        lane (0, { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 });
+        struct L { int launch, at, first; };
+        const L launches[] = { { tb::params::launchNow, 30000, 30000 }, { tb::params::launchSixteenth, 31000, 36000 },
+                               { tb::params::launchBeat, 31000, 48000 }, { tb::params::launchBar, 31000, 96000 } };
         bool launchOk = true; juce::String desc;
-        for (auto& [l, expect] : launches)
+        for (auto& l : launches)
         {
-            setPad (0, tb::params::padLaunch, (float) l);
+            setPad (0, tb::params::padLaunch, (float) l.launch);
             x.r.settle();
-            o = onsets (run (130000, { hit (31000) }), 0);
-            launchOk = launchOk && o == expect;
-            desc << list (o) << " / ";
+            o = onsets (run (130000, { hit (l.at) }), 0);
+            launchOk = launchOk && o.size() >= 2 && o[0] == l.first && o[1] == l.first + 6000;
+            desc << (o.empty() ? -1 : o[0]) << " / ";
         }
-        check (launchOk, "LAUNCH NOW / 1/16 / BAR: step 1 lands on that exact sample, mid-block (" + desc.dropLastCharacters (3) + ")");
+        check (launchOk, "LAUNCH NOW / 1/16 / BEAT / BAR: comes in on that exact sample, on the song's 1/16 grid (" + desc.dropLastCharacters (3) + ")");
+        {
+            // Its lane playhead is the sequencer's playhead column.
+            setPad (0, tb::params::padMode, (float) tb::params::modeSeqLoop);
+            setPad (0, tb::params::padLaunch, (float) tb::params::launchBeat);
+            x.r.settle();
+            x.r.host.ppq = 0.0; x.r.host.playing = true;
+            renderTimeline (x.r, 120 * kBlock, { hit (31000) });           // 61440 samples: step 10 of the bar
+            const int shown = x.r.p.getBridge().laneStep[0].load();
+            x.r.host.playing = false; x.r.p.requestPanic(); x.r.settle();
+            check (shown == 10, "a launched lane's playhead sits on the same column as Live's playhead (step " + juce::String (shown + 1) + " of 16)");
+            setPad (0, tb::params::padMode, (float) tb::params::modeSeqOne);
+            x.r.settle();
+        }
 
         // SEQ LEN, and SEQ ONE hit again restarts at the next boundary.
         setPad (0, tb::params::padSeqLen, 4.0f);
@@ -3556,8 +3573,8 @@ namespace
         lane (0, { 0, 1 });
         x.r.settle();
         o = onsets (run (60000, { hit (0), hit (10000) }), 0);
-        check (o == std::vector<int> { 0, 6000, 12000, 18000 },
-               "SEQ LEN 4 + SEQ ONE: a second hit starts it over from step 1 on the next 1/16 (" + list (o) + ")");
+        check (o == std::vector<int> { 0, 6000, 24000, 30000 },
+               "SEQ LEN 4 + SEQ ONE: a second hit plays one more full pass from the next 1/16, still in time with the grid (" + list (o) + ")");
         setPad (0, tb::params::padSeqLen, 0.0f);
 
         // SEQ LOOP: hit again = stop at the next boundary; a third hit cancels the stop.
@@ -3583,8 +3600,8 @@ namespace
         { tb::SeqStep st; st.on = true; st.velocity = 127; st.cond = tb::condFirst; x.seq.set (0, 0, st); }
         setPad (0, tb::params::padLaunch, (float) tb::params::launchBeat);
         x.r.settle();
-        o = onsets (run (180000, { hit (30000) }), 0);
-        check (o == std::vector<int> { 48000, 72000, 168000 }, "conditions count passes from the launch (FIRST only on its first time round) (" + list (o) + ")");
+        o = onsets (run (300000, { hit (30000) }), 0);
+        check (o == std::vector<int> { 96000, 120000, 216000 }, "FIRST plays only on the first time round after the launch (" + list (o) + ")");
 
         // Live stopped: the free clock, straight away.
         lane (0, { 0, 1 });
@@ -3674,11 +3691,11 @@ namespace
             x.r.host.ppq = 0.0;                                                       // the brace wraps back to bar 1
             auto second = renderTimeline (x.r, 40 * kBlock, {});
             x.r.host.playing = false; x.r.p.requestPanic(); x.r.settle();
-            std::vector<int> all = onsets (first, 0);
-            for (int t : onsets (second, 0)) all.push_back (t + 30 * kBlock);
-            bool even = all.size() >= 5;
-            for (size_t i = 1; i < all.size(); ++i) even = even && all[i] - all[i - 1] == 6000;
-            check (even, "a loop-brace wrap doesn't upset a launched sequence: still every 1/16 straight through (" + listOf (all) + ")");
+            const auto a = onsets (first, 0), b = onsets (second, 0);
+            bool ok = a == std::vector<int> { 0, 6000, 12000 } && b.size() >= 4;
+            for (size_t i = 0; i < b.size(); ++i) ok = ok && b[i] == (int) i * 6000;
+            check (ok, "a loop-brace wrap: the launched sequence follows Live's playhead back to step 1 of the bar ("
+                         + listOf (a) + " | " + listOf (b) + ")");
         }
 
         // Saved with the set; an older set's modes keep their meaning.

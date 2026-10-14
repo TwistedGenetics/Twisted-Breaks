@@ -390,8 +390,10 @@ Hand-off between breaks at slice points (spec addition A1 in
 
 * MODE SEQ ONE / SEQ LOOP: the pad's main-sequencer lane is skipped by the
   free-running pass and plays only from a `LaneRun` (anchor = clock ppq of
-  step 1, an end cut, an optional next segment for SEQ ONE restarts, a
-  generation). Lanes run on the slice sequencer's clock (Live's ppq, or the
+  step 1 on the song grid, `gridAnchor` = floor(ppq / LEN) * LEN, so it
+  plays the step under Live's playhead; `start` = the LAUNCH boundary,
+  nothing before it plays; an end cut; an optional next segment for SEQ
+  ONE re-hits; a generation). SEQ ONE plays LEN steps from `start`. Lanes run on the slice sequencer's clock (Live's ppq, or the
   free clock when stopped), so they work with Live stopped.
 * `emitStep` is shared by free and launched lanes (conditions, chance with
   ratchets following, FX holds, velocity scaled by the hit). Launched
@@ -401,9 +403,10 @@ Hand-off between breaks at slice points (spec addition A1 in
   segments on at block end and publishes `laneStep` + queued state.
 * SWAP: `swapOwner` / `samplesUntilSwap` know running lanes (AT SLICE = the
   next STEP); `fireSwap` stops the outgoing lane and launches the incoming
-  one at SAME STEP (the outgoing anchor, or the pattern's grid position) or
-  STEP 1 (the hand-off sample).
-* Loop-brace jumps shift running anchors by the jump; Live starting or
+  one at SAME STEP (its grid anchor: the step under the playhead) or
+  STEP 1 (anchor = the hand-off sample).
+* Loop-brace jumps re-lock grid anchors to the new playhead position and
+  shift `start` / ends by the jump; Live starting or
   stopping (a clock domain change) ends launched sequences.
 
 ## 6e. Slice sequencer (Phase 7.1, implemented)
@@ -593,5 +596,5 @@ Ableton stores in the `.als` file:
 | **10 ✅** | MUTATE: controlled randomisation of both sequencers (slices, pitch, pattern, ratchet, reverse, FX, chance), AMOUNT, SCOPE, AUTO every 1-8 bars, NOW / BEAT / BAR, DRIFT, UNDO / RESET, Mutate parameter | 426/426 checks: 300 seeded mutations never touch an on-beat hit or move anything off the grid, ghosts only beside hits, targets respected, empty lanes stay empty, slice beats kept; original / undo / redo / reset / edit-becomes-original / drift accumulates; scope; parameter edge; NEXT BAR lands on the bar-line sample mid-block; AUTO 2 BARS on exactly bars 3 and 5; slice slots; UI |
 | **11 ✅** | Performance macros: DESTROY, AMEN MANGLE, REWIND, DARKEN, TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI; AMOUNT (mild .. hard), GROUP, LATCH, MIDI E4-B4 | 441/441 checks: every macro engages exactly its recipe in every group with its settings and releases; AMOUNT mild .. hard; single group; borrowed effects return exactly; MIDI hold / latch; DARKEN measured on noise; snapshots skip them; UI |
 | **12 ✅** | RESAMPLE (master or a group, 1-8 bars from the bar line, onto a pad as a synced, sliced loop, saved as WAV) + vintage CHARACTER per pad (CLEAN, SP-1200, MPC60, S950, LO-FI) | 464/464 checks: character read path (bit grid, machine-rate steps, pitched-down holds twice as long, output filters measured), 12-bit values through a pad; the take equals one bar of the output from the bar-line sample, 24-bit WAV, loaded as a synced loop, sliced, group-only take, stopped / NOW, cancel, parameter, reload from the set; UI |
-| **0.14 ✅** | Sequence pads (A6): SEQ ONE / SEQ LOOP, LAUNCH, per-pad LEN, stop / restart, SWAP between sequences (STEP / 1/16 / BEAT / BAR, SAME STEP / STEP 1), mixed groups | 506/506 checks: launch on NOW / 1/16 / BEAT / BAR mid-block, ONE vs LOOP, idle until hit, stop + cancel, SEQ ONE restart, SEQ LEN, velocity, conditions from the launch, free clock, SWAP at STEP / 1/16 / BEAT / BAR with no doubled or missing step, SAME STEP / STEP 1, mixed group, choke, Live stop, loop-brace wrap, state, UI |
+| **0.14 ✅** | Sequence pads (A6); 0.14.1 phase-locks launched lanes to Live's playhead: SEQ ONE / SEQ LOOP, LAUNCH, per-pad LEN, stop / restart, SWAP between sequences (STEP / 1/16 / BEAT / BAR, SAME STEP / STEP 1), mixed groups | 507/507 checks: launch on NOW / 1/16 / BEAT / BAR mid-block, ONE vs LOOP, idle until hit, stop + cancel, SEQ ONE restart, SEQ LEN, velocity, conditions from the launch, free clock, SWAP at STEP / 1/16 / BEAT / BAR with no doubled or missing step, SAME STEP / STEP 1, mixed group, choke, Live stop, loop-brace wrap, state, UI |
 | **13 ✅** | Scene A / B (32 pads, each scene its own pads + patterns), crossfader (SMOOTH / SHARP, CUT keys, automatable), VIEW A / B (parameter), notes follow the view, iRig follows the view | 485/485 checks: both scenes play at once; crossfader gains (centre, ends, SMOOTH 3/4, SHARP edge), CUT; view-aware MIDI, learned notes; snapshots / state with scene B, old sets open with B empty; SPREAD stays in its scene; UI view switch keeps the position, sequencer follows, fader drag / double-click, CUT |

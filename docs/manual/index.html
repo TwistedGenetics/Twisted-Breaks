@@ -539,11 +539,12 @@ a { color: var(--amber-ink); }
   <h3>Sequence pads</h3>
   <p>Set a pad's MODE (PLAY page) to <b>SEQ1</b> or <b>SEQL</b> and its lane stops running by itself: hitting the pad plays it, once (SEQ ONE) or looped (SEQ LOOP). On a sliced break, the lane's SLICE, PITCH and REV steps make a whole chopped pattern you fire from one pad. How hard you hit scales the whole sequence.</p>
   <ul>
-    <li><span class="key">Launch</span> (in RATE's place): the sequence starts NOW or on the next 1/16, BEAT or BAR, exactly on that sample.</li>
+    <li>A sequence always plays <b>in time with Live's playhead</b>: it joins on the step under it, as if it had been running all along, so it sits on the bar and its lane playhead is on the same column as the sequencer's.</li>
+    <li><span class="key">Launch</span> (in RATE's place): when it comes in: NOW or on the next 1/16, BEAT or BAR, exactly on that sample.</li>
     <li><span class="key">Len</span> (in SYNC's place): GLOBAL (the sequencer's LEN) or its own 1–32 steps, so a fill and a groove can live on different pads.</li>
-    <li>Hit a SEQ LOOP pad again to stop it at the next LAUNCH boundary (it flashes while it waits; hit once more to cancel). Hit a SEQ ONE pad again to start it over.</li>
-    <li>In a <b>SWAP</b> group, sequence pads cut each other like breaks do: on the next <b>STEP</b> (AT SLICE), 1/16, BEAT or BAR. The incoming sequence carries on from the same step, or from the top with <span class="key">From step 1</span> (SWAP page). Sequence and break pads can share a group.</li>
-    <li>Conditions count from the launch (FIRST = its first time round). Choke groups stop a sequence; stopping or starting Live ends it; a loop brace wrap doesn't.</li>
+    <li>Hit a SEQ LOOP pad again to stop it at the next LAUNCH boundary (it flashes while it waits; hit once more to cancel). SEQ ONE plays one full pass from its launch; hit it again for another pass from the next boundary.</li>
+    <li>In a <b>SWAP</b> group, sequence pads cut each other like breaks do: on the next <b>STEP</b> (AT SLICE), 1/16, BEAT or BAR. The incoming sequence plays the step under the playhead, or starts from the top with <span class="key">From step 1</span> (SWAP page). Sequence and break pads can share a group.</li>
+    <li>FIRST plays only on its first time round after the launch. Choke groups stop a sequence; stopping or starting Live ends it; at a loop brace wrap it follows the playhead round. With Live stopped, the first hit starts it from step 1.</li>
   </ul>
 </section>
 

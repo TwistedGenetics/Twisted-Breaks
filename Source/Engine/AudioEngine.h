@@ -286,11 +286,12 @@ namespace tb
         struct LaneRun
         {
             bool     running = false, once = false;
-            double   anchor  = 0.0;        // clock ppq of step 1 (this segment)
+            double   anchor  = 0.0;        // clock ppq of step 1: on the song grid (Live's playhead), or the hand-off for FROM STEP 1
+            double   start   = 0.0;        // nothing plays before this (the LAUNCH boundary)
             double   endPpq  = 1.0e300;    // this segment is cut here (stop / restart / hand-off)
             bool     releaseAtEnd = false; // a stop: cut the sound at endPpq
             bool     hasNext = false;      // SEQ ONE re-hit: the next segment starts at nextAnchor
-            double   nextAnchor = 0.0;
+            double   nextAnchor = 0.0, nextStart = 0.0;
             float    hitVel = 1.0f;
             uint32_t gen = 0;
             int64_t  rollKey = std::numeric_limits<int64_t>::min();
@@ -299,7 +300,9 @@ namespace tb
         bool   isSeqPad (int pad) const noexcept { return params::isSeqMode (padMode[(size_t) pad]); }
         int    laneLength (int pad) const noexcept;
         double launchBoundary (int pad, int sampleOffset) const noexcept;
-        void   launchLane (int pad, int sampleOffset, double anchor, float hitVel) noexcept;
+        void   launchLane (int pad, int sampleOffset, double anchor, double start, float hitVel) noexcept;
+        /** The song-grid pattern start at or before `ppq`: step = playhead position mod LEN. */
+        double gridAnchor (int pad, double ppq) const noexcept;
         void   hitSeqPad (int pad, float velocity, int sampleOffset) noexcept;
         void   stopLane (int pad, float fadeMs = 3.0f) noexcept;
         void   addLaneEvents (int pad, int fromOffset) noexcept;

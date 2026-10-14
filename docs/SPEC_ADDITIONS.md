@@ -194,9 +194,20 @@ pads"). As built: MODE gains SEQ ONE / SEQ LOOP (appended); per-pad
 sequencer's clock (Live's, or free when stopped), share the main
 sequencer's step code, and are cut / restarted / handed off through
 generation-checked events in the block's event list. SWAP AT SLICE means
-the next STEP for a sequence. Loop-brace wraps carry launched sequences
-on; Live starting or stopping ends them. Not built: the optional slice
-sequencer ONCE mode.
+the next STEP for a sequence. Live starting or stopping ends them. Not
+built: the optional slice sequencer ONCE mode.
+
+**Changed in 0.14.1 (Jamie: "it should follow Live's playhead"):** a
+launched sequence is phase-locked to Live's grid. It always plays the
+step under the playhead (song position mod its LEN), as if it had been
+running all along, so it lines up with the bar and with the sequencer's
+playhead column. LAUNCH only decides *when* it comes in. SEQ ONE plays one
+full pass (LEN steps) from its launch; conditions count passes on the
+grid, with FIRST = the first time round after the launch. A loop-brace
+wrap or relocate takes it to the step under the new playhead position.
+SWAP FROM SAME STEP = the step under the playhead; STEP 1 still starts
+the pattern from the top at the hand-off. With Live stopped, a hit with
+nothing else running starts the free clock, so step 1 plays at the hit.
 
 Prompt:
 
@@ -210,8 +221,8 @@ What to build:
 
 * **Two new play modes** on the PLAY page's **MODE** selector (appended to
   the choice list, so saved sets and automation keep their meaning):
-  * **SEQ ONE**: a hit plays the pad's sequencer lane once, from step 1,
-    then stops.
+  * **SEQ ONE**: a hit plays one full pass of the pad's sequencer lane
+    (in time with the playhead, see 0.14.1 above), then stops.
   * **SEQ LOOP**: a hit starts the lane and it loops until it is stopped.
   * In both modes the lane no longer runs on its own with Live's
     transport: it plays only when launched. Lanes of pads in the other
@@ -224,8 +235,8 @@ What to build:
   / FIX settings).
 * **LAUNCH** (new per-pad setting on the PLAY page, shown in SEQ modes,
   automatable, saved): when a hit starts the sequence:
-  **NOW, 1/16, BEAT, BAR** (default BEAT). Step 1 lands exactly on that
-  boundary sample, even mid-block. With Live stopped it starts at once on
+  **NOW, 1/16, BEAT, BAR** (default BEAT). It comes in exactly on that
+  boundary sample, even mid-block, on the step under Live's playhead. With Live stopped it starts at once on
   the free clock, like the slice sequencer.
 * **SEQ LEN** (per pad, saved): **GLOBAL** (the sequencer's LEN) or 1-32
   steps, so a 1-bar fill and a 2-bar groove can sit on different pads.
@@ -233,7 +244,7 @@ What to build:
 * **Hitting a running sequence pad again**:
   * SEQ LOOP: it stops at its next LAUNCH boundary (the tile flashes while
     it waits); hitting it again before then cancels the stop.
-  * SEQ ONE: it restarts from step 1 at the next LAUNCH boundary.
+  * SEQ ONE: another full pass starts at the next LAUNCH boundary.
 * **SWAP groups for sequences**: SEQ pads in the same SWAP group (1-4) take
   turns like breaks do. One sequence plays at a time; hitting another
   queues a hand-off (the incoming pad flashes) that lands on the playing
@@ -265,8 +276,8 @@ What to build:
 * **On screen**:
   * pad tiles tag the mode (`SEQ1` / `SEQL`), light while the sequence
     runs and flash while a launch, stop or hand-off is waiting;
-  * the sequencer view shows each launched lane's own playhead (it may
-    differ from Live's position) and dims lanes of SEQ pads that aren't
+  * the sequencer view shows each launched lane's playhead (on the same
+    column as Live's) and dims lanes of SEQ pads that aren't
     running;
   * the iRig lights follow the same states (green running, red flashing
     queued).
