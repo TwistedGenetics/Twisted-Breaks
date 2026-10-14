@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Twisted Breaks Operator's Manual</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Mono&family=PT+Sans:ital,wght@0,400;0,700;1,400&family=Russo+One&display=swap">
+<style>
+/* Layout: a printed operator's manual for the ТБ-1 console. Rusted steel frame (the plugin's
+   chassis) holding riveted enamel plates; bakelite label plates head each section; a sticky
+   index on the left at desktop width, stacked on phones. One look by choice (the console has
+   one finish): reading text is always dark on light enamel. */
+:root {
+  --steel:      #33403c;   /* chassis */
+  --steel-deep: #232c2a;
+  --rust:       #8c4a26;
+  --enamel:     #ece5d2;   /* reading plates */
+  --enamel-2:   #e2d9c1;   /* inset areas, table stripes */
+  --edge:       #b9ad8e;   /* plate edges, rules */
+  --bakelite:   #d9cba6;   /* label plates */
+  --ink:        #1f211d;
+  --ink-soft:   #4d4b41;
+  --amber:      #f0a12a;   /* lamps */
+  --amber-ink:  #8a4d00;   /* amber you can read on enamel */
+  --red:        #c8361d;
+  --hazard:     #e6b31e;
+  --font-display: "Russo One", "Arial Black", Impact, sans-serif;
+  --font-body:    "PT Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "PT Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  background-color: var(--steel);
+  background-image:
+    radial-gradient(ellipse 40px 26px at 12% 18%, rgba(140,74,38,.55), transparent 70%),
+    radial-gradient(ellipse 70px 30px at 88% 9%, rgba(140,74,38,.45), transparent 70%),
+    radial-gradient(ellipse 30px 50px at 6% 64%, rgba(140,74,38,.5), transparent 70%),
+    radial-gradient(ellipse 90px 40px at 94% 47%, rgba(140,74,38,.4), transparent 70%),
+    radial-gradient(ellipse 50px 24px at 70% 92%, rgba(140,74,38,.45), transparent 70%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .22 0'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>"),
+    linear-gradient(180deg, var(--steel) 0%, var(--steel-deep) 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+
+/* ---- Plates ---------------------------------------------------------------- */
+.plate {
+  position: relative;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255,255,255,.35), transparent 55%),
+    var(--enamel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.4) inset, 0 6px 18px rgba(0,0,0,.45), 0 0 0 4px rgba(0,0,0,.18);
+  padding: 34px clamp(18px, 4vw, 44px) 30px;
+}
+.plate::before, .plate::after,
+.plate > .rivets::before, .plate > .rivets::after {
+  content: ""; position: absolute; width: 11px; height: 11px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f4f1e8 0 18%, #9a958a 45%, #4f4c45 100%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.45);
+}
+.plate::before { top: 10px; left: 10px; }
+.plate::after  { top: 10px; right: 10px; }
+.plate > .rivets::before { bottom: 10px; left: 10px; }
+.plate > .rivets::after  { bottom: 10px; right: 10px; }
+
+/* ---- Cover ------------------------------------------------------------------ */
+.cover { max-width: 1180px; margin: 0 auto 26px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
+.cover .title { padding-block: 30px 26px; }
+.cover h1 {
+  font: 400 clamp(36px, 7vw, 74px)/0.95 var(--font-display);
+  letter-spacing: .06em; margin: 0; color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255,255,255,.7);
+}
+.cover .sub { margin: 10px 0 0; font: 700 13px/1.3 var(--font-body); letter-spacing: .32em; text-transform: uppercase; color: var(--ink-soft); }
+.cover .sub span { letter-spacing: .12em; }
+.cover .meta { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+.makers { display: grid; gap: 12px; align-content: start; min-width: 240px; }
+.makers .plate { padding: 22px 26px 20px; text-align: center; }
+.makers .maker { font: 700 22px/1 var(--font-body); letter-spacing: .04em; }
+.makers .maker small { display: block; margin-top: 8px; font: 400 12.5px/1.3 var(--font-mono); letter-spacing: .04em; color: var(--ink-soft); }
+.caution {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  border-radius: 5px; padding: 12px 16px;
+  background: repeating-linear-gradient(-45deg, var(--hazard) 0 14px, #1d1d1a 14px 28px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+.caution b {
+  background: var(--hazard); color: #1d1d1a; padding: 4px 12px; border-radius: 3px;
+  font: 400 18px/1 var(--font-display); letter-spacing: .14em;
+}
+
+/* ---- Key caps, readouts, lamps ---------------------------------------------- */
+.key {
+  display: inline-flex; align-items: center; gap: .4em; white-space: nowrap;
+  font: 700 .78em/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink); background: linear-gradient(#f4f0e4, #d6cfbd);
+  border: 1px solid #9f957c; border-bottom-width: 2px; border-radius: 4px;
+  padding: .32em .55em .28em; vertical-align: .08em;
+}
+.key::before { content: ""; width: .55em; height: .55em; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffd27a, var(--amber) 55%, #a8620c); box-shadow: 0 0 5px rgba(240,161,42,.8); }
+.key.plain::before { display: none; }
+.key.red::before { background: radial-gradient(circle at 35% 35%, #ff9a7e, var(--red) 55%, #7d1c0b); box-shadow: 0 0 5px rgba(200,54,29,.8); }
+.val { font: 700 .86em/1 var(--font-mono); color: var(--amber-ink); background: var(--enamel-2); border: 1px solid var(--edge); border-radius: 3px; padding: .14em .4em; white-space: nowrap; }
+code { font: .9em/1 var(--font-mono); background: var(--enamel-2); border: 1px solid var(--edge); border-radius: 3px; padding: .12em .35em; overflow-wrap: anywhere; }
+.chip { display: inline-block; font: 700 11.5px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; padding: 6px 9px; border-radius: 3px; background: var(--bakelite); border: 1px solid #a99a72; color: var(--ink); }
+
+/* ---- Page layout ------------------------------------------------------------ */
+.shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 26px; align-items: start; }
+nav.index { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 18px); padding: 30px 20px 24px; max-height: calc(100vh - 36px); overflow-y: auto; }
+nav.index .label { margin-bottom: 14px; }
+nav.index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: sec; }
+nav.index a {
+  display: grid; grid-template-columns: 26px 1fr; align-items: baseline; gap: 6px;
+  color: var(--ink); text-decoration: none; font: 700 13px/1.25 var(--font-body);
+  letter-spacing: .06em; text-transform: uppercase; padding: 6px 6px; border-radius: 4px;
+}
+nav.index a span { font: 400 11.5px/1 var(--font-mono); color: var(--amber-ink); }
+nav.index a:hover, nav.index a:focus-visible { background: var(--enamel-2); outline: none; }
+main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; min-width: 0; }
+main > section { min-width: 0; }
+
+/* ---- Section heads (bakelite label plates) ------------------------------------ */
+.label {
+  display: inline-flex; align-items: center; gap: 12px; position: relative;
+  background: linear-gradient(#e7dcbd, var(--bakelite)); color: var(--ink);
+  border: 1px solid #a3946c; border-radius: 4px; padding: 8px 22px 7px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25), 0 1px 0 rgba(255,255,255,.6) inset;
+  font: 400 15px/1 var(--font-display); letter-spacing: .12em; text-transform: uppercase;
+}
+.label::before, .label::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 15%, #8f8a7c 55%, #4d4a43); }
+section > header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+section > header .no { font: 400 13px/1 var(--font-mono); color: var(--ink-soft); letter-spacing: .1em; }
+h2 { margin: 0; }
+h3 { font: 700 17px/1.3 var(--font-body); letter-spacing: .08em; text-transform: uppercase; margin: 26px 0 8px; text-wrap: balance; color: var(--ink); }
+h3::before { content: "▸ "; color: var(--rust); }
+p, li { max-width: 68ch; }
+p { margin: 0 0 12px; }
+ul, ol.steps { margin: 0 0 14px; padding-left: 1.3em; }
+li { margin: 5px 0; }
+li::marker { color: var(--rust); }
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; }
+ol.steps > li::before {
+  content: counter(step); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 12px/1 var(--font-mono); color: var(--ink); background: radial-gradient(circle at 35% 35%, #ffe0a3, var(--amber) 60%, #b06a10);
+  box-shadow: 0 0 0 2px #5b4a2c, 0 1px 3px rgba(0,0,0,.4); margin-top: 1px;
+}
+.lead { font-size: 17.5px; color: var(--ink); }
+.note {
+  border: 1px solid var(--edge); border-left: 0; background: var(--enamel-2); border-radius: 4px;
+  padding: 12px 16px 12px 52px; position: relative; margin: 14px 0; max-width: 72ch;
+}
+.note::before {
+  content: "!"; position: absolute; left: 14px; top: 12px; width: 24px; height: 22px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%); background: var(--hazard);
+  display: grid; place-items: end center; font: 700 13px/1 var(--font-body); color: #1d1d1a; padding-bottom: 2px;
+}
+.note p:last-child { margin-bottom: 0; }
+
+/* ---- Figures (screenshots in a bezel) ------------------------------------------ */
+figure { margin: 18px 0 20px; }
+.bezel {
+  position: relative; background: #151917; border-radius: 8px; padding: 10px;
+  box-shadow: 0 0 0 1px #000, 0 0 0 4px #5d625a, 0 8px 20px rgba(0,0,0,.45);
+}
+.shot { position: relative; }
+.bezel img { display: block; width: 100%; height: auto; border-radius: 3px; }
+figcaption { margin-top: 12px; display: flex; gap: 10px; align-items: baseline; font-size: 14px; color: var(--ink-soft); max-width: 80ch; }
+figcaption .chip { flex: none; }
+.crop { overflow: hidden; border-radius: 3px; }
+.crop img { width: 200%; max-width: none; }
+.crop.right img { margin-left: -100%; }
+
+/* hotspots on the overview */
+.hot { position: absolute; transform: translate(-50%, -50%); width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font: 700 13px/1 var(--font-mono); color: #1d1d1a;
+  background: radial-gradient(circle at 35% 35%, #ffe9b8, var(--amber) 60%, #a8620c);
+  box-shadow: 0 0 0 2px #1d1d1a, 0 0 12px rgba(240,161,42,.9); }
+.legend { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 22px; }
+.legend li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; margin: 0; max-width: none; }
+.legend b.n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 var(--font-mono); background: radial-gradient(circle at 35% 35%, #ffe0a3, var(--amber) 60%, #b06a10); box-shadow: 0 0 0 2px #5b4a2c; }
+
+/* ---- Tables ------------------------------------------------------------------ */
+.tablewrap { overflow-x: auto; margin: 12px 0 18px; border: 1px solid var(--edge); border-radius: 5px; background: #f4efe0; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th { text-align: left; font: 700 11.5px/1.2 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); background: var(--bakelite); padding: 9px 12px; border-bottom: 1px solid #a3946c; white-space: nowrap; }
+td { padding: 8px 12px; border-top: 1px solid #d8cdb0; vertical-align: top; }
+tr:nth-child(even) td { background: rgba(226,217,193,.45); }
+td:first-child { white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 30px; }
+.two > * { min-width: 0; }
+
+/* Quick reference card */
+.card { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.card div { background: #f4efe0; border: 1px solid var(--edge); border-radius: 5px; padding: 12px 14px; min-width: 0; }
+.card h4 { margin: 0 0 6px; font: 700 12px/1.2 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--rust); }
+.card p { margin: 0; font-size: 14.5px; }
+
+footer.colophon { max-width: 1180px; margin: 26px auto 0; text-align: center; }
+footer.colophon .plate { display: inline-block; padding: 16px 30px; font: 400 12.5px/1.5 var(--font-mono); color: var(--ink-soft); }
+
+a { color: var(--amber-ink); }
+:focus-visible { outline: 2px solid var(--amber-ink); outline-offset: 2px; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  nav.index { position: static; max-height: none; }
+  nav.index ol { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .cover { grid-template-columns: minmax(0, 1fr); }
+  .makers { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); min-width: 0; }
+}
+@media (max-width: 520px) {
+  body { font-size: 15.5px; }
+  .hot { width: 20px; height: 20px; font-size: 10px; }
+  .crop img { width: 100%; }
+  .crop.right img { margin-left: 0; }
+}
+@media print {
+  body { background: #fff; padding: 0; }
+  .plate { box-shadow: none; }
+  nav.index { display: none; }
+  .shell { grid-template-columns: 1fr; }
+  section { break-inside: auto; }
+  figure, .tablewrap, .note { break-inside: avoid; }
+}
+</style>
+
+<!-- ===================================================================== COVER -->
+<header class="cover" id="top">
+  <div class="plate title"><span class="rivets"></span>
+    <h1>TWISTED BREAKS</h1>
+    <p class="sub">Operator's manual <span>· руководство оператора · ТБ-1</span></p>
+    <p class="lead" style="margin-top:18px">A jungle and drum &amp; bass break sampler, slicer, sequencer and effects console for Ableton Live. This manual covers version 0.13: two scenes of 16 pads, slicing, SWAP hand-offs, the two sequencers, MUTATE, 16 performance effects, eight macros, snapshots, the break bank, RESAMPLE and the vintage modes.</p>
+    <div class="meta">
+      <span class="chip">AU + VST3</span><span class="chip">macOS · Apple Silicon + Intel</span><span class="chip">Ableton Live 11 / 12</span><span class="chip">iRig Pads ready</span>
+    </div>
+  </div>
+  <div class="makers">
+    <div class="plate"><span class="rivets"></span><div class="maker">TWISTED GENETICS<small>ЗАВОД № 4 · ЗАВ. № 0001 · 1979</small></div></div>
+    <div class="caution"><b>ОСТОРОЖНО</b></div>
+    <div class="plate"><span class="rivets"></span><div class="maker" style="font-size:16px">VERSION 0.13<small>969 automatable parameters<br>32 pads · 4 groups · 16 effects</small></div></div>
+  </div>
+</header>
+
+<div class="shell">
+<!-- ===================================================================== INDEX -->
+<nav class="index plate" aria-label="Contents"><span class="rivets"></span>
+  <div class="label">Index</div>
+  <ol>
+    <li><a href="#install"><span>01</span>Installing</a></li>
+    <li><a href="#panel"><span>02</span>The panel</a></li>
+    <li><a href="#pads"><span>03</span>Pads &amp; samples</a></li>
+    <li><a href="#slicer"><span>04</span>Slicer</a></li>
+    <li><a href="#swap"><span>05</span>SWAP groups</a></li>
+    <li><a href="#groups"><span>06</span>Groups &amp; mixer</a></li>
+    <li><a href="#fx"><span>07</span>Performance FX</a></li>
+    <li><a href="#macros"><span>08</span>Macros</a></li>
+    <li><a href="#sequencer"><span>09</span>Sequencer</a></li>
+    <li><a href="#mutate"><span>10</span>Mutate</a></li>
+    <li><a href="#sliceseq"><span>11</span>Slice sequencer</a></li>
+    <li><a href="#snapshots"><span>12</span>Snapshots &amp; bank</a></li>
+    <li><a href="#resample"><span>13</span>Resample &amp; character</a></li>
+    <li><a href="#scenes"><span>14</span>Scenes A / B</a></li>
+    <li><a href="#midi"><span>15</span>Controller &amp; MIDI</a></li>
+    <li><a href="#trouble"><span>16</span>Saving &amp; troubleshooting</a></li>
+    <li><a href="#card"><span>17</span>Quick reference</a></li>
+  </ol>
+</nav>
+
+<main>
+<!-- ===================================================================== 01 INSTALL -->
+<section class="plate" id="install"><span class="rivets"></span>
+  <header><h2 class="label">Installing</h2><span class="no">§ 01</span></header>
+  <p class="lead">Every build that passes its tests is published as a release on GitHub. Nothing has to be compiled.</p>
+  <ol class="steps">
+    <li><div>Open the <a href="https://github.com/TwistedGenetics/Twisted-Breaks/releases" target="_blank" rel="noopener">Releases page</a> and download <code>TwistedBreaks-macOS.zip</code> from the newest release.</div></li>
+    <li><div>Unzip it. Copy <code>TwistedBreaks.component</code> to <code>~/Library/Audio/Plug-Ins/Components/</code> and <code>TwistedBreaks.vst3</code> to <code>~/Library/Audio/Plug-Ins/VST3/</code> (or the same folders under <code>/Library</code> for all users).</div></li>
+    <li><div>Clear the download quarantine in Terminal, so macOS lets the plug-in load:<br><code>xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/TwistedBreaks.component</code><br><code>xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/TwistedBreaks.vst3</code></div></li>
+    <li><div>In Live: <b>Settings → Plug-Ins</b>, turn on <b>Use Audio Units v2</b> and <b>Use VST3 Plug-in System Folders</b>, then <b>Rescan</b>.</div></li>
+    <li><div>In the browser: <b>Plug-Ins → Twisted Genetics → TwistedBreaks</b>. It is an instrument; drop it on a MIDI track. Arm the track (or set Monitor to In) so your controller reaches it.</div></li>
+  </ol>
+  <div class="note"><p>If the AU doesn't show up after installing a new version, run <code>killall -9 AudioComponentRegistrar</code> in Terminal and rescan. Use either the AU or the VST3 in a set, not both.</p></div>
+  <p>The plugin window can be resized from 75 % to 150 % by dragging its corner. Latency is zero: nothing needs compensating.</p>
+</section>
+
+<!-- ===================================================================== 02 PANEL -->
+<section class="plate" id="panel"><span class="rivets"></span>
+  <header><h2 class="label">The panel</h2><span class="no">§ 02</span></header>
+  <p class="lead">One console, nine areas. The left side is always the pads; the large screen on the right changes with the keys on the top rail.</p>
+  <figure>
+    <div class="bezel"><div class="shot">
+      <img src="img/overview-scenes.jpg" alt="The whole Twisted Breaks panel" width="1200" height="800">
+      <span class="hot" style="left:50%;top:12.6%">1</span>
+      <span class="hot" style="left:25.5%;top:45%">2</span>
+      <span class="hot" style="left:25.5%;top:71.8%">3</span>
+      <span class="hot" style="left:25.5%;top:84%">4</span>
+      <span class="hot" style="left:43%;top:94.8%">5</span>
+      <span class="hot" style="left:74.8%;top:25.6%">6</span>
+      <span class="hot" style="left:74.8%;top:51%">7</span>
+      <span class="hot" style="left:62.2%;top:82.5%">8</span>
+      <span class="hot" style="left:86.5%;top:82.5%">9</span>
+    </div></div>
+    <figcaption><span class="chip">Fig. 1</span>The panel in its default state: pads on view, the waveform screen showing pad 01.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li><b class="n">1</b><div><b>Top rail.</b> <span class="key">Pads</span> <span class="key">Slicer</span> <span class="key">Sequencer</span> <span class="key">FX</span> <span class="key">Mixer</span> <span class="key">Snapshots</span> <span class="key">Resample</span> choose what the screen (7) shows. Click a lit key again to go back to the waveform.</div></li>
+    <li><b class="n">2</b><div><b>Pad matrix.</b> 16 pads of the scene on view. Click to play (higher on the pad = harder), drop a file to load it.</div></li>
+    <li><b class="n">3</b><div><b>Scene strip.</b> <span class="key">A</span> <span class="key">B</span> view, <span class="key red">Cut A</span>, crossfader, <span class="key red">Cut B</span>, curve. See § 14.</div></li>
+    <li><b class="n">4</b><div><b>Pad editor.</b> The selected pad's pages: <span class="key">Sound</span> <span class="key">Play</span> <span class="key">Slice</span> <span class="key">Swap</span> <span class="key">Seq</span>, its name, <span class="key plain">Load</span> and <span class="key plain">Clear</span>.</div></li>
+    <li><b class="n">5</b><div><b>Status strip.</b> The last MIDI note received, the selected pad and its note, and <span class="key">Lights</span> for the iRig Pads.</div></li>
+    <li><b class="n">6</b><div><b>Host transport.</b> Live's tempo, bar.beat.16th, run / sync lamps, meter and a 32-step playhead.</div></li>
+    <li><b class="n">7</b><div><b>Screen.</b> The waveform and slice editor, or the view picked on the top rail.</div></li>
+    <li><b class="n">8</b><div><b>Performance FX.</b> The 16 effect keys for group A, B, C or D, and the <span class="key">Macro</span> tab.</div></li>
+    <li><b class="n">9</b><div><b>Master.</b> Level, the zero-latency limiter, clip lamp, needle meter and the red <span class="key red">Stop</span> panic button.</div></li>
+  </ul>
+  <h3>Readouts and keys</h3>
+  <p>Orange number windows (LEN, STEP, AMOUNT and the like) are readouts: <b>drag up or down</b> or use the <b>scroll wheel</b> to change them, <b>click</b> to step through a short list, <b>double-click</b> for the default. Keys with a lamp light when they're on. Almost everything is an automatable parameter in Live, so it can be MIDI-mapped and drawn into the arrangement.</p>
+</section>
+
+<!-- ===================================================================== 03 PADS -->
+<section class="plate" id="pads"><span class="rivets"></span>
+  <header><h2 class="label">Pads &amp; samples</h2><span class="no">§ 03</span></header>
+  <h3>Loading</h3>
+  <p>Drag a WAV, AIFF or FLAC onto a pad (or onto the screen for the selected pad), or press <span class="key plain">Load</span>. Files decode in the background, so loading never interrupts playback. <span class="key plain">Clear</span> empties the pad. A pad tile shows its length, mono / stereo, name, MIDI note and a footer tag such as <code>LOOP C2 SW1 BK SP12</code> (mode, choke group, SWAP group, follows the bank, character).</p>
+  <p>The screen shows the selected pad's waveform. Drag the <b>S</b> and <b>E</b> markers to set the start and end, scroll or pinch to zoom, drag to move along, double-click to zoom out. Editing never changes the file.</p>
+  <h3>Sound page</h3>
+  <p><span class="key">Gain</span> <span class="key">Pan</span> <span class="key">Pitch</span> (±12 semitones) <span class="key">Start</span> <span class="key">End</span> knobs, the <span class="key">Reverse</span> switch, and the <span class="key">Group</span> keys A–D that send the pad to a group bus.</p>
+  <figure>
+    <div class="bezel"><img src="img/play.jpg" alt="The PLAY page of the pad editor" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 2</span>The PLAY page: mode, sync, rate, choke, velocity, FIX, mute / solo and the MIDI note.</figcaption>
+  </figure>
+  <h3>Play page</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04).</td></tr>
+      <tr><td><span class="key">Sync</span></td><td>Loops lock to Live's tempo and bar grid. The length in beats is worked out from the audio, a pad hit mid-bar enters at the right point, and it re-locks after loop-brace jumps and tempo changes.</td></tr>
+      <tr><td><span class="key">Rate</span></td><td>Loop speed: 1/4, 1/2, 1x or 2x.</td></tr>
+      <tr><td><span class="key">Choke</span></td><td>Groups 1–4: a hit stops the other pads in the same choke group (3 ms fade). Open and closed hats, for example.</td></tr>
+      <tr><td><span class="key">Vel</span></td><td>Velocity sensitivity, from 0 % (always full) to 100 %.</td></tr>
+      <tr><td><span class="key">Fix</span></td><td>Fixed velocity: every hit at full level, whatever the sensitivity.</td></tr>
+      <tr><td><span class="key">M</span> <span class="key">S</span></td><td>Mute and solo (solo works across both scenes).</td></tr>
+      <tr><td><span class="key">Note</span></td><td>The pad's MIDI note. Drag or scroll it, or press LEARN and play a note.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ===================================================================== 04 SLICER -->
+<section class="plate" id="slicer"><span class="rivets"></span>
+  <header><h2 class="label">Slicer</h2><span class="no">§ 04</span></header>
+  <p class="lead">Cut a break at its hits, then play the slices from pads, chop between breaks, or rearrange them in the slice sequencer.</p>
+  <figure>
+    <div class="bezel"><img src="img/slice.jpg" alt="The SLICE page and the slice editor on the screen" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 3</span>SLICER: numbered markers on the break, slice controls in the pad editor.</figcaption>
+  </figure>
+  <ul>
+    <li><span class="key">Auto slice</span> finds the kicks, snares and hats and puts a numbered marker just before each attack. <span class="key">Sens</span> sets how quiet a hit it picks up; <span class="key">Count</span> (4 / 8 / 16) keeps the strongest.</li>
+    <li><span class="key">Equal</span> cuts COUNT equal slices instead (good for loops with soft attacks).</li>
+    <li>On the screen: drag a marker to move it, double-click to add one, double-click a marker to delete it, click a slice to select it (and hear it in SLICE mode).</li>
+    <li><span class="key plain">Reset</span> undoes your edits back to the last AUTO / EQUAL result, <span class="key plain">Unslice</span> removes the markers, <span class="key plain">Fit</span> zooms out.</li>
+    <li><b>SLICE mode</b> (PLAY page) plays the slice chosen by the <span class="key">Slice</span> knob.</li>
+    <li><span class="key">Spread</span> puts each slice on its own pad, from the selected pad onwards, in SLICE mode, sharing one copy of the audio. It stops at the end of the scene.</li>
+  </ul>
+  <div class="note"><p>Classic workflow: drag the amen onto pad 01, <span class="key">Auto slice</span>, <span class="key">Spread</span>, and play it from the iRig.</p></div>
+</section>
+
+<!-- ===================================================================== 05 SWAP -->
+<section class="plate" id="swap"><span class="rivets"></span>
+  <header><h2 class="label">SWAP groups</h2><span class="no">§ 05</span></header>
+  <p class="lead">Chop and change between breaks on the slice points. The amen is playing; when it reaches the snare, hit pad 2 and the think break takes over from its own snare.</p>
+  <figure>
+    <div class="bezel"><img src="img/swap.jpg" alt="The SWAP page" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 4</span>The SWAP page: SWAP group, AT, and FOLLOW BANK.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><div>Slice two or more breaks (§ 04) and put their pads in the same <span class="key">Swap</span> group, 1–4, on the SWAP page.</div></li>
+    <li><div>Hit one. It plays latched (letting go doesn't stop it).</div></li>
+    <li><div>Hit another pad in the group. It flashes while it waits, then takes over at the playing break's next slice marker, carrying on from the same point in its own break and starting right on its own hit.</div></li>
+    <li><div>Hit the playing pad again to stop it at its next point.</div></li>
+  </ol>
+  <p><span class="key">At</span> picks when a hand-off lands: <b>SLICE</b> (the next marker), or the next <b>1/16</b>, <b>BEAT</b> or <b>BAR</b> of Live's grid. Slice-sequenced pads hand off on their next step. <span class="key">Follow bank</span> is explained in § 12.</p>
+</section>
+
+<!-- ===================================================================== 06 GROUPS -->
+<section class="plate" id="groups"><span class="rivets"></span>
+  <header><h2 class="label">Groups &amp; mixer</h2><span class="no">§ 06</span></header>
+  <p>Every pad plays through one of four group buses, A–D, each with its own effects chain. Choose the group with the <span class="key">Group</span> keys on the SOUND page.</p>
+  <figure>
+    <div class="bezel"><img src="img/mixer.jpg" alt="The MIXER view" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 5</span>MIXER: four channel strips.</figcaption>
+  </figure>
+  <p><span class="key">Mixer</span> shows a strip per group: fader, LED meter, <span class="key">Pan</span>, <span class="key">M</span>ute, <span class="key">S</span>olo and FX <span class="key">Bypass</span>. Click a strip's name plate to send the selected pad to that group. Mutes glide over 20 ms, so they never click.</p>
+  <div class="note"><p>A useful layout: kicks and snares on A, breaks on B, bass and stabs on C, FX hits on D. Then a filter or stutter on B leaves the drums underneath untouched.</p></div>
+</section>
+
+<!-- ===================================================================== 07 FX -->
+<section class="plate" id="fx"><span class="rivets"></span>
+  <header><h2 class="label">Performance FX</h2><span class="no">§ 07</span></header>
+  <p class="lead">Sixteen effects per group, in this order in the chain. Pick the group with the <span class="key">A</span> <span class="key">B</span> <span class="key">C</span> <span class="key">D</span> tabs, then play the keys.</p>
+  <p>Each key is <b>LOCKED</b> (click on, click off) or <b>MOMENTARY</b> (on while held), shown as <b>L</b> or <b>M</b> in its corner. The lamp shows what the engine is doing; it flashes while an effect waits for its beat boundary. <span class="key">FX</span> on the top rail opens the editor for the picked key: its settings, LOCKED / MOMENTARY and ALL OFF. Right-click a key to edit it without switching it.</p>
+  <figure>
+    <div class="bezel"><img src="img/fx.jpg" alt="The FX editor" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 6</span>The FX editor showing DELAY on group A.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Key</th><th>Effect</th><th>Settings</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">Mute</span></td><td>Silences the group</td><td>—</td><td class="num">C3</td></tr>
+      <tr><td><span class="key">LPF</span></td><td>Low-pass filter</td><td>Cutoff 20 Hz–20 kHz, resonance, drive</td><td class="num">C#3</td></tr>
+      <tr><td><span class="key">HPF</span></td><td>High-pass filter</td><td>Cutoff, resonance, drive</td><td class="num">D3</td></tr>
+      <tr><td><span class="key">BPF</span></td><td>Band-pass filter</td><td>Cutoff, resonance, drive</td><td class="num">D#3</td></tr>
+      <tr><td><span class="key">Crush</span></td><td>Bit crush</td><td>Bits 1–16, mix</td><td class="num">E3</td></tr>
+      <tr><td><span class="key">Rate</span></td><td>Sample-rate reduction</td><td>Rate 200 Hz–44.1 kHz, smooth / stepped, mix</td><td class="num">F3</td></tr>
+      <tr><td><span class="key">Drive</span></td><td>Distortion</td><td>Soft / hard / saturate, 0–36 dB, mix</td><td class="num">F#3</td></tr>
+      <tr><td><span class="key">Tape</span></td><td>Tape saturation</td><td>Saturation, tone</td><td class="num">G3</td></tr>
+      <tr><td><span class="key">Stutter</span></td><td>Repeats a slice of the audio</td><td>Size 1/2–1/32</td><td class="num">G#3</td></tr>
+      <tr><td><span class="key">Repeat</span></td><td>Beat repeat</td><td>Division 1/2–1/32</td><td class="num">A3</td></tr>
+      <tr><td><span class="key">Gate</span></td><td>Tempo-synced gate</td><td>1/8, 1/16, 1/32, duty</td><td class="num">A#3</td></tr>
+      <tr><td><span class="key">Pitch</span></td><td>Pitch drop (dive)</td><td>Time 1/16–1 bar</td><td class="num">B3</td></tr>
+      <tr><td><span class="key">Delay</span></td><td>Tempo delay (a throw: the tail rings on)</td><td>1/16–1/2 incl. 3/16 and 3/8, feedback, mix</td><td class="num">C4</td></tr>
+      <tr><td><span class="key">Reverb</span></td><td>Reverb (a throw)</td><td>Size, damping, mix</td><td class="num">C#4</td></tr>
+      <tr><td><span class="key">Comb</span></td><td>Comb resonator</td><td>Pitch ±24 st, feedback, damping</td><td class="num">D4</td></tr>
+      <tr><td><span class="key">Reverse</span></td><td>Plays the last moment backwards</td><td>Size 1/8–1 bar</td><td class="num">D#4</td></tr>
+    </tbody>
+  </table></div>
+  <p>MUTE, STUTTER, REPEAT, PITCH and REVERSE start as MOMENTARY, the rest as LOCKED. STUTTER, REPEAT and REVERSE always start on the next musical boundary. MIDI notes C3–D#4 play the effects of the group picked in the panel; a LOCKED note toggles, a MOMENTARY note holds. The red <span class="key red">Stop</span> button switches every effect off and cuts the tails.</p>
+</section>
+
+<!-- ===================================================================== 08 MACROS -->
+<section class="plate" id="macros"><span class="rivets"></span>
+  <header><h2 class="label">Macros</h2><span class="no">§ 08</span></header>
+  <p class="lead">Eight one-key moves on the <span class="key">Macro</span> tab of the PERFORMANCE FX panel. Each engages several effects at once with its own settings.</p>
+  <figure>
+    <div class="bezel crop right"><img src="img/macro.jpg" alt="The MACRO tab with JUNGLE ROLL held" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 7</span>The MACRO tab, with JUNGLE ROLL held.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Macro</th><th>What happens</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key red">Destroy</span></td><td>Hard drive, crushed bits, stepped sample-rate grit</td><td class="num">E4</td></tr>
+      <tr><td><span class="key red">Amen mangle</span></td><td>Beat-repeat chops gated on the grid, a touch of crush</td><td class="num">F4</td></tr>
+      <tr><td><span class="key red">Rewind</span></td><td>The last beat backwards through tape, thinned out</td><td class="num">F#4</td></tr>
+      <tr><td><span class="key red">Darken</span></td><td>Low-pass, warm tape and a dark room</td><td class="num">G4</td></tr>
+      <tr><td><span class="key red">Tape stop</span></td><td>Slows to a halt over 1/2 bar (HARD: a whole bar)</td><td class="num">G#4</td></tr>
+      <tr><td><span class="key red">Pitch dive</span></td><td>A fast drop thrown into a 1/4 delay</td><td class="num">A4</td></tr>
+      <tr><td><span class="key red">Jungle roll</span></td><td>1/16 stutter roll (HARD: 1/32), lifted with a high-pass and echo</td><td class="num">A#4</td></tr>
+      <tr><td><span class="key red">Sci-fi</span></td><td>Resonator, a 3/16 echo and a resonant band-pass</td><td class="num">B4</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li>Hold a key to play a macro, or switch on <span class="key">Latch</span> so a click (or note) toggles it.</li>
+    <li><span class="key">Amount</span> goes from MILD (0 %) to HARD (100 %); ride it while a macro is held.</li>
+    <li><span class="key">Group</span> picks A, B, C, D or ALL.</li>
+    <li>Your own effects are never overwritten: if a macro borrows your LPF, it comes back exactly as it was when you let go.</li>
+    <li>Snapshots keep AMOUNT, GROUP and LATCH but never switch a macro on.</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 09 SEQUENCER -->
+<section class="plate" id="sequencer"><span class="rivets"></span>
+  <header><h2 class="label">Sequencer</h2><span class="no">§ 09</span></header>
+  <p class="lead">A 32-step lane for every pad, locked to Live's transport. The view covers the transport box, so tempo and position move into its bottom row.</p>
+  <figure>
+    <div class="bezel crop right"><img src="img/seq-step.jpg" alt="The SEQUENCER view with the STEP row" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 8</span>The SEQUENCER view: 16 lanes of the scene on view, the STEP row below.</figcaption>
+  </figure>
+  <h3>Programming</h3>
+  <ul>
+    <li><b>Click</b> a cell to place a step (and select it), <b>drag up or down</b> on a step for velocity, click a lit step to clear it. <b>Right-click</b> or <b>shift-click</b> selects a step without switching it off.</li>
+    <li>Click a lane number to select that pad; <span class="key">Arm</span> and <span class="key plain">Clear</span> follow it.</li>
+    <li><span class="key">Run</span> plays the pattern with Live; <span class="key">Len</span> 1–32 steps (polymetric against Live's bar is fine); <span class="key">Step</span> 1/8, 1/16 or 1/32.</li>
+    <li><b>Live recording:</b> <span class="key red">Arm</span> a pad, press play in Live and hit the pad (mouse or MIDI). Hits are quantised to <span class="key">Rec Q</span> (1/4–1/32); anything finer than the step size is kept as micro-timing.</li>
+  </ul>
+  <h3>The STEP row</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Field</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">Vel</span></td><td>Velocity 1–127</td></tr>
+      <tr><td><span class="key">Chance</span></td><td>Probability the step plays, rolled each time round. A step's ratchets play all or nothing.</td></tr>
+      <tr><td><span class="key">Rat</span></td><td>Ratchet: 1–4 hits spread across the step (rolls)</td></tr>
+      <tr><td><span class="key">Pitch</span></td><td>±24 semitones on top of the pad's own pitch, for this hit only</td></tr>
+      <tr><td><span class="key">Slice</span></td><td>PAD (the pad's own sound) or slice 1–16 of its break</td></tr>
+      <tr><td><span class="key">Micro</span></td><td>Nudge early or late, in 1/128 of a step</td></tr>
+      <tr><td><span class="key">FX</span></td><td>An effect held on the pad's group for exactly this step. Back-to-back FX steps run without a gap.</td></tr>
+      <tr><td><span class="key">Hit</span></td><td>Off = the step only throws its FX, so a break loop runs on underneath instead of restarting</td></tr>
+      <tr><td><span class="key">Rev</span></td><td>Plays this hit backwards</td></tr>
+      <tr><td><span class="key">Cond</span></td><td>When the step plays (below)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="two">
+    <div>
+      <h3>Conditions</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Cond</th><th>Plays</th></tr></thead>
+        <tbody>
+          <tr><td class="num">ALWAYS</td><td>Every time</td></tr>
+          <tr><td class="num">1:2 … 4:4</td><td>On pass A of every B (1:4 = first of four)</td></tr>
+          <tr><td class="num">FILL</td><td>Only while FILL is held</td></tr>
+          <tr><td class="num">!FILL</td><td>Only while FILL isn't held</td></tr>
+          <tr><td class="num">FIRST</td><td>Only the first time round after pressing play</td></tr>
+          <tr><td class="num">!FIRST</td><td>Every time except the first</td></tr>
+        </tbody>
+      </table></div>
+      <p>Passes are counted on Live's timeline, so with a 4-bar loop brace a 1:4 step plays in the same place every time.</p>
+    </div>
+    <div>
+      <h3>Cell marks</h3>
+      <ul>
+        <li>Fill height: velocity</li>
+        <li>Black ticks along the top: ratchet</li>
+        <li>Dot top-right: chance below 100 %</li>
+        <li>Green corner: pitch, reverse or slice</li>
+        <li>Red corner: an FX step</li>
+        <li>Cyan underline: a condition</li>
+        <li>Outline only: FX only (HIT off)</li>
+        <li>Thin black line: micro-timing</li>
+      </ul>
+      <p><span class="key red">Fill (hold)</span> is the automatable <code>Sequencer Fill</code> parameter: MIDI-map it to a pad.</p>
+    </div>
+  </div>
+  <div class="note"><p>PITCH, REV and SLICE don't apply to pads in a SWAP group or with SLICE SEQ on (they run their own playback). A pitched step on a synced loop plays that hit at its own speed, off the grid.</p></div>
+</section>
+
+<!-- ===================================================================== 10 MUTATE -->
+<section class="plate" id="mutate"><span class="rivets"></span>
+  <header><h2 class="label">Mutate</h2><span class="no">§ 10</span></header>
+  <p class="lead">One press makes a variation of your patterns that keeps the groove. It's on the <span class="key">Mutate</span> tab under STEP in the SEQUENCER view.</p>
+  <figure>
+    <div class="bezel crop right"><img src="img/seq-mutate.jpg" alt="The MUTATE page" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 9</span>The MUTATE page: 45 %, automatic every 4 bars, landing on the bar line.</figcaption>
+  </figure>
+  <h3>The rules it keeps</h3>
+  <ul>
+    <li>Hits on the beat are never removed, moved, re-sliced, pitched or reversed.</li>
+    <li>Nothing moves off the grid. New hits are only quiet ghosts beside existing ones.</li>
+    <li>Rolls and FX throws mostly land in the last beat of the bar.</li>
+    <li>On a SLICE SEQ pad, the beats keep their slices; off-beat steps trade slices and tied steps re-hit.</li>
+    <li>An empty lane stays empty.</li>
+  </ul>
+  <h3>Controls</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">Amount</span></td><td>How much changes. 0 % gives back your pattern.</td></tr>
+      <tr><td><span class="key">Slice</span> <span class="key">Pitch</span> <span class="key">Patt</span> <span class="key">Rat</span> <span class="key">Rev</span> <span class="key">FX</span> <span class="key">Chnc</span></td><td>What may change: slices, pitch, the pattern, ratchets, reverse, FX throws, chance</td></tr>
+      <tr><td><span class="key">Scope</span></td><td>PAD = the selected pad (its lane and slice sequence), ALL = every pad of both scenes</td></tr>
+      <tr><td><span class="key">Auto</span></td><td>Mutate by itself every 1, 2, 4 or 8 bars, on the bar line (also across loop-brace wraps)</td></tr>
+      <tr><td><span class="key">At</span></td><td>When a GO lands: NOW, next BEAT or next BAR, on the exact sample</td></tr>
+      <tr><td><span class="key">Drift</span></td><td>Off: every GO is a fresh variation of your pattern. On: each builds on the last.</td></tr>
+      <tr><td><span class="key red">Go</span></td><td>Mutate (also the MIDI-mappable <code>Mutate</code> parameter)</td></tr>
+      <tr><td><span class="key plain">Undo</span> <span class="key plain">Reset</span></td><td>UNDO flips between the last two versions; RESET brings back your pattern exactly</td></tr>
+    </tbody>
+  </table></div>
+  <p>Editing a pattern by hand, recording into it or recalling a snapshot makes that the new original.</p>
+</section>
+
+<!-- ===================================================================== 11 SLICE SEQ -->
+<section class="plate" id="sliceseq"><span class="rivets"></span>
+  <header><h2 class="label">Slice sequencer</h2><span class="no">§ 11</span></header>
+  <p class="lead">Rearrange a sliced break, pad by pad. Open the pad editor's <span class="key">Seq</span> tab and switch <span class="key">Slice seq</span> on: the pad now plays its own pattern of slices when hit, and a second hit stops it.</p>
+  <figure>
+    <div class="bezel crop right"><img src="img/sseq.jpg" alt="The slice sequencer on the screen" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 10</span>A slice sequence: 32 steps, each a slice, a REST or a TIE.</figcaption>
+  </figure>
+  <ul>
+    <li>Untouched, the pattern replays the break exactly as recorded, at any tempo (it is re-sequenced, not stretched).</li>
+    <li>Drag a step up or down to pick its slice (below 1: REST, then TIE, which lets the slice ring on). Double-click for TIE.</li>
+    <li>The selected step has <span class="key">Slice</span> <span class="key">Pitch</span> <span class="key">Vel</span> <span class="key">Len</span> (gate) <span class="key">Rat</span> <span class="key">Chance</span> <span class="key">Micro</span> <span class="key">Rev</span>.</li>
+    <li>One-press edits: <span class="key plain">Shuffle</span> (the beats stay put) <span class="key plain">Random</span> <span class="key plain">Reverse</span> <span class="key plain">Half</span> <span class="key plain">&lt; Rot</span> <span class="key plain">Rot &gt;</span> <span class="key plain">Reset</span>. Hold <span class="key red">Fill</span> for rolls.</li>
+    <li><span class="key red">Step rec</span>: tap the pads of a SPREAD break to write their slices into the steps in turn.</li>
+    <li>8 <span class="key">Slot</span>s per pad (automatable; a change lands at the pattern start), plus <span class="key">Len</span>, <span class="key">Rate</span> (1/8, 1/16, 1/32, 1/16T) and <span class="key">Swing</span>.</li>
+    <li>A main-sequencer step on the pad starts its slice sequence; with Live stopped it runs from its own clock.</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 12 SNAPSHOTS -->
+<section class="plate" id="snapshots"><span class="rivets"></span>
+  <header><h2 class="label">Snapshots &amp; break bank</h2><span class="no">§ 12</span></header>
+  <figure>
+    <div class="bezel crop right"><img src="img/snapshots.jpg" alt="The SNAPSHOTS view" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 11</span>SNAPSHOTS: 8 slots above, the break bank below.</figcaption>
+  </figure>
+  <h3>Snapshots</h3>
+  <ul>
+    <li><span class="key">Store</span>, then click a slot: it captures every pad of both scenes (sample, slices, all settings), the routing, the mixer, every effect and both sequencers.</li>
+    <li>Click a slot to recall it <span class="key">Now</span>, on the next <span class="key">Beat</span> or next <span class="key">Bar</span>. The change lands on the exact sample of that boundary.</li>
+    <li>Also MIDI Program Change 1–8, and the automatable <code>Snapshot</code> parameter for writing changes into the arrangement.</li>
+    <li>The master section, crossfader and scene view are never changed by a snapshot.</li>
+  </ul>
+  <h3>Break bank</h3>
+  <ul>
+    <li>Drop up to 8 breaks onto the bank slots (they're sliced automatically), or <span class="key plain">From pad</span> copies the selected pad's break with its markers.</li>
+    <li>Pads with <span class="key">Follow bank</span> (SWAP page), or every slice pad at once with <span class="key">All slice pads follow</span>, play the active break.</li>
+    <li>Switch break by clicking a slot or automating <code>Break Bank</code>: every following pad and slice sequence changes on the next beat or bar and carries on with the same playing.</li>
+  </ul>
+  <h3>Find missing</h3>
+  <p>If a set opens with samples marked <b>MISSING</b>, press <span class="key plain">Find missing</span> and pick a folder. Every missing file is found by name (sub-folders included) and reloaded with its slices.</p>
+</section>
+
+<!-- ===================================================================== 13 RESAMPLE -->
+<section class="plate" id="resample"><span class="rivets"></span>
+  <header><h2 class="label">Resample &amp; character</h2><span class="no">§ 13</span></header>
+  <figure>
+    <div class="bezel crop right"><img src="img/resample.jpg" alt="The RESAMPLE view" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 12</span>RESAMPLE, mid-recording, with pad 01 set to SP-1200.</figcaption>
+  </figure>
+  <h3>Resample</h3>
+  <ol class="steps">
+    <li><div>Select the pad that should receive the recording (an empty one is best).</div></li>
+    <li><div>Choose <span class="key">Source</span> (MASTER = what you hear, or one group), <span class="key">Length</span> (1, 2, 4 or 8 bars) and <span class="key">Start</span> (BAR = the next bar line, NOW = straight away, also with Live stopped).</div></li>
+    <li><div>Press <span class="key red">Rec</span>. It waits for the bar line, records, then saves a 24-bit WAV in <code>Music / Twisted Breaks / Resamples</code> and puts it on the pad.</div></li>
+    <li><div>With <span class="key">As loop</span> on, the pad is set up as a tempo-synced loop; with <span class="key">Auto slice</span>, it's sliced at its hits. Mangle a break, resample it, chop it again.</div></li>
+  </ol>
+  <p><span class="key plain">Cancel</span> drops a take that's waiting or recording. REC is also the MIDI-mappable <code>Resample</code> parameter. The set refers to the WAV like any other sample, so keep that folder.</p>
+  <div class="note"><p>AS LOOP reads a loop's tempo as being between 90 and 180 BPM. A resample made below 90 BPM may play back at half speed: switch SYNC off for that pad, or resample at jungle tempo.</p></div>
+  <h3>Character</h3>
+  <p>A vintage sampler mode per pad. The sample is read as if the machine had stored it at its own rate and bit depth, so pitching a pad down gets grittier, as on the hardware. <span class="key plain">All pads</span> copies the selected pad's character to the whole kit.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Mode</th><th>Rate</th><th>Bits</th><th>Interpolation</th><th>Output filter</th><th>Sound</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">Clean</span></td><td class="num">file</td><td class="num">float</td><td>4-point Hermite</td><td>—</td><td>Exactly as recorded</td></tr>
+      <tr><td><span class="key">SP-1200</span></td><td class="num">26.04 kHz</td><td class="num">12</td><td>none</td><td>—</td><td>Steppy and gritty</td></tr>
+      <tr><td><span class="key">MPC60</span></td><td class="num">40 kHz</td><td class="num">12</td><td>linear</td><td class="num">~15 kHz</td><td>Punchy and warm</td></tr>
+      <tr><td><span class="key">S950</span></td><td class="num">31.25 kHz</td><td class="num">12</td><td>linear</td><td class="num">~9 kHz</td><td>Dark and thick</td></tr>
+      <tr><td><span class="key">Lo-fi</span></td><td class="num">11.025 kHz</td><td class="num">8</td><td>none</td><td>—</td><td>Crunchy and aliased</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ===================================================================== 14 SCENES -->
+<section class="plate" id="scenes"><span class="rivets"></span>
+  <header><h2 class="label">Scenes A / B</h2><span class="no">§ 14</span></header>
+  <p class="lead">Two decks of 16 pads, A and B, both playing all the time. Each has its own samples, pad settings, sequencer lanes and slice sequences.</p>
+  <figure>
+    <div class="bezel"><img src="img/overview-scenes.jpg" alt="The scene strip under the pad matrix" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 13</span>The scene strip sits under the pad matrix (area 3 in Fig. 1).</figcaption>
+  </figure>
+  <ul>
+    <li><span class="key">A</span> <span class="key">B</span> (VIEW) picks which 16 pads the matrix, pad editor, sequencer and your controller show. Switching keeps the same pad position selected and never stops anything. Scene B's pads are labelled B01–B16.</li>
+    <li>The <b>crossfader</b> blends the two: drag it, double-click to centre it, or map the <code>Crossfader</code> parameter to a fader.</li>
+    <li><span class="key red">Cut A</span> and <span class="key red">Cut B</span> go fully to one side while held.</li>
+    <li><span class="key">Curve</span>: SMOOTH (both full in the middle, each fading over its far half) or SHARP (cuts only in the last 5 %, scratch style).</li>
+    <li>The crossfader sits before the effects, so FX and macros on a group carry on smoothly through a fade.</li>
+    <li>Shared by both scenes: groups, FX, macros, the break bank, snapshots and RESAMPLE.</li>
+  </ul>
+  <div class="note"><p>Sets made before 0.13 open exactly as they were: scene A, the crossfader in the middle (both scenes at full level) and scene B empty.</p></div>
+</section>
+
+<!-- ===================================================================== 15 MIDI -->
+<section class="plate" id="midi"><span class="rivets"></span>
+  <header><h2 class="label">Controller &amp; MIDI</h2><span class="no">§ 15</span></header>
+  <h3>MIDI map</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Input</th><th>Range</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td>Notes</td><td class="num">36–51 · C1–D#2</td><td>The 16 pads of the scene on view (a Drum Rack layout). A note learned for one pad plays it in either view.</td></tr>
+      <tr><td>Notes</td><td class="num">60–75 · C3–D#4</td><td>Performance FX 1–16 of the group picked in the panel</td></tr>
+      <tr><td>Notes</td><td class="num">76–83 · E4–B4</td><td>Macros 1–8 (held, or toggled with LATCH)</td></tr>
+      <tr><td>Program Change</td><td class="num">1–8</td><td>Recall snapshot 1–8</td></tr>
+      <tr><td>CC 120</td><td class="num">All Sound Off</td><td>Panic</td></tr>
+    </tbody>
+  </table></div>
+  <h3>iRig Pads lights</h3>
+  <p>Press <span class="key">Lights</span> in the status strip and pick your <b>iRig Pads</b> as the output. Its pads then show the scene on view: <b>green</b> while a pad plays (brightness follows the sound), <b>dim green</b> for loaded pads, <b>flashing red</b> while a SWAP hand-off is waiting. It works on the iRig's default scene; for any other layout choose <b>Learn pad layout</b> and hit each pad as it lights red. <b>Test lights</b> and <b>Swap red / green</b> are in the same menu. The layout is saved with the set.</p>
+  <h3>Worth mapping in Live</h3>
+  <p>Press <b>⌘M</b> in Live, click the control in the plugin's device view (or its parameter in the automation chooser), then move the controller.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Parameter</th><th>To</th></tr></thead>
+    <tbody>
+      <tr><td><code>Crossfader</code></td><td>A fader or knob</td></tr>
+      <tr><td><code>Scene View</code></td><td>A button: flip the controller between scene A and B</td></tr>
+      <tr><td><code>Sequencer Fill</code></td><td>A pad, held for fills</td></tr>
+      <tr><td><code>Mutate</code></td><td>A pad: one press, one variation</td></tr>
+      <tr><td><code>Resample</code></td><td>A pad: start a recording</td></tr>
+      <tr><td><code>Macro Amount</code></td><td>A knob, ridden while a macro is held</td></tr>
+      <tr><td><code>Snapshot</code>, <code>Break Bank</code></td><td>Arrangement automation for song sections</td></tr>
+      <tr><td><code>Panic</code></td><td>An emergency button</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ===================================================================== 16 TROUBLE -->
+<section class="plate" id="trouble"><span class="rivets"></span>
+  <header><h2 class="label">Saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
+  <h3>What the Live set keeps</h3>
+  <p>All 969 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank and the iRig light layout. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>If…</th><th>Then</th></tr></thead>
+    <tbody>
+      <tr><td>The plugin doesn't appear in Live</td><td>Clear the quarantine (§ 01), rescan; for the AU, <code>killall -9 AudioComponentRegistrar</code> first.</td></tr>
+      <tr><td>Pads say MISSING</td><td><span class="key plain">Find missing</span> in the SNAPSHOTS view, pick the folder the samples are in.</td></tr>
+      <tr><td>Nothing plays from the controller</td><td>Arm the MIDI track or set Monitor to In; check the pad's note on the PLAY page; check which scene is on view.</td></tr>
+      <tr><td>Scene B is silent</td><td>Check the crossfader isn't fully on A and that no CUT key is held.</td></tr>
+      <tr><td>A synced loop plays at half or double speed</td><td>Its tempo reads outside 90–180 BPM. Trim START / END to whole bars, or switch SYNC off for it.</td></tr>
+      <tr><td>Sound keeps ringing</td><td>The red <span class="key red">Stop</span> button (or CC 120) stops every voice and tail and switches the effects off.</td></tr>
+      <tr><td>The sequencer doesn't move</td><td>It follows Live's transport: press play in Live, and check <span class="key">Run</span>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ===================================================================== 17 CARD -->
+<section class="plate" id="card"><span class="rivets"></span>
+  <header><h2 class="label">Quick reference</h2><span class="no">§ 17</span></header>
+  <div class="card">
+    <div><h4>Load a break</h4><p>Drag the file onto a pad, or <span class="key plain">Load</span>.</p></div>
+    <div><h4>Chop it</h4><p><span class="key">Slicer</span> → <span class="key">Auto slice</span> → <span class="key">Spread</span>.</p></div>
+    <div><h4>Loop it in time</h4><p>PLAY page: MODE <b>LOOP</b>, <span class="key">Sync</span> on.</p></div>
+    <div><h4>Switch breaks on the snare</h4><p>Same <span class="key">Swap</span> group, AT <b>SLICE</b>, hit the other pad.</p></div>
+    <div><h4>Program a beat</h4><p><span class="key">Sequencer</span>, click cells, press play in Live.</p></div>
+    <div><h4>Roll the hats</h4><p>Select the step, <span class="key">Rat</span> x3 or x4.</p></div>
+    <div><h4>Vary it</h4><p>STEP row → <span class="key">Mutate</span> tab → <span class="key red">Go</span>.</p></div>
+    <div><h4>Rearrange the break</h4><p>Pad editor <span class="key">Seq</span>, <span class="key">Slice seq</span> on, drag steps.</p></div>
+    <div><h4>Throw an effect</h4><p>Hold a key in PERFORMANCE FX, or a <span class="key red">Macro</span>.</p></div>
+    <div><h4>Change section</h4><p><span class="key">Snapshots</span>: STORE, then recall on the next bar.</p></div>
+    <div><h4>Bounce it down</h4><p><span class="key">Resample</span> → <span class="key red">Rec</span> onto an empty pad.</p></div>
+    <div><h4>Mix in a second deck</h4><p><span class="key">B</span>, load it, ride the crossfader.</p></div>
+  </div>
+</section>
+</main>
+</div>
+
+<footer class="colophon"><div class="plate"><span class="rivets"></span>TWISTED BREAKS 0.13 · OPERATOR'S MANUAL · TWISTED GENETICS<br>github.com/TwistedGenetics/Twisted-Breaks</div></footer>
+
+</body>
+</html>

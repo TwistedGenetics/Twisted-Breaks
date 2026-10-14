@@ -18,6 +18,8 @@ repo page, download **TwistedBreaks-macOS.zip** from the newest one, and
 follow the `INSTALL.txt` inside: copy the `.vst3` and `.component` into your
 plug-in folders, clear macOS quarantine, rescan in Ableton.
 
+**Operator's manual:** [docs/manual/index.html](docs/manual/index.html) (open it in a browser).
+
 ## Status
 
 | Phase | What | State |
