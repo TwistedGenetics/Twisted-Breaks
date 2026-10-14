@@ -8,10 +8,18 @@ namespace tb::ui
     using namespace juce;
     namespace c = colours;
 
+    void PadComponent::setPadIndex (int padIndex)
+    {
+        if (padIndex == index) return;
+        index = padIndex;
+        setTooltip ("Pad " + padLabel (index) + " - click to fire (higher = harder). Drop a WAV / AIFF here to load it.");
+        repaint();
+    }
+
     PadComponent::PadComponent (int padIndex) : index (padIndex)
     {
         setRepaintsOnMouseActivity (false);
-        setTooltip ("Pad " + String (index + 1) + " - click to fire (higher = harder). Drop a WAV / AIFF here to load it.");
+        setTooltip ("Pad " + padLabel (index) + " - click to fire (higher = harder). Drop a WAV / AIFF here to load it.");
     }
 
     void PadComponent::setActivity (float level)
@@ -106,7 +114,7 @@ namespace tb::ui
         Graphics g (overlay);
         g.addTransform (AffineTransform::scale (scale));
 
-        Random rnd (0x7B5 + (int64) index * 7919);
+        Random rnd (0x7B5 + (int64) (index % kPadsPerScene) * 7919);
         const auto outer = b.toFloat().reduced (1.0f);
         const auto glass = glassArea();
 
@@ -162,7 +170,7 @@ namespace tb::ui
             g.fillRect (glass);
 
             // Some tiles have taken a knock over the years.
-            if (index == 5 || index == 12 || index == 14)
+            if (index % kPadsPerScene == 5 || index % kPadsPerScene == 12 || index % kPadsPerScene == 14)
                 paint::glassCrack (g, glass, rnd);
 
             // Glass sheen across the top.
@@ -195,7 +203,7 @@ namespace tb::ui
         g.setFont (industrialFont (22.0f));
         {
             auto row = t.removeFromTop (22.0f);
-            g.drawText (String (index + 1).paddedLeft ('0', 2), row, Justification::centredLeft, false);
+            g.drawText (padLabel (index), row, Justification::centredLeft, false);
 
             // Output group, engraved beside the number: "GRP B".
             g.setFont (industrialFont (12.0f));

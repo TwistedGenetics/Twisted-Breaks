@@ -43,5 +43,6 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/SliceSeqPanel.cpp
     ${TB_SRC}/UI/SnapshotPanel.cpp
     ${TB_SRC}/UI/ResamplePanel.cpp
+    ${TB_SRC}/UI/SceneStrip.cpp
     ${TB_SRC}/UI/MainView.cpp
 )

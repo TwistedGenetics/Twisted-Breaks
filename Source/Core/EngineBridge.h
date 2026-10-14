@@ -9,8 +9,20 @@
 
 namespace tb
 {
-    inline constexpr int kNumPads   = 16;
-    inline constexpr int kNumGroups = 4;
+    /** Phase 13: two scenes of 16 pads. Engine pad p = scene * 16 + position. */
+    inline constexpr int kPadsPerScene = 16;
+    inline constexpr int kNumScenes    = 2;
+    inline constexpr int kNumPads      = kPadsPerScene * kNumScenes;   // 32
+    inline constexpr int kNumGroups    = 4;
+    inline constexpr uint32_t kAllPadsMask = 0xffffffffu;
+    static_assert (kNumPads <= 32, "pad masks are 32-bit");
+    static_assert (SequencerData::kPads == kNumPads && SliceSeqData::kPads == kNumPads, "sequencer lanes = pads");
+    inline constexpr int sceneOf (int pad) noexcept { return pad / kPadsPerScene; }
+    /** "01".."16" for scene A, "B01".."B16" for scene B. */
+    inline juce::String padLabel (int pad)
+    {
+        return (sceneOf (pad) == 1 ? "B" : "") + juce::String (pad % kPadsPerScene + 1).paddedLeft ('0', 2);
+    }
 
     /*
         Single-producer / single-consumer lock-free queue of trivially

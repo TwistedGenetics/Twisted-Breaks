@@ -40,6 +40,29 @@ namespace tb::params
     inline constexpr int kV12 = 12; // parameters introduced in 0.10.x (MUTATE)
     inline constexpr int kV13 = 13; // parameters introduced in 0.11.x (macros)
     inline constexpr int kV14 = 14; // parameters introduced in 0.12.x (resample, character)
+    inline constexpr int kV15 = 15; // parameters introduced in 0.13.x (scenes: pads 17-32, crossfader)
+
+    // ---- Scenes A / B (Phase 13) ------------------------------------------------
+    inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
+    inline constexpr const char* xfadeCurve = "xfade_curve";  // choice: Smooth / Sharp
+    inline constexpr const char* sceneView  = "scene_view";   // choice: A / B (what the screen and controller show)
+    enum XfadeCurve { curveSmooth = 0, curveSharp = 1 };
+    /** Scene gains for a crossfader position (0..1). Smooth: both full in the middle, each fades
+        out over its far half. Sharp: both full until the last 5 % (cuts, scratch style). */
+    inline void xfadeGains (float x, int curve, float& a, float& b) noexcept
+    {
+        x = juce::jlimit (0.0f, 1.0f, x);
+        if (curve == curveSharp)
+        {
+            a = x > 0.95f ? (1.0f - x) / 0.05f : 1.0f;
+            b = x < 0.05f ? x / 0.05f : 1.0f;
+        }
+        else
+        {
+            a = juce::jmin (1.0f, 2.0f * (1.0f - x));
+            b = juce::jmin (1.0f, 2.0f * x);
+        }
+    }
 
     // ---- RESAMPLE (Phase 12) ----------------------------------------------------
     inline constexpr const char* rsmpSource = "rsmp_source";  // choice: Master, Group A..D

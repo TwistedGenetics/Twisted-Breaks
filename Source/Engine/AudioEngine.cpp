@@ -18,7 +18,7 @@ namespace tb
     {
         for (int p = 0; p < kNumPads; ++p)
         {
-            padNote[(size_t) p].store (kDefaultFirstNote + p);
+            padNote[(size_t) p].store (kDefaultFirstNote + p % kPadsPerScene);    // both scenes on 36..51
             bridge.padPlayhead[(size_t) p].store (-1.0f);
         }
         swapPlaying.fill (-1);
@@ -156,10 +156,10 @@ namespace tb
         const int old = padNote[(size_t) pad].load();
         if (old == note) return;
 
-        // One note -> one pad: whoever had this note gets this pad's old one.
+        // One note -> one pad (within a scene): whoever had this note gets this pad's old one.
         if (note >= 0)
             for (int p = 0; p < kNumPads; ++p)
-                if (p != pad && padNote[(size_t) p].load() == note)
+                if (p != pad && sceneOf (p) == sceneOf (pad) && padNote[(size_t) p].load() == note)
                     padNote[(size_t) p].store (old);
 
         padNote[(size_t) pad].store (note);
@@ -173,9 +173,18 @@ namespace tb
 
     int AudioEngine::padForNote (int note) const noexcept
     {
-        for (int p = 0; p < kNumPads; ++p)
-            if (padNote[(size_t) p].load (std::memory_order_relaxed) == note)
-                return p;
+        // The scene on view first (a 16-pad controller plays what you see), then the other.
+        const int first = sceneViewNow.load (std::memory_order_relaxed);
+        for (int k = 0; k < kNumScenes; ++k)
+        {
+            const int scene = (first + k) % kNumScenes;
+            for (int i = 0; i < kPadsPerScene; ++i)
+            {
+                const int p = scene * kPadsPerScene + i;
+                if (padNote[(size_t) p].load (std::memory_order_relaxed) == note)
+                    return p;
+            }
+        }
         return -1;
     }
 
@@ -187,6 +196,15 @@ namespace tb
         currentParams = &bp;
         bankWanted = juce::jlimit (0, kBankSlots - 1, bp.bankActive);
         bankAtNow  = juce::jlimit (0, 2, bp.bankAt);
+
+        // Scenes: crossfader (or a held cut key) -> a gain per scene, glided by the voices.
+        sceneViewNow.store (juce::jlimit (0, kNumScenes - 1, bp.sceneView), std::memory_order_relaxed);
+        {
+            float a, b;
+            const int cut = xfadeCut.load (std::memory_order_relaxed);
+            params::xfadeGains (cut < 0 ? bp.xfade : (float) cut, cut < 0 ? bp.xfadeCurve : params::curveSharp, a, b);
+            sceneGain = { a, b };
+        }
 
         macroParamMask = bp.macroOn;
         macroAmountNow = juce::jlimit (0.0f, 1.0f, bp.macroAmount);
@@ -289,7 +307,7 @@ namespace tb
             const bool audible = ! pp.mute && (! anySolo || pp.solo);
             const float g = (! audible || pp.gainDb <= params::padGainMinDb + 0.01f)
                               ? 0.0f : juce::Decibels::decibelsToGain (pp.gainDb);
-            GroupBus::panGains (g, pp.pan, s.gainLeft, s.gainRight);
+            GroupBus::panGains (g * sceneGain[(size_t) sceneOf (p)], pp.pan, s.gainLeft, s.gainRight);
 
             for (int i = 0; i < kVoicesPerPad; ++i)
             {

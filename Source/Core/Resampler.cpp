@@ -81,7 +81,7 @@ namespace tb
             const int pad = busyPad >= 0 ? busyPad : selectedPad;
             const double rate = engine.getSampleRate();
             const auto file = folder.getChildFile ("Resample " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S")
-                                                   + " pad " + juce::String (pad + 1).paddedLeft ('0', 2) + ".wav")
+                                                   + " pad " + padLabel (pad) + ".wav")
                                     .getNonexistentSibling (false);
             juce::WeakReference<Resampler> weak (this);
             juce::Thread::launch ([take, file, rate, pad, weak]

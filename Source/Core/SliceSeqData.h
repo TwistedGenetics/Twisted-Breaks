@@ -117,7 +117,7 @@ namespace tb
     class SliceSeqData
     {
     public:
-        static constexpr int kPads = 16, kSlots = 8, kSteps = 32;
+        static constexpr int kPads = 32, kSlots = 8, kSteps = 32;    // kPads = kNumPads (two scenes)
 
         SliceSeqData() { clearAll(); }
 

@@ -109,7 +109,7 @@ namespace tb::ui
     String ResamplePanel::statusText() const
     {
         auto& rs = processor.getResampler();
-        const String to = "PAD " + String (rs.getTargetPad() + 1).paddedLeft ('0', 2);
+        const String to = "PAD " + padLabel (rs.getTargetPad());
         switch (rs.getState())
         {
             case Resampler::State::armed:     return "WAITING FOR THE BAR LINE  ->  " + to;
@@ -209,7 +209,7 @@ namespace tb::ui
         const auto info = processor.getSamples().getInfo (selectedPad);
         g.setColour (c::plateText.withAlpha (0.9f));
         g.setFont (industrialFont (13.0f));
-        g.drawText ("PAD " + String (selectedPad + 1).paddedLeft ('0', 2) + (info.name.isNotEmpty() ? "  -  " + info.name.toUpperCase() : String()),
+        g.drawText ("PAD " + padLabel (selectedPad) + (info.name.isNotEmpty() ? "  -  " + info.name.toUpperCase() : String()),
                     Rectangle<float> (156.0f, 122.0f, (float) getWidth() - 170.0f, 22.0f), Justification::centredLeft, true);
         g.setColour (c::vfd.withAlpha (0.85f));
         g.setFont (monoFont (12.0f));

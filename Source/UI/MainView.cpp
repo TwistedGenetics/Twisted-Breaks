@@ -19,7 +19,8 @@ namespace tb::ui
         const Rectangle<int> navRail     {  16,  80, 1168,  42 };
 
         const Rectangle<int> padPanel    {  16, 132,  580, 652 };
-        const Rectangle<int> pads        {  36, 172,  540, 418 };
+        const Rectangle<int> pads        {  36, 172,  540, 374 };
+        const Rectangle<int> sceneStrip  {  36, 554,  540,  40 };      // Phase 13: VIEW A / B + crossfader
         const Rectangle<int> padEditor   {  36, 606,  540, 128 };
         const Rectangle<int> statusStrip {  36, 740,  540,  38 };
         const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
@@ -191,7 +192,7 @@ namespace tb::ui
             readout (b, "LIGHTS LEARN", message);
         else
             readout (b, "SELECTED PAD",
-                     "PAD " + String (selPad + 1).paddedLeft ('0', 2) + "  <-  " + noteName (selNote));
+                     "PAD " + padLabel (selPad) + "  <-  " + noteName (selNote));
     }
 
     //==========================================================================
@@ -209,6 +210,7 @@ namespace tb::ui
           sliceSeq (p),
           snapshotPanel (p),
           resamplePanel (p),
+          sceneStrip (p),
           meter (p.getBridge()),
           fxGrid (p),
           status (p)
@@ -225,6 +227,7 @@ namespace tb::ui
         addChildComponent (sliceSeq);
         addChildComponent (snapshotPanel);
         addChildComponent (resamplePanel);
+        addAndMakeVisible (sceneStrip);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
         addAndMakeVisible (status);
@@ -283,6 +286,13 @@ namespace tb::ui
 
         padGrid.onSelectionChanged = [this] (int pad)
         {
+            // Selecting a pad of the other scene (sequencer lane, a test, ...) flips the view.
+            if (sceneOf (pad) != shownScene)
+            {
+                shownScene = sceneOf (pad);
+                if (auto* prm = processor.getParameters().getParameter (params::sceneView))
+                    prm->setValueNotifyingHost (prm->convertTo0to1 ((float) shownScene));
+            }
             waveform.setPad (pad);
             padEditor.setPad (pad);
             mixer.setSelectedPad (pad);
@@ -320,6 +330,7 @@ namespace tb::ui
         sliceSeq.setBounds (layout::scope);
         snapshotPanel.setBounds (layout::scope);
         resamplePanel.setBounds (layout::scope);
+        sceneStrip.setBounds (layout::sceneStrip);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
         meter.setBounds (layout::meter);
@@ -340,6 +351,19 @@ namespace tb::ui
     {
         padGrid.refresh();
         transportDisplay.refresh();
+        // Scene view (the VIEW keys, automation or a MIDI-mapped control): show
+        // the other 16 pads, keeping the same pad position selected.
+        sceneStrip.refresh();
+        {
+            const int v = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (processor.getParameters().getRawParameterValue (params::sceneView)->load()));
+            if (v != shownScene)
+            {
+                shownScene = v;
+                padGrid.setScene (v);
+                padGrid.setSelectedPad (v * kPadsPerScene + padGrid.getSelectedPad() % kPadsPerScene);
+            }
+        }
+
         switch (view)
         {
             case View::mixer: mixer.refresh(); break;

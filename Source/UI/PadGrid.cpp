@@ -8,7 +8,7 @@ namespace tb::ui
         shownNotes.fill (-2);
         shownVersions.fill (0xffffffff);
 
-        for (int i = 0; i < kNumPads; ++i)
+        for (int i = 0; i < kPadsPerScene; ++i)
         {
             auto pad = std::make_unique<PadComponent> (i);
 
@@ -27,20 +27,37 @@ namespace tb::ui
 
     void PadGrid::resized()
     {
-        const int gap  = 10;
+        const int gap  = 10, gapV = 4;        // tighter rows since the scene strip (0.13)
         const int cell = (getWidth()  - gap * 3) / 4;
-        const int rowH = (getHeight() - gap * 3) / 4;
+        const int rowH = (getHeight() - gapV * 3) / 4;
 
-        for (int i = 0; i < kNumPads; ++i)
-            pads[(size_t) i]->setBounds ((i % 4) * (cell + gap), (i / 4) * (rowH + gap), cell, rowH);
+        for (int i = 0; i < kPadsPerScene; ++i)
+            pads[(size_t) i]->setBounds ((i % 4) * (cell + gap), (i / 4) * (rowH + gapV), cell, rowH);
     }
 
     void PadGrid::setSelectedPad (int pad)
     {
         selectedPad = juce::jlimit (0, kNumPads - 1, pad);
-        for (int i = 0; i < kNumPads; ++i)
-            pads[(size_t) i]->setSelected (i == selectedPad);
+        if (sceneOf (selectedPad) != scene) setScene (sceneOf (selectedPad));
+        for (int i = 0; i < kPadsPerScene; ++i)
+            pads[(size_t) i]->setSelected (pads[(size_t) i]->getPadIndex() == selectedPad);
         if (onSelectionChanged) onSelectionChanged (selectedPad);
+    }
+
+    void PadGrid::setScene (int s)
+    {
+        s = juce::jlimit (0, kNumScenes - 1, s);
+        if (s == scene) return;
+        scene = s;
+        for (int i = 0; i < kPadsPerScene; ++i)
+        {
+            pads[(size_t) i]->setPadIndex (scene * kPadsPerScene + i);
+            pads[(size_t) i]->setSelected (scene * kPadsPerScene + i == selectedPad);
+        }
+        shownNotes.fill (-2);
+        shownVersions.fill (0xffffffff);
+        shownTags.fill ({});
+        refresh();
     }
 
     void PadGrid::refresh()
@@ -53,9 +70,10 @@ namespace tb::ui
         for (int i = 0; i < kNumPads; ++i)
             anySolo = anySolo || processor.getParameters().getRawParameterValue (params::padId (i, params::padSolo))->load() > 0.5f;
 
-        for (int i = 0; i < kNumPads; ++i)
+        for (int t = 0; t < kPadsPerScene; ++t)
         {
-            auto& pad = *pads[(size_t) i];
+            auto& pad = *pads[(size_t) t];
+            const int i = pad.getPadIndex();      // engine pad
             pad.setActivity (bridge.padActivity[(size_t) i].load (std::memory_order_relaxed));
 
             auto raw = [&] (const char* name) { return processor.getParameters().getRawParameterValue (params::padId (i, name))->load(); };
@@ -74,16 +92,17 @@ namespace tb::ui
                                                                    : juce::String ("ONE");
             const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())
                                              + (swap > 0 ? " SW" + juce::String (swap) : juce::String())
-                                             + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String());
+                                             + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String())
+                                             + juce::String (std::array<const char*, 5> { "", " SP12", " MPC", " S950", " LOFI" }[(size_t) juce::jlimit (0, 4, juce::roundToInt (raw (params::padCharacter)))]);
 
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);
-            if (note == shownNotes[(size_t) i] && version == shownVersions[(size_t) i] && tag == shownTags[(size_t) i])
+            if (note == shownNotes[(size_t) t] && version == shownVersions[(size_t) t] && tag == shownTags[(size_t) t])
                 continue;
 
-            shownNotes[(size_t) i]    = note;
-            shownVersions[(size_t) i] = version;
-            shownTags[(size_t) i]     = tag;
+            shownNotes[(size_t) t]    = note;
+            shownVersions[(size_t) t] = version;
+            shownTags[(size_t) t]     = tag;
 
             const auto info = samples.getInfo (i);
             using S = SampleManager::Status;

@@ -27,6 +27,7 @@ namespace tb
     {
         return id.startsWith ("master_") || id == params::snapRecall || id == params::snapAt
             || id == params::bankActive || id == params::bankAt || id == params::seqFill || id == params::mutGo || id == params::rsmpRec
+            || id == params::xfade || id == params::sceneView
             || (id.startsWith ("macro_") && id != params::macroAmount && id != params::macroGroup && id != params::macroLatch);   // macros are moves, not state
     }
 

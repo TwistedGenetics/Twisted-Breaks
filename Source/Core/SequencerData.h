@@ -118,7 +118,7 @@ namespace tb
     class SequencerData
     {
     public:
-        static constexpr int kPads  = 16;
+        static constexpr int kPads  = 32;      // two scenes of 16 (= kNumPads)
         static constexpr int kSteps = 32;
 
         SequencerData() { clearAll(); }

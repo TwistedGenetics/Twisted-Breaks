@@ -121,6 +121,10 @@ namespace tb
             int   bankActive = 0;    // 0..7
             int   bankAt     = 1;    // params::SwitchAt
 
+            float    xfade       = 0.5f;  // 0 A .. 1 B
+            int      xfadeCurve  = 0;     // params::XfadeCurve
+            int      sceneView   = 0;     // 0 A, 1 B: pad notes 36-51 play this scene first
+
             uint32_t macroOn     = 0;     // bit per macro (parameters)
             float    macroAmount = 0.6f;  // 0..1
             int      macroGroup  = 4;     // 0..3, 4 = all
@@ -167,7 +171,14 @@ namespace tb
         // ---- MIDI note map (pads default to notes 36..51) ---------------------
         void setPadNote (int pad, int note) noexcept;
         int  getPadNote (int pad) const noexcept;
-        int  padForNote (int note) const noexcept;   // -1 if unmapped
+        int  padForNote (int note) const noexcept;   // -1 if unmapped; the scene on view wins a shared note
+
+        // ---- Scenes (Phase 13) -------------------------------------------------
+        /** UI cut keys: -1 = the crossfader decides, 0 = all A, 1 = all B (while held). */
+        void setCrossfaderCut (int scene) noexcept { xfadeCut.store (juce::jlimit (-1, 1, scene)); }
+        int  getCrossfaderCut() const noexcept     { return xfadeCut.load(); }
+        int  getSceneView() const noexcept         { return sceneViewNow.load (std::memory_order_relaxed); }
+        float getSceneGain (int scene) const noexcept { return sceneGain[(size_t) juce::jlimit (0, kNumScenes - 1, scene)]; }
 
         /** MIDI learn: the next note-on received is assigned to `pad` (-1 cancels). */
         void startNoteLearn (int pad) noexcept    { learnPad.store (pad); }
@@ -306,6 +317,8 @@ namespace tb
         std::array<float, kNumPads> padVelSens {};
         std::array<bool,  kNumPads> padFixVel {};
         std::array<int,  kNumPads>  padSwap {};       // 0 = off, 1..4
+        std::array<float, kNumScenes> sceneGain { 1.0f, 1.0f };
+        std::atomic<int> xfadeCut { -1 }, sceneViewNow { 0 };
         std::array<int,  kNumPads>  padGroup {};      // 0..3 = A..D
         std::array<GroupBus, kNumGroups> groups;
         std::array<float, kNumGroups> groupPeak {};   // per-block, for the mixer meters

@@ -118,7 +118,7 @@ namespace tb
         Sink* testSink = nullptr;
         bool swapColours = false;
 
-        std::array<int, kNumPads> learned {};   // plugin pad -> hardware pad, -1 = not learned
+        std::array<int, kPadsPerScene> learned {};   // plugin pad -> hardware pad, -1 = not learned
         bool learning = false;
         int  learnStep = 0;
         uint32_t learnMidiCount = 0;
@@ -126,7 +126,7 @@ namespace tb
         double testStartMs = -1.0;
         double lastOpenAttemptMs = -1.0e9, lastFullRefreshMs = -1.0e9;
 
-        std::array<int, kNumPads> sentRed {}, sentGreen {};   // last values sent, -1 = unknown
+        std::array<int, kPadsPerScene> sentRed {}, sentGreen {};   // last values sent, -1 = unknown
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PadLights)
     };

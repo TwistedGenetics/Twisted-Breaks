@@ -8,11 +8,11 @@ namespace tb
     namespace
     {
         // Hardware pad -> first CC of its pair (iRig Pads manual, section 4).
-        constexpr int kFirstCc[kNumPads] = { 94, 96, 98, 100, 86, 88, 90, 92, 78, 80, 82, 84, 70, 72, 74, 76 };
+        constexpr int kFirstCc[kPadsPerScene] = { 94, 96, 98, 100, 86, 88, 90, 92, 78, 80, 82, 84, 70, 72, 74, 76 };
 
         // Notes each hardware pad sends on the default scene (General MIDI kit, C1 = 36):
         // B0 C1 D1 E1 / C#1 D#1 F#1 G#1 / D2 A1 F1 A#1 / D#2 F2 C#2 E2
-        constexpr int kDefaultNotes[kNumPads] = { 35, 36, 38, 40, 37, 39, 42, 44, 50, 45, 41, 46, 51, 53, 49, 52 };
+        constexpr int kDefaultNotes[kPadsPerScene] = { 35, 36, 38, 40, 37, 39, 42, 44, 50, 45, 41, 46, 51, 53, 49, 52 };
 
         constexpr int kChannel = 1;
         constexpr double kFrameMs = 1000.0 / 30.0;
@@ -36,24 +36,26 @@ namespace tb
     //==========================================================================
     int PadLights::defaultSceneNote (int hw) noexcept
     {
-        return juce::isPositiveAndBelow (hw, kNumPads) ? kDefaultNotes[hw] : -1;
+        return juce::isPositiveAndBelow (hw, kPadsPerScene) ? kDefaultNotes[hw] : -1;
     }
 
     int PadLights::ccFor (int hw, bool red, bool swap) noexcept
     {
-        if (! juce::isPositiveAndBelow (hw, kNumPads)) return -1;
+        if (! juce::isPositiveAndBelow (hw, kPadsPerScene)) return -1;
         const bool first = red != swap;     // manual order: RED-GREEN
         return kFirstCc[hw] + (first ? 0 : 1);
     }
 
     int PadLights::hardwarePadFor (int pluginPad) const
     {
+        // Pads of either scene: the controller shows the scene on view, by position.
         if (! juce::isPositiveAndBelow (pluginPad, kNumPads)) return -1;
         const juce::ScopedLock sl (lock);
-        if (learned[(size_t) pluginPad] >= 0) return learned[(size_t) pluginPad];
+        const int pos = pluginPad % kPadsPerScene;
+        if (learned[(size_t) pos] >= 0) return learned[(size_t) pos];
 
         const int note = engine.getPadNote (pluginPad);
-        for (int hw = 0; hw < kNumPads; ++hw)
+        for (int hw = 0; hw < kPadsPerScene; ++hw)
             if (kDefaultNotes[hw] == note) return hw;
         return -1;
     }
@@ -175,8 +177,8 @@ namespace tb
             swapColours = (bool) t.getProperty ("swapColours", false);
             learned.fill (-1);
             const auto map = juce::StringArray::fromTokens (t.getProperty ("layout", "").toString(), ",", "");
-            for (int i = 0; i < juce::jmin (kNumPads, map.size()); ++i)
-                learned[(size_t) i] = juce::jlimit (-1, kNumPads - 1, map[i].getIntValue());
+            for (int i = 0; i < juce::jmin (kPadsPerScene, map.size()); ++i)
+                learned[(size_t) i] = juce::jlimit (-1, kPadsPerScene - 1, map[i].getIntValue());
         }
         // Not through setDevice(): restoring a set isn't a user edit.
         const auto name = t.getProperty ("device", "").toString();
@@ -229,7 +231,7 @@ namespace tb
     void PadLights::sendAllOff()
     {
         if (output == nullptr && testSink == nullptr) return;
-        for (int hw = 0; hw < kNumPads; ++hw)
+        for (int hw = 0; hw < kPadsPerScene; ++hw)
             sendLed (hw, 0, 0, true);
     }
 
@@ -243,7 +245,7 @@ namespace tb
         if (fullRefresh) lastFullRefreshMs = nowMs;
         const bool blinkOn = std::fmod (nowMs, 250.0) < 125.0;     // 4 Hz
 
-        std::array<int, kNumPads> red {}, green {};
+        std::array<int, kPadsPerScene> red {}, green {};
 
         if (testStartMs >= 0.0)
         {
@@ -254,7 +256,7 @@ namespace tb
             else { red.fill (phase != 1 ? 127 : 0); green.fill (phase != 0 ? 127 : 0); }
             if (testStartMs >= 0.0)
             {
-                for (int hw = 0; hw < kNumPads; ++hw) sendLed (hw, red[(size_t) hw], green[(size_t) hw], fullRefresh);
+                for (int hw = 0; hw < kPadsPerScene; ++hw) sendLed (hw, red[(size_t) hw], green[(size_t) hw], fullRefresh);
                 return;
             }
         }
@@ -270,9 +272,9 @@ namespace tb
                 if (pad >= 0)
                 {
                     for (auto& v : learned) if (v == learnStep) v = -1;
-                    learned[(size_t) pad] = learnStep;
+                    learned[(size_t) (pad % kPadsPerScene)] = learnStep;      // by position: both scenes share the layout
                 }
-                if (++learnStep >= kNumPads)
+                if (++learnStep >= kPadsPerScene)
                 {
                     learning = false;
                     triggerAsyncUpdate();       // layout learned: save it with the set
@@ -280,20 +282,22 @@ namespace tb
             }
             if (learning)
             {
-                for (int hw = 0; hw < kNumPads; ++hw)
+                for (int hw = 0; hw < kPadsPerScene; ++hw)
                     sendLed (hw, hw == learnStep ? 127 : 0, 0, fullRefresh);
                 return;
             }
         }
 
-        // Normal: one hardware pad per plugin pad.
-        for (int p = 0; p < kNumPads; ++p)
+        // Normal: one hardware pad per pad of the scene on view.
+        const int offset = engine.getSceneView() * kPadsPerScene;
+        for (int pos = 0; pos < kPadsPerScene; ++pos)
         {
-            int hw = learned[(size_t) p];
+            const int p = offset + pos;
+            int hw = learned[(size_t) pos];
             if (hw < 0)
             {
                 const int note = engine.getPadNote (p);
-                for (int k = 0; k < kNumPads; ++k)
+                for (int k = 0; k < kPadsPerScene; ++k)
                     if (kDefaultNotes[k] == note) { hw = k; break; }
             }
             if (hw < 0) continue;
@@ -313,7 +317,7 @@ namespace tb
             }
         }
 
-        for (int hw = 0; hw < kNumPads; ++hw)
+        for (int hw = 0; hw < kPadsPerScene; ++hw)
             sendLed (hw, red[(size_t) hw], green[(size_t) hw], fullRefresh);
     }
 }

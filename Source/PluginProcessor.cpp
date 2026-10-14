@@ -33,6 +33,9 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     for (int m = 0; m < tb::macro::kNumMacros; ++m)
         macroOnParam[(size_t) m] = apvts.getRawParameterValue (tb::macro::paramId (m));
     macroAmountParam = apvts.getRawParameterValue (tb::params::macroAmount);
+    xfadeParam       = apvts.getRawParameterValue (tb::params::xfade);
+    xfadeCurveParam  = apvts.getRawParameterValue (tb::params::xfadeCurve);
+    sceneViewParam   = apvts.getRawParameterValue (tb::params::sceneView);
     macroGroupParam  = apvts.getRawParameterValue (tb::params::macroGroup);
     macroLatchParam  = apvts.getRawParameterValue (tb::params::macroLatch);
     jassert (seqFillParam != nullptr);
@@ -225,6 +228,9 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
     p.seqRes         = juce::roundToInt (ld (seqResParam));
     p.seqQuant       = juce::roundToInt (ld (seqQuantParam));
     p.seqFill        = ld (seqFillParam) > 0.5f;
+    p.xfade      = ld (xfadeParam);
+    p.xfadeCurve = juce::roundToInt (ld (xfadeCurveParam));
+    p.sceneView  = juce::roundToInt (ld (sceneViewParam));
     p.macroOn = 0;
     for (int m = 0; m < tb::macro::kNumMacros; ++m)
         if (ld (macroOnParam[(size_t) m]) > 0.5f) p.macroOn |= 1u << m;

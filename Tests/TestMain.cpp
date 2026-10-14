@@ -363,7 +363,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 614, "614 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 4 snapshot / bank + 22 x 16 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 969, "969 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 22 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3497,6 +3497,171 @@ namespace
 
 
 
+
+    //==========================================================================
+    //  PHASE 13: Scene A / B + crossfader
+    //==========================================================================
+    void testScenes()
+    {
+        std::cout << "\n== Phase 13: scenes A / B + crossfader ==" << std::endl;
+        {
+            TwistedBreaksProcessor p;
+            auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
+            check (p.getParameters().processor.getParameters().size() == 969 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+                     && b1->getVersionHint() == tb::params::kV15,
+                   "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
+        }
+
+        SeqRig x;
+        x.r.load (16, writeAudio ("scene_b_blip", [] { juce::AudioBuffer<float> b (1, 4000); b.clear(); for (int i = 0; i < 50; ++i) b.setSample (0, i, 0.5f); return b; }(),
+                                  48000.0, Fmt::wavFloat));
+        setPadParam (x.r.p, 16, tb::params::padPan, 1.0f);             // B01 on the right, pad 01 on the left
+        x.r.settle();
+        x.seq.clearAll();
+        x.step (0, 0); x.step (16, 4);
+        auto out = x.run (30000);
+        check (onsets (out, 0) == std::vector<int> { 0 } && onsets (out, 1) == std::vector<int> { 24000 },
+               "both scenes play at once: pad 01's lane on the left, B01's lane on the right");
+
+        auto levels = [&] (float xf, int curve, int cut = -1)
+        {
+            setParam (x.r.p, tb::params::xfade, xf);
+            setParam (x.r.p, tb::params::xfadeCurve, (float) curve);
+            x.r.p.getEngine().setCrossfaderCut (cut);
+            x.r.settle(); x.r.settle();
+            x.seq.clearAll();
+            x.step (0, 0); x.step (16, 0);
+            auto o = x.run (8000);
+            x.r.p.getEngine().setCrossfaderCut (-1);
+            return std::make_pair (o.getSample (0, 20) / 0.5f, o.getSample (1, 20) / 0.5f);
+        };
+        auto near = [] (std::pair<float, float> v, float a, float b) { return std::abs (v.first - a) < 0.01f && std::abs (v.second - b) < 0.01f; };
+        auto txt  = [] (std::pair<float, float> v) { return juce::String (v.first, 2) + " / " + juce::String (v.second, 2); };
+        const auto centre = levels (0.5f, 0), left = levels (0.0f, 0), quarter = levels (0.75f, 0), sharp = levels (0.75f, 1), edge = levels (0.975f, 1);
+        check (near (centre, 1, 1), "crossfader in the middle: both scenes at full level (an old set sounds the same) (" + txt (centre) + ")");
+        check (near (left, 1, 0), "all the way to A: only scene A (" + txt (left) + ")");
+        check (near (quarter, 0.5f, 1), "SMOOTH at 3/4: A half, B full (" + txt (quarter) + ")");
+        check (near (sharp, 1, 1) && near (edge, 0.5f, 1), "SHARP: both full until the last 5 %, then a quick cut (" + txt (sharp) + ", " + txt (edge) + ")");
+        const auto cutA = levels (1.0f, 0, 0);
+        check (near (cutA, 1, 0), "CUT A held: only scene A, wherever the fader is (" + txt (cutA) + ")");
+        setParam (x.r.p, tb::params::xfade, 0.5f);
+
+        // MIDI: notes 36-51 play the scene on view.
+        x.seq.clearAll();
+        auto o = x.run (8000, { { 0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) } }, false);
+        const bool aPlayed = ! onsets (o, 0).empty() && onsets (o, 1).empty();
+        setParam (x.r.p, tb::params::sceneView, 1.0f);
+        x.r.settle();
+        o = x.run (8000, { { 0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 127) } }, false);
+        check (aPlayed && onsets (o, 0).empty() && ! onsets (o, 1).empty(), "MIDI C1 plays pad 01 while A is on view, B01 while B is (a 16-pad controller plays what you see)");
+        x.r.p.getEngine().setPadNote (16, 60);
+        setParam (x.r.p, tb::params::sceneView, 0.0f);
+        x.r.settle();
+        o = x.run (8000, { { 0, juce::MidiMessage::noteOn (1, 60, (juce::uint8) 127) } }, false);
+        check (! onsets (o, 1).empty() && x.r.p.getEngine().getPadNote (0) == 36, "a note learned for a B pad plays it whatever is on view (and A keeps its own)");
+        x.r.p.getEngine().setPadNote (16, 36);
+
+        check (! tb::SnapshotManager::isExcluded (tb::params::padId (20, tb::params::padPitch)) && tb::SnapshotManager::isExcluded (tb::params::xfade)
+                 && tb::SnapshotManager::isExcluded (tb::params::sceneView),
+               "snapshots hold both scenes' pads, never the crossfader or the view");
+
+        // State: scene B's sample and pattern come back.
+        x.step (17, 3);
+        juce::MemoryBlock blob;
+        x.r.p.getStateInformation (blob);
+        TwistedBreaksProcessor q;
+        q.setStateInformation (blob.getData(), (int) blob.getSize());
+        waitForLoads (q);
+        check (q.getSamples().getInfo (16).buffer != nullptr && q.getBridge().seq.get (17, 3).on, "scene B's samples and patterns are saved with the set");
+
+        // An old set (no scene B anywhere) opens with an empty scene B.
+        {
+            auto xml = x.r.p.getParameters().copyState().createXml();
+            juce::MemoryBlock fresh;
+            TwistedBreaksProcessor old;
+            old.getStateInformation (fresh);
+            TwistedBreaksProcessor r2;
+            r2.setStateInformation (fresh.getData(), (int) fresh.getSize());
+            check (r2.getSamples().getInfo (16).status == tb::SampleManager::Status::empty && ! r2.getBridge().seq.laneHasSteps (16),
+                   "a set without scene B opens with scene B empty");
+        }
+
+        // SPREAD stays inside its scene.
+        {
+            Rig r;
+            r.load (14, writeAudio ("scene_spread", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+            r.p.getSamples().setSliceCount (14, 8);
+            r.p.getSamples().equalSlice (14);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+            const int n = r.p.spreadSlices (14);
+            waitForLoads (r.p);
+            check (n == 2 && r.p.getSamples().getInfo (16).buffer == nullptr, "SPREAD from pad 15 fills 15 and 16 only (it never spills into scene B)");
+        }
+
+        // The controller's lights show the scene on view.
+        check (x.r.p.getLights().hardwarePadFor (16) == x.r.p.getLights().hardwarePadFor (0),
+               "the iRig's pads stand for the same positions in both scenes");
+    }
+
+    void testSceneView()
+    {
+        std::cout << "\n== Phase 13: VIEW A / B + crossfader on screen ==" << std::endl;
+        Rig r;
+        r.load (17, writeAudio ("scene_view_b", makeTone (12000, 1), 48000.0, Fmt::wavFloat));
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::SceneStrip* strip = nullptr; tb::ui::PadGrid* grid = nullptr; tb::ui::SequencerPanel* seqPanel = nullptr;
+        std::vector<tb::ui::PadComponent*> tiles;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* s = dynamic_cast<tb::ui::SceneStrip*> (&c)) strip = s;
+            if (auto* g = dynamic_cast<tb::ui::PadGrid*> (&c)) grid = g;
+            if (auto* sp = dynamic_cast<tb::ui::SequencerPanel*> (&c)) seqPanel = sp;
+            if (auto* t = dynamic_cast<tb::ui::PadComponent*> (&c)) tiles.push_back (t);
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        check (strip && grid && seqPanel && tiles.size() == 16, "one 4 x 4 matrix (16 tiles) and the scene strip under it");
+        if (! (strip && grid && seqPanel)) return;
+
+        grid->setSelectedPad (2);
+        strip->viewButton (1).triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        auto raw = [&] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+        check (juce::roundToInt (raw (tb::params::sceneView)) == 1 && grid->getScene() == 1 && tiles[0]->getPadIndex() == 16 && grid->getSelectedPad() == 18,
+               "VIEW B: the tiles become B01-B16, and pad 03's place (B03) stays selected");
+        check (seqPanel->getSelectedPad() == 18, "...the sequencer follows to scene B's lanes");
+
+        // Automation / a MIDI-mapped control switches the view too.
+        setParam (r.p, tb::params::sceneView, 0.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        check (grid->getScene() == 0 && grid->getSelectedPad() == 2, "the Scene View parameter switches it back (map it to a controller button)");
+
+        // Crossfader drag.
+        auto& f = strip->fader();
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Component* comp, juce::Point<float> pos, bool down)
+        {
+            const auto t = juce::Time::getCurrentTime();
+            return juce::MouseEvent (src, pos, down ? juce::ModifierKeys::leftButtonModifier : juce::ModifierKeys(), 1.0f, 0, 0, 0, 0, comp, comp, t, pos, t, 1, false);
+        };
+        const auto s = f.slot();
+        const juce::Point<float> start { s.getCentreX(), s.getCentreY() }, end { s.getX() + s.getWidth() * 0.9f, s.getCentreY() };
+        f.mouseDown (ev (&f, start, true));
+        f.mouseDrag (ev (&f, end, true));
+        f.mouseUp (ev (&f, end, false));
+        check (std::abs (raw (tb::params::xfade) - 0.9f) < 0.02f, "dragging the crossfader moves the Crossfader parameter (" + juce::String (raw (tb::params::xfade), 2) + ")");
+        f.mouseDoubleClick (ev (&f, end, false));
+        check (std::abs (raw (tb::params::xfade) - 0.5f) < 0.002f, "double-click: back to the middle");
+
+        auto& cut = strip->cutButton (1);
+        const auto cp = cut.getLocalBounds().getCentre().toFloat();
+        cut.mouseDown (ev (&cut, cp, true));
+        const bool held = r.p.getEngine().getCrossfaderCut() == 1;
+        cut.mouseUp (ev (&cut, cp, false));
+        check (held && r.p.getEngine().getCrossfaderCut() == -1, "CUT B: only scene B while held");
+    }
+
     //==========================================================================
     //  PHASE 12: vintage CHARACTER + RESAMPLE
     //==========================================================================
@@ -3504,7 +3669,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "16 CHARACTER + 6 RESAMPLE parameters (614 in total)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -3712,7 +3877,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "11 macro parameters (614 in total with Phase 12)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -3992,7 +4157,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 614, "13 MUTATE parameters (614 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 969, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -4458,6 +4623,10 @@ namespace
             find (*ed);
             host.playing = true;
         }
+        if (out.getFileName().contains ("scenes"))
+        {
+            setParam (p, tb::params::xfade, 0.32f);
+        }
         if (out.getFileName().contains ("resample"))
         {
             setPadParam (p, 0, tb::params::padCharacter, 1.0f);       // pad 1 on SP-1200
@@ -4615,6 +4784,8 @@ int main (int argc, char* argv[])
         testCharacter();
         testResample();
         testResampleView();
+        testScenes();
+        testSceneView();
         testEditorDrivesState();
         testRealtimeSafety();
 

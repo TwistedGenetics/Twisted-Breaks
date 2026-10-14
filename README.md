@@ -38,7 +38,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 10 | MUTATE: controlled randomisation of both sequencers | **done** — 426/426 automated checks |
 | 11 | Performance macros | **done** — 441/441 automated checks |
 | 12 | RESAMPLE + vintage CHARACTER modes | **done** — 464/464 automated checks |
-| 13 | Scene A/B + crossfader | planned — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 13 | Scene A / B + crossfader | **done** — 485/485 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -130,6 +130,15 @@ Sections that aren't built yet are visibly marked offline on the panel
   switch **HIT** off to throw the FX without retriggering the pad) and
   **COND**: 1:2 ... 4:4 (pass A of every B, on Live's timeline), FILL /
   !FILL (hold **FILL**, or map / automate `Sequencer Fill`), FIRST / !FIRST.
+* **SCENES** (0.13, the strip under the pad matrix): two decks of 16 pads,
+  **A** and **B**, each with its own samples, settings and patterns, both
+  playing all the time. **VIEW A / B** picks which 16 the matrix, editor,
+  sequencer and your controller show (the `Scene View` parameter: map it to
+  a button). The **crossfader** blends them (`Crossfader`: map it to a
+  fader, or automate it); **CUT A / CUT B** slam to one side while held;
+  **CURVE** SMOOTH (both full in the middle) or SHARP (cuts at the edges).
+  MIDI notes C1-D#2 play the scene on view. Groups, FX, macros, the bank,
+  snapshots and RESAMPLE are shared by both scenes.
 * **RESAMPLE** (0.12, the 7th top-rail key): **REC** records what you hear
   (**SOURCE** MASTER) or one group for **LENGTH** 1, 2, 4 or 8 bars, from
   the next bar line (**START** BAR) or straight away, onto the selected pad:

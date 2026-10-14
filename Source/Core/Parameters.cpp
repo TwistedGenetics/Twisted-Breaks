@@ -31,25 +31,28 @@ namespace tb::params
 
         void addPadParameters (AudioProcessorValueTreeState::ParameterLayout& layout, int pad)
         {
-            const String prefix = "Pad " + String (pad + 1).paddedLeft ('0', 2) + " ";
+            const String prefix = "Pad " + padLabel (pad) + " ";      // "Pad 01 ..." / "Pad B01 ..."
+            // Scene B's pads (17-32) are all new in 0.13: their own version hint keeps
+            // the AU parameter order of older sets.
+            const auto vh = [pad] (int v) { return pad >= kPadsPerScene ? kV15 : v; };
 
             NormalisableRange<float> gainRange (padGainMinDb, padGainMaxDb, 0.01f);
             gainRange.setSkewForCentre (-9.0f);
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padGain), kV2 }, prefix + "Gain", gainRange, 0.0f,
+                ParameterID { padId (pad, padGain), vh (kV2) }, prefix + "Gain", gainRange, 0.0f,
                 AudioParameterFloatAttributes()
                     .withStringFromValueFunction ([] (float v, int) { return dbText (v, padGainMinDb); })
                     .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue(); })));
 
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padPan), kV2 }, prefix + "Pan",
+                ParameterID { padId (pad, padPan), vh (kV2) }, prefix + "Pan",
                 NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f,
                 AudioParameterFloatAttributes()
                     .withStringFromValueFunction ([] (float v, int) { return panText (v); })
                     .withValueFromStringFunction (panFromText)));
 
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padPitch), kV2 }, prefix + "Pitch",
+                ParameterID { padId (pad, padPitch), vh (kV2) }, prefix + "Pitch",
                 NormalisableRange<float> (-padPitchRange, padPitchRange, 0.01f), 0.0f,
                 AudioParameterFloatAttributes()
                     .withStringFromValueFunction ([] (float v, int)
@@ -63,80 +66,80 @@ namespace tb::params
                 .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue() / 100.0f; });
 
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padStart), kV2 }, prefix + "Start",
+                ParameterID { padId (pad, padStart), vh (kV2) }, prefix + "Start",
                 NormalisableRange<float> (0.0f, 1.0f, 0.0f), 0.0f, percentAttrs));
 
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padEnd), kV2 }, prefix + "End",
+                ParameterID { padId (pad, padEnd), vh (kV2) }, prefix + "End",
                 NormalisableRange<float> (0.0f, 1.0f, 0.0f), 1.0f, percentAttrs));
 
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padReverse), kV2 }, prefix + "Reverse", false));
+                ParameterID { padId (pad, padReverse), vh (kV2) }, prefix + "Reverse", false));
 
             // ---- Phase 3 ----
             // NOTE: choice lists are part of the saved/automation format. Never
             // reorder or remove entries; only append.
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padMode), kV3 }, prefix + "Mode",
+                ParameterID { padId (pad, padMode), vh (kV3) }, prefix + "Mode",
                 StringArray { "One-shot", "Loop", "Slice" }, modeOneShot));
 
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padSync), kV3 }, prefix + "Loop Sync", true));
+                ParameterID { padId (pad, padSync), vh (kV3) }, prefix + "Loop Sync", true));
 
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padRate), kV3 }, prefix + "Loop Rate",
+                ParameterID { padId (pad, padRate), vh (kV3) }, prefix + "Loop Rate",
                 StringArray { "0.25x", "0.5x", "1x", "2x" }, 2));
 
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padChoke), kV3 }, prefix + "Choke",
+                ParameterID { padId (pad, padChoke), vh (kV3) }, prefix + "Choke",
                 StringArray { "Off", "1", "2", "3", "4" }, 0));
 
             layout.add (std::make_unique<AudioParameterFloat> (
-                ParameterID { padId (pad, padVelSens), kV3 }, prefix + "Velocity Sens",
+                ParameterID { padId (pad, padVelSens), vh (kV3) }, prefix + "Velocity Sens",
                 NormalisableRange<float> (0.0f, 1.0f, 0.01f), 1.0f,
                 AudioParameterFloatAttributes()
                     .withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100.0f)) + " %"; })
                     .withValueFromStringFunction ([] (const String& t) { return t.getFloatValue() / 100.0f; })));
 
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padMute), kV3 }, prefix + "Mute", false));
+                ParameterID { padId (pad, padMute), vh (kV3) }, prefix + "Mute", false));
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padSolo), kV3 }, prefix + "Solo", false));
+                ParameterID { padId (pad, padSolo), vh (kV3) }, prefix + "Solo", false));
 
             // ---- Phase 4 ----
             layout.add (std::make_unique<AudioParameterInt> (
-                ParameterID { padId (pad, padSlice), kV4 }, prefix + "Slice", 1, 16, 1));
+                ParameterID { padId (pad, padSlice), vh (kV4) }, prefix + "Slice", 1, 16, 1));
 
             // ---- 0.4.1: SWAP groups (slice-point hand-off between breaks) ----
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padSwap), kV5 }, prefix + "Swap Group",
+                ParameterID { padId (pad, padSwap), vh (kV5) }, prefix + "Swap Group",
                 StringArray { "Off", "1", "2", "3", "4" }, 0));
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padSwapAt), kV5 }, prefix + "Swap At",
+                ParameterID { padId (pad, padSwapAt), vh (kV5) }, prefix + "Swap At",
                 StringArray { "Slice", "1/16", "Beat", "Bar" }, swapAtSlice));
 
             // ---- Phase 5: output group ----
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padGroup), kV6 }, prefix + "Group",
+                ParameterID { padId (pad, padGroup), vh (kV6) }, prefix + "Group",
                 StringArray { "A", "B", "C", "D" }, 0));
 
             // ---- 0.5.2: fixed velocity (MPC "full level") ----
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padFixVel), kV7 }, prefix + "Fixed Velocity", false));
+                ParameterID { padId (pad, padFixVel), vh (kV7) }, prefix + "Fixed Velocity", false));
 
             // ---- 0.7.1: slice sequencer ----
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padSliceSeq), kV9 }, prefix + "Slice Seq", false));
+                ParameterID { padId (pad, padSliceSeq), vh (kV9) }, prefix + "Slice Seq", false));
             layout.add (std::make_unique<AudioParameterInt> (
-                ParameterID { padId (pad, padSliceSlot), kV9 }, prefix + "Slice Seq Slot", 1, 8, 1));
+                ParameterID { padId (pad, padSliceSlot), vh (kV9) }, prefix + "Slice Seq Slot", 1, 8, 1));
 
             // ---- 0.8: break bank ----
             layout.add (std::make_unique<AudioParameterBool> (
-                ParameterID { padId (pad, padFollowBank), kV10 }, prefix + "Follow Bank", false));
+                ParameterID { padId (pad, padFollowBank), vh (kV10) }, prefix + "Follow Bank", false));
 
             // ---- 0.12: vintage character ----
             layout.add (std::make_unique<AudioParameterChoice> (
-                ParameterID { padId (pad, padCharacter), kV14 }, prefix + "Character",
+                ParameterID { padId (pad, padCharacter), vh (kV14) }, prefix + "Character",
                 StringArray { "Clean", "SP-1200", "MPC60", "S950", "Lo-Fi" }, 0));
         }
     }
@@ -205,6 +208,18 @@ namespace tb::params
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { seqQuant, kV9 }, "Record Quantise",
                                                             StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { seqFill, kV11 }, "Sequencer Fill", false));
+
+        // ---- Phase 13: scenes + crossfader (pads 17-32 come from the pad loop) ----
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { xfade, kV15 }, "Crossfader",
+            NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f,
+            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            {
+                return std::abs (v - 0.5f) < 0.002f ? String ("A=B") : (v < 0.5f ? "A " + String (roundToInt (100 - 2 * (0.5f - v) * 100)) : "B " + String (roundToInt (100 - 2 * (v - 0.5f) * 100)));
+            })));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { xfadeCurve, kV15 }, "Crossfader Curve",
+                                                            StringArray { "Smooth", "Sharp" }, curveSmooth));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { sceneView, kV15 }, "Scene View",
+                                                            StringArray { "A", "B" }, 0));
 
         // ---- Phase 12: RESAMPLE ----
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { rsmpSource, kV14 }, "Resample Source",

@@ -484,7 +484,8 @@ namespace tb
         if (src.buffer == nullptr || src.slices.isEmpty()) return 0;
 
         int filled = 0;
-        for (int i = 0; i < src.slices.count && source + i < kNumPads; ++i)
+        const int sceneEnd = (sceneOf (source) + 1) * kPadsPerScene;          // SPREAD stays inside its scene
+        for (int i = 0; i < src.slices.count && source + i < sceneEnd; ++i)
         {
             const int target = source + i;
             if (target != source)

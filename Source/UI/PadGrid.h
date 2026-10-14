@@ -14,7 +14,8 @@ namespace tb::ui
         PadGrid
         -------
         The 4 x 4 matrix of PadComponents in reading order: pad 1 is top-left,
-        pad 16 bottom-right (MIDI 36 = pad 1 by default).
+        pad 16 bottom-right (MIDI 36 = pad 1 by default). It shows one scene
+        at a time (A = pads 1-16, B = pads B01-B16, engine pads 16-31).
 
         Polls the EngineBridge on the UI timer for lamp brightness and keeps
         each pad's MIDI note label in sync with the engine's note map.
@@ -34,12 +35,16 @@ namespace tb::ui
 
         std::function<void (int)> onSelectionChanged;
 
+        /** Scenes: which 16 pads the tiles show (0 = A, 1 = B). */
+        void setScene (int scene);
+        int  getScene() const noexcept { return scene; }
+
     private:
         TwistedBreaksProcessor& processor;
-        std::array<std::unique_ptr<PadComponent>, kNumPads> pads;
-        std::array<int, kNumPads> shownNotes {};
-        std::array<uint32_t, kNumPads> shownVersions {};
-        std::array<juce::String, kNumPads> shownTags;
-        int selectedPad = 0;
+        std::array<std::unique_ptr<PadComponent>, kPadsPerScene> pads;
+        std::array<int, kPadsPerScene> shownNotes {};
+        std::array<uint32_t, kPadsPerScene> shownVersions {};
+        std::array<juce::String, kPadsPerScene> shownTags;
+        int selectedPad = 0, scene = 0;
     };
 }

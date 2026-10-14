@@ -12,6 +12,7 @@
 #include "UI/SliceSeqPanel.h"
 #include "UI/SnapshotPanel.h"
 #include "UI/ResamplePanel.h"
+#include "UI/SceneStrip.h"
 #include "UI/Controls.h"
 #include "UI/NeedleMeter.h"
 #include "UI/FXGrid.h"
@@ -34,7 +35,7 @@ namespace tb::ui
     };
 
     /** Highest development phase that is built (nav keys up to this are live). */
-    inline constexpr int kCurrentPhase = 12;
+    inline constexpr int kCurrentPhase = 13;
 
     /** Section selector key in the top rail. Lamp lit = selected. */
     class SelectorKey final : public juce::Button
@@ -115,6 +116,8 @@ namespace tb::ui
         SliceSeqPanel    sliceSeq;
         SnapshotPanel    snapshotPanel;
         ResamplePanel    resamplePanel;
+        SceneStrip       sceneStrip;
+        int              shownScene = 0;
         uint32_t         shownSeqVersion = 0;
         View             view = View::crt;
         NeedleMeter      meter;

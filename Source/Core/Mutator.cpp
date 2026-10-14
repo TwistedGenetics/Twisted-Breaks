@@ -182,7 +182,7 @@ namespace tb
     uint32_t Mutator::padsInScope() const
     {
         const bool all = processor.getParameters().getRawParameterValue (params::mutScope)->load() > 0.5f;
-        return all ? 0xffffu : (1u << selectedPad);
+        return all ? kAllPadsMask : (1u << selectedPad);
     }
 
     std::unique_ptr<MutationFrame> Mutator::capture (uint32_t laneMask, uint32_t sliceMask) const
@@ -225,7 +225,7 @@ namespace tb
         {
             // Anything changed by hand (edits, recording, snapshot recall, slot
             // change) since our last mutation: that is the new original.
-            original = capture (0xffffu, slicePads);
+            original = capture (kAllPadsMask, slicePads);
             undoFrame.reset();
             seenSeqVersion = bridge.seq.getVersion();
             seenSliceVersion = bridge.sliceSeq.getVersion();
@@ -248,7 +248,7 @@ namespace tb
             if (apvts.getRawParameterValue (params::mutTargetId (t))->load() > 0.5f) targets |= 1u << t;
 
         const uint32_t scope = padsInScope();
-        auto base = drift ? capture (0xffffu, original->sliceMask) : std::make_unique<MutationFrame> (*original);
+        auto base = drift ? capture (kAllPadsMask, original->sliceMask) : std::make_unique<MutationFrame> (*original);
         auto f = std::make_unique<MutationFrame>();
         f->quant = juce::jlimit (0, 2, quant);
         f->bars  = juce::jmax (1, bars);

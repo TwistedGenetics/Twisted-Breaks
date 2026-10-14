@@ -346,7 +346,7 @@ namespace tb::ui
             equalKey.setEnabled (hasSample);
             resetKey.setEnabled (! info.detected.isEmpty() && info.detected != info.slices);
             unsliceKey.setEnabled (! info.slices.isEmpty());
-            spreadKey.setEnabled (hasSample && ! info.slices.isEmpty() && pad < kNumPads - 1);
+            spreadKey.setEnabled (hasSample && ! info.slices.isEmpty() && pad % kPadsPerScene < kPadsPerScene - 1);
             sliceKnob.setAlpha (info.slices.isEmpty() ? 0.45f : 1.0f);
         }
 
@@ -434,7 +434,7 @@ namespace tb::ui
     {
         Random rnd (pad + 77);
         paint::labelPlate (g, { 0.0f, 0.0f, 60.0f, (float) kHeaderH },
-                           "PAD " + String (pad + 1).paddedLeft ('0', 2), {}, paint::PlateStyle::black, rnd);
+                           "PAD " + padLabel (pad), {}, paint::PlateStyle::black, rnd);
 
         // Sample readout in a recess between the tabs and LOAD.
         auto r = Rectangle<float> (320.0f, 0.0f, (float) (getWidth() - 320 - 140), (float) kHeaderH);

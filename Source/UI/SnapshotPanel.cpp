@@ -65,7 +65,7 @@ namespace tb::ui
     void SnapshotPanel::setSelectedPad (int pad)
     {
         selectedPad = jlimit (0, kNumPads - 1, pad);
-        fromPadKey.setButtonText ("FROM PAD " + String (selectedPad + 1).paddedLeft ('0', 2));
+        fromPadKey.setButtonText ("FROM PAD " + padLabel (selectedPad));
     }
 
     void SnapshotPanel::setChoice (const char* id, int index)

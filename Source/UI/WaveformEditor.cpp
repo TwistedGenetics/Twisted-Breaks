@@ -648,7 +648,7 @@ namespace tb::ui
     void WaveformEditor::paintLegend (Graphics& g)
     {
         auto txt = screenArea().reduced (18.0f, 10.0f);
-        const String padName = "PAD " + String (pad + 1).paddedLeft ('0', 2);
+        const String padName = "PAD " + padLabel (pad);
         g.setFont (monoFont (12.0f));
 
         if (info.buffer != nullptr)

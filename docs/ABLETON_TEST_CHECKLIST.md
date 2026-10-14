@@ -94,6 +94,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ MIDI-map `Sequencer Fill` to an iRig pad: FILL steps play while held, !FILL steps drop out
 - [ ] ✅ Save, close, reopen (and a set saved with 0.8): every step setting comes back
 
+## Scenes A / B (Phase 13)
+- [ ] ✅ An older set opens exactly as before (scene A, crossfader in the middle, scene B empty)
+- [ ] ✅ VIEW B, load a different break and pattern onto B pads; play both: crossfader A <-> B blends them, CURVE SHARP cuts at the edges, CUT A / CUT B while held
+- [ ] ✅ The iRig plays and lights the scene on view; map a button to `Scene View` and a fader / knob to `Crossfader`
+- [ ] ✅ FX / macros on a group hit whichever scene's pads are routed there, smoothly across a fade
+- [ ] ✅ Snapshots switch both scenes at once, leaving the crossfader where it is; save / reopen keeps scene B
+- [ ] ✅ CPU with both scenes playing busy patterns
+
 ## RESAMPLE + CHARACTER (Phase 12)
 - [ ] ✅ RESAMPLE key: pattern + FX playing, select an empty pad, REC (LENGTH 2 BAR, START BAR): it waits for the bar, records 2 bars, then the pad has it as a synced, sliced loop that plays back in time
 - [ ] ✅ SOURCE GRP B: only group B's sound is in the take

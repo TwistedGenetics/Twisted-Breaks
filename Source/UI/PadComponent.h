@@ -25,6 +25,9 @@ namespace tb::ui
     {
     public:
         explicit PadComponent (int padIndex);
+        /** Scenes: the tile now stands for another engine pad (same position). */
+        void setPadIndex (int padIndex);
+        int  getPadIndex() const noexcept { return index; }
 
         // Callbacks wired by PadGrid
         std::function<void (int pad, float velocity)> onPress;
@@ -60,7 +63,7 @@ namespace tb::ui
         juce::Rectangle<float> glassArea() const;
         void rebuildOverlay();
 
-        const int index;
+        int index;                  // engine pad (0..31); index % 16 = position in the grid
         float activity  = 0.0f;
         bool  selected  = false;
         bool  pressed   = false;

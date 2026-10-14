@@ -242,7 +242,7 @@ namespace tb::ui
     void SequencerPanel::setSelectedPad (int pad)
     {
         selectedPad = jlimit (0, SequencerData::kPads - 1, pad);
-        armKey.setButtonText ("ARM PAD " + String (selectedPad + 1).paddedLeft ('0', 2));
+        armKey.setButtonText ("ARM PAD " + padLabel (selectedPad));
         refresh();
         repaint();
     }
@@ -348,23 +348,24 @@ namespace tb::ui
     Rectangle<float> SequencerPanel::laneLabelBounds (int pad) const
     {
         const auto a = gridArea();
-        const float rowH = a.getHeight() / (float) SequencerData::kPads;
-        return { a.getX(), a.getY() + (float) pad * rowH, kLabelW - 4.0f, rowH };
+        const float rowH = a.getHeight() / (float) kPadsPerScene;
+        return { a.getX(), a.getY() + (float) (pad % kPadsPerScene) * rowH, kLabelW - 4.0f, rowH };
     }
 
     Rectangle<float> SequencerPanel::cellBounds (int pad, int step) const
     {
         const auto a = gridArea().withTrimmedLeft (kLabelW);
-        const float rowH = a.getHeight() / (float) SequencerData::kPads;
+        const float rowH = a.getHeight() / (float) kPadsPerScene;
         const float colW = a.getWidth() / (float) SequencerData::kSteps;
-        return Rectangle<float> (a.getX() + (float) step * colW, a.getY() + (float) pad * rowH, colW, rowH).reduced (1.0f);
+        return Rectangle<float> (a.getX() + (float) step * colW, a.getY() + (float) (pad % kPadsPerScene) * rowH, colW, rowH).reduced (1.0f);
     }
 
     bool SequencerPanel::cellAt (Point<float> pos, int& pad, int& step) const
     {
         const auto a = gridArea().withTrimmedLeft (kLabelW);
         if (! a.contains (pos)) return false;
-        pad  = jlimit (0, SequencerData::kPads - 1,  (int) ((pos.y - a.getY()) / (a.getHeight() / (float) SequencerData::kPads)));
+        pad  = sceneOf (selectedPad) * kPadsPerScene
+             + jlimit (0, kPadsPerScene - 1, (int) ((pos.y - a.getY()) / (a.getHeight() / (float) kPadsPerScene)));
         step = jlimit (0, SequencerData::kSteps - 1, (int) ((pos.x - a.getX()) / (a.getWidth()  / (float) SequencerData::kSteps)));
         return true;
     }
@@ -424,7 +425,7 @@ namespace tb::ui
     //==========================================================================
     void SequencerPanel::mouseDown (const MouseEvent& e)
     {
-        for (int p = 0; p < SequencerData::kPads; ++p)
+        for (int p = sceneOf (selectedPad) * kPadsPerScene; p < (sceneOf (selectedPad) + 1) * kPadsPerScene; ++p)
             if (laneLabelBounds (p).contains (e.position))
             {
                 setSelectedPad (p);
@@ -495,7 +496,7 @@ namespace tb::ui
         const int bar = tr.bar.load (std::memory_order_relaxed), beat = tr.beat.load (std::memory_order_relaxed);
 
         // Tabs + MUTATE page state.
-        const String tabText = "STEP " + String (selectedPad + 1).paddedLeft ('0', 2) + "." + String (selectedStep + 1).paddedLeft ('0', 2);
+        const String tabText = "STEP " + padLabel (selectedPad) + "." + String (selectedStep + 1).paddedLeft ('0', 2);
         if (stepTab.getButtonText() != tabText) stepTab.setButtonText (tabText);
         auto& mut = processor.getMutator();
         goKey.setBlinking (mut.isWaiting());
@@ -556,12 +557,12 @@ namespace tb::ui
         // Playhead column.
         if (head >= 0)
         {
-            const auto top = cellBounds (0, head), bottom = cellBounds (SequencerData::kPads - 1, head);
+            const auto top = cellBounds (0, head), bottom = cellBounds (kPadsPerScene - 1, head);
             g.setColour (c::phosphor.withAlpha (0.16f));
             g.fillRect (top.getUnion (bottom).expanded (1.0f));
         }
 
-        for (int p = 0; p < SequencerData::kPads; ++p)
+        for (int p = sceneOf (selectedPad) * kPadsPerScene; p < (sceneOf (selectedPad) + 1) * kPadsPerScene; ++p)
         {
             const auto lb = laneLabelBounds (p);
             if (p == selectedPad)
@@ -571,7 +572,7 @@ namespace tb::ui
             }
             g.setColour (p == selectedPad ? c::vfd : c::bakelite.withAlpha (0.7f));
             g.setFont (monoFont (jmin (11.0f, lb.getHeight())));
-            g.drawText (String (p + 1).paddedLeft ('0', 2), lb.withTrimmedLeft (9.0f), Justification::centredLeft, false);
+            g.drawText (padLabel (p), lb.withTrimmedLeft (9.0f), Justification::centredLeft, false);
             if (seq.isArmed (p))
                 paint::lamp (g, { lb.getX() + 4.0f, lb.getCentreY() }, 2.8f, c::red, c::redDim, 1.0f);
 

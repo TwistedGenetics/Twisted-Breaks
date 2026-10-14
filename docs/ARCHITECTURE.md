@@ -363,6 +363,29 @@ Hand-off between breaks at slice points (spec addition A1 in
   the MIDI-mappable REC.
 * UI: the 7th top-rail key RESAMPLE (`ResamplePanel`).
 
+## 6k. Scenes A / B + crossfader (Phase 13, implemented)
+
+* The engine runs 32 pads (`kNumPads`): scene = pad / 16 (`kPadsPerScene`).
+  Everything per-pad (voices, samples, both sequencers, snapshot frames,
+  MUTATE masks) simply covers 32; groups A-D, FX, macros, master, bank and
+  RESAMPLE are shared. Pads 17-32 have their own parameters (`pad17_*` ..,
+  named "Pad B01 ..."), all with version hint kV15 so older sets keep their
+  AU parameter order.
+* Crossfader (`xfade` 0..1, `xfade_curve`): `params::xfadeGains` gives a
+  gain per scene, multiplied into each pad's gain in `computeVoiceSettings`
+  (so it sits before the group FX, and the voices' 20 ms gain glide keeps it
+  click-free). SMOOTH: both full in the middle, each fades over its far half
+  (the default centre leaves old sets unchanged). SHARP: cut in the last 5 %.
+  UI CUT keys override it while held (`setCrossfaderCut`).
+* `scene_view`: what the matrix, editor, sequencer lanes and the iRig show.
+  `padForNote` looks in the scene on view first, so notes 36-51 play what you
+  see; a note learned for one pad plays it in any view. Note swaps on learn
+  stay within a scene. PadLights maps hardware pads by position in the scene
+  on view. SPREAD never crosses into the other scene.
+* Snapshots capture both scenes, never the crossfader or the view.
+* UI: `PadGrid` keeps 16 tiles and re-points them (`PadComponent::setPadIndex`);
+  `SceneStrip` (VIEW A / B, CUT A, crossfader, CUT B, CURVE) under the matrix.
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -550,4 +573,4 @@ Ableton stores in the `.als` file:
 | **10 ✅** | MUTATE: controlled randomisation of both sequencers (slices, pitch, pattern, ratchet, reverse, FX, chance), AMOUNT, SCOPE, AUTO every 1-8 bars, NOW / BEAT / BAR, DRIFT, UNDO / RESET, Mutate parameter | 426/426 checks: 300 seeded mutations never touch an on-beat hit or move anything off the grid, ghosts only beside hits, targets respected, empty lanes stay empty, slice beats kept; original / undo / redo / reset / edit-becomes-original / drift accumulates; scope; parameter edge; NEXT BAR lands on the bar-line sample mid-block; AUTO 2 BARS on exactly bars 3 and 5; slice slots; UI |
 | **11 ✅** | Performance macros: DESTROY, AMEN MANGLE, REWIND, DARKEN, TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI; AMOUNT (mild .. hard), GROUP, LATCH, MIDI E4-B4 | 441/441 checks: every macro engages exactly its recipe in every group with its settings and releases; AMOUNT mild .. hard; single group; borrowed effects return exactly; MIDI hold / latch; DARKEN measured on noise; snapshots skip them; UI |
 | **12 ✅** | RESAMPLE (master or a group, 1-8 bars from the bar line, onto a pad as a synced, sliced loop, saved as WAV) + vintage CHARACTER per pad (CLEAN, SP-1200, MPC60, S950, LO-FI) | 464/464 checks: character read path (bit grid, machine-rate steps, pitched-down holds twice as long, output filters measured), 12-bit values through a pad; the take equals one bar of the output from the bar-line sample, 24-bit WAV, loaded as a synced loop, sliced, group-only take, stopped / NOW, cancel, parameter, reload from the set; UI |
-| 13 | Scene A/B + crossfader | — |
+| **13 ✅** | Scene A / B (32 pads, each scene its own pads + patterns), crossfader (SMOOTH / SHARP, CUT keys, automatable), VIEW A / B (parameter), notes follow the view, iRig follows the view | 485/485 checks: both scenes play at once; crossfader gains (centre, ends, SMOOTH 3/4, SHARP edge), CUT; view-aware MIDI, learned notes; snapshots / state with scene B, old sets open with B empty; SPREAD stays in its scene; UI view switch keeps the position, sequencer follows, fader drag / double-click, CUT |
