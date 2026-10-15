@@ -4430,6 +4430,13 @@ namespace
                "the iRig's pads stand for the same positions in both scenes");
     }
 
+    /** Runs the message loop until `done` (UI timers on a slow CI machine), at most 3 s. */
+    void waitFor (std::function<bool()> done)
+    {
+        for (int i = 0; i < 150 && ! done(); ++i)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+    }
+
     void testSceneView()
     {
         std::cout << "\n== Phase 13: VIEW A / B + crossfader on screen ==" << std::endl;
@@ -4453,7 +4460,7 @@ namespace
 
         grid->setSelectedPad (2);
         strip->viewButton (1).triggerClick();
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        waitFor ([&] { return grid->getScene() == 1 && grid->getSelectedPad() == 18; });
         auto raw = [&] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
         check (juce::roundToInt (raw (tb::params::sceneView)) == 1 && grid->getScene() == 1 && tiles[0]->getPadIndex() == 16 && grid->getSelectedPad() == 18,
                "VIEW B: the tiles become B01-B16, and pad 03's place (B03) stays selected");
@@ -4461,7 +4468,7 @@ namespace
 
         // Automation / a MIDI-mapped control switches the view too.
         setParam (r.p, tb::params::sceneView, 0.0f);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        waitFor ([&] { return grid->getScene() == 0 && grid->getSelectedPad() == 2; });
         check (grid->getScene() == 0 && grid->getSelectedPad() == 2, "the Scene View parameter switches it back (map it to a controller button)");
 
         // Crossfader drag.
