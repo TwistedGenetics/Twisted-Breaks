@@ -157,9 +157,18 @@ namespace tb::ui
 
         // Push 3 mode.
         auto& push = processor.getPush();
-        const bool ps = push.isActive();
+        bool ps = push.isActive();
         String c1, v1, c2, v2;
-        if (ps)
+        auto& mk = processor.getMikro();
+        if (! ps && mk.isRunning())
+        {
+            ps = true;
+            c1 = "MIKRO MK3 TEST";
+            v1 = mk.isConnected() ? String ("CONNECTED") : String ("NOT CONNECTED");
+            c2 = mk.isConnected() ? String ("LAST FROM MIKRO") : String ("WHY");
+            v2 = mk.isConnected() ? mk.getLastEvent() : mk.getStatus();
+        }
+        else if (ps)
         {
             c1 = "PUSH 3  -  " + String (push.isEditingSteps() ? "STEP EDIT" : PushController::pageName (push.getPage()))
                  + (push.getLayout() == PushController::Layout::pads ? "  -  PADS" : "");
@@ -504,6 +513,16 @@ namespace tb::ui
                 });
             m.addSubMenu ("Pad " + padLabel (pad) + " pressure", press);
         }
+
+        // ---- Maschine Mikro MK3 over USB: step 1, a hardware test.
+        auto& mk = processor.getMikro();
+        m.addSeparator();
+        m.addSectionHeader ("MASCHINE MIKRO MK3 - USB test");
+        m.addItem ("Mikro MK3 test", MikroUsb::isSupported(), mk.isRunning(), [&mk] { if (mk.isRunning()) mk.stop(); else mk.start(); });
+        if (mk.isRunning()) m.addItem (mk.getStatus(), false, false, nullptr);
+        if (! MikroUsb::isSupported()) m.addItem ("(Mac only)", false, false, nullptr);
+        m.addItem ("Copy Mikro test report", mk.isRunning() || mk.getStatus().isNotEmpty(), false,
+                   [&mk] { SystemClipboard::copyTextToClipboard (mk.getReport()); });
 
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
     }

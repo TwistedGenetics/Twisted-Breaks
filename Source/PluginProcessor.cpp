@@ -111,6 +111,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     mutator   = std::make_unique<tb::Mutator> (*this);
     resampler = std::make_unique<tb::Resampler> (*this);
     push      = std::make_unique<tb::PushController> (*this);
+    mikro     = std::make_unique<tb::MikroTester>();
     lights.onSettingsChanged = [this] { markStateChanged(); };
     push->onSettingsChanged  = [this] { markStateChanged(); };
 }
@@ -118,6 +119,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
 {
     push.reset();      // first: it uses the mutator and resampler
+    mikro.reset();
     // Frames still handed over to the audio thread (audio has stopped now).
     for (auto* f : { armedFrame.exchange (nullptr), overrideFrame.exchange (nullptr), appliedFrame.exchange (nullptr) })
         if (f != nullptr) snapshots->adoptForDeletion (f);

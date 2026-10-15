@@ -102,6 +102,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## Mikro MK3 USB test (0.15.1)
+- [ ] Mikro plugged in, Maschine software closed. LIGHTS > Mikro MK3 test
+- [ ] Pads light in 16 colours, buttons dim, strip lit; screen: TWISTED / BREAKS - MIKRO MK3 TEST
+- [ ] Hit pads 1-16 (1 = bottom left): each goes white, screen + status strip say which and how hard
+- [ ] Every button, the encoder (turn, push, touch) and the touch strip show up
+- [ ] With NI's software running too: does it still connect? do NI's lights fight ours?
+- [ ] LIGHTS > Copy Mikro test report, paste it to Claude
+
 ## Push 3 mode (0.15)
 - [ ] Live's Settings › Link, Tempo & MIDI: Track OFF for "Ableton Push 3 (User Port)" input
 - [ ] LIGHTS › Push 3 mode: the menu says Connected; press USER on Push: the grid lights (A left, B right, steps below)

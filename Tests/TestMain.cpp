@@ -20,6 +20,7 @@
 #include "Engine/TransientDetector.h"
 #include "Core/FxDefs.h"
 #include "Core/PushController.h"
+#include "Core/MikroTester.h"
 #include "Engine/PadVoice.h"
 #include <atomic>
 #include <cmath>
@@ -4180,6 +4181,94 @@ namespace
         hub->setSinkForTesting (nullptr);
     }
 
+
+    //==========================================================================
+    //  Maschine Mikro MK3: USB protocol + test mode (no hardware here)
+    //==========================================================================
+    void testMikro()
+    {
+        using namespace tb::mikro;
+        std::cout << "\n== Mikro MK3: USB protocol and test mode ==" << std::endl;
+
+        InputParser parser;
+        std::vector<Event> ev;
+        uint8_t btn[16] = { 0x01 };
+        btn[7] = 5;
+        parser.parse (btn, 16, ev);                                     // first report: encoder position only
+        btn[1 + step / 8] |= (uint8_t) (1u << (step % 8));
+        btn[1 + mute / 8] |= (uint8_t) (1u << (mute % 8));
+        btn[7] = 7; btn[10] = 120;
+        ev.clear();
+        parser.parse (btn, 16, ev);
+        bool sawStep = false, sawMute = false, sawEnc = false, sawStrip = false;
+        for (auto& e : ev)
+        {
+            sawStep  = sawStep  || (e.kind == Event::button && e.index == step && e.down);
+            sawMute  = sawMute  || (e.kind == Event::button && e.index == mute && e.down);
+            sawEnc   = sawEnc   || (e.kind == Event::encoder && e.value == 2);
+            sawStrip = sawStrip || (e.kind == Event::strip && e.value == 120);
+        }
+        check (ev.size() == 4 && sawStep && sawMute && sawEnc && sawStrip, "button report: STEP + MUTE down, encoder +2, strip at 120");
+        btn[7] = 1;                                                        // 7 -> 1 wraps: +10 or -6 -> -6
+        ev.clear();
+        parser.parse (btn, 16, ev);
+        check (ev.size() == 1 && ev[0].kind == Event::encoder && ev[0].value == -6, "the encoder wraps 0..15 the short way round");
+
+        uint8_t pads[16] = { 0x02, 3, 0x10 | 0x0a, 0xbc, 7, 0x30, 0x00, 0, 0, 0 };
+        ev.clear();
+        parser.parse (pads, 16, ev);
+        check (ev.size() == 2 && ev[0].index == 3 && ev[0].down && ev[0].value == 0xabc && ! ev[1].down && ev[1].index == 7,
+               "pad report: triplets (pad, event + value), ending at the first empty one");
+
+        Lights l;
+        l.setButton (step, levelBright);
+        l.setPad (0, red, 3);
+        l.setStrip (24, levelDim);
+        const auto rep = l.report();
+        check (rep.size() == 81 && rep[0] == 0x80 && rep[1 + step] == 0x7f && rep[1 + 39] == ((red << 2) | 3) && rep[1 + 55 + 24] == 0x7c,
+               "lights report: 0x80 + 39 buttons, 16 pads (colour << 2 | level), 25 strip LEDs");
+
+        Screen sc;
+        sc.text (0, 0, "A", 1);
+        // 'A' first column 0x7E: rows 1..6 lit, row 0 not.
+        check (! sc.get (0, 0) && sc.get (0, 1) && sc.get (0, 6) && ! sc.get (0, 7) && (sc.raw()[0] & 0x02) == 0 && (sc.raw()[0] & 0x01) != 0,
+               "screen: 128 x 32, a lit pixel is a cleared bit");
+        const auto sr = sc.reports();
+        check (sr[0].size() == 265 && sr[0][0] == 0xe0 && sr[1][3] == 0x02 && sr[0][9] == sc.raw()[0], "screen goes out as two 0xE0 reports of 9 + 256 bytes");
+
+        // The test mode, with a recorder in place of USB.
+        tb::MikroTester t;
+        std::vector<std::vector<uint8_t>> sent;
+        t.startForTesting ([&sent] (const std::vector<uint8_t>& r) { sent.push_back (r); return true; });
+        t.process (1000.0);
+        int lightsReports = 0, screenReports = 0;
+        for (auto& r : sent) { lightsReports += r[0] == 0x80 ? 1 : 0; screenReports += r[0] == 0xe0 ? 1 : 0; }
+        check (lightsReports == 1 && screenReports == 2 && t.getLights().state[39] == padByte (1, 2) && t.getScreen().get (2, 2) == false,
+               "test mode starts: pads in 16 colours, buttons dim, TWISTED on the screen");
+        bool lit = false;
+        for (int x = 0; x < 60 && ! lit; ++x) for (int y = 0; y < 14 && ! lit; ++y) lit = t.getScreen().get (x, y);
+        sent.clear();
+        uint8_t hit[8] = { 0x02, 4, 0x10 | 0x07, 0xff, 0, 0, 0, 0 };
+        t.feedReport (hit, 8);
+        t.process (1200.0);
+        check (lit && t.getLights().state[39 + 4] == padByte (white, 3) && t.getLastEvent().startsWith ("PAD 5 DOWN") && ! sent.empty(),
+               "a pad hit lights it white and shows PAD 5 (1 = bottom left) on the screen and in the plugin");
+        uint8_t b2[16] = { 0x01 };
+        b2[1 + shift / 8] |= (uint8_t) (1u << (shift % 8));
+        t.feedReport (b2, 16);
+        t.process (1400.0);
+        check (t.getLights().state[(size_t) shift] == levelBright && t.getReport().contains ("SHIFT DOWN") && t.getReport().contains ("first button report: 01"),
+               "buttons light while held; the copyable report logs events and the raw first reports");
+        t.stop();
+        check (! t.isRunning() && t.getLights().state[39] == 0, "stopping switches the Mikro's lights off");
+       #if JUCE_MAC
+        const bool isMac = true;
+       #else
+        const bool isMac = false;
+       #endif
+        check (tb::MikroUsb::isSupported() == isMac, "USB access is built on the Mac (elsewhere it says it's Mac only)");
+    }
+
     void testPressure()
     {
         std::cout << "\n== 0.15: pad pressure (PadVoice) ==" << std::endl;
@@ -5529,6 +5618,7 @@ int main (int argc, char* argv[])
         testPush3();
         testPushView();
         testPressure();
+        testMikro();
         testEditorDrivesState();
         testRealtimeSafety();
 

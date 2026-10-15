@@ -364,3 +364,20 @@ per page with gestures, fine and relative wrap; touch strip; each button;
 LED output matches state and only changes are sent; leaving User mode
 releases everything; two instances don't fight; no allocations on the
 audio thread; all earlier tests pass.
+
+## A8. Maschine Mikro MK3 mode (in progress)
+
+**Step 1 built in 0.15.1: the hardware test.** Jamie asked to "fully
+integrate" his Maschine Mikro MK3. Chosen route: talk to it over USB HID
+directly (vendor 0x17CC, product 0x1700), not NI's MIDI mode, so the plugin
+owns the pad colours, every button light, the touch strip LEDs and the
+128 x 32 screen. The protocol isn't documented by NI; it comes from two
+open-source drivers that agree (r00tman/maschine-mikro-mk3-driver, MIT;
+flokapi/pymikro). Risks: NI's background service may hold the device on
+the Mac, and the protocol is unverified here. So step 1 is
+LIGHTS > "Mikro MK3 test": open it (or say why not, with the IOKit code),
+light pads / buttons / strip, write the screen, show every pad, button,
+encoder and strip event on the Mikro, in the status strip and in a
+copyable text report. Step 2 (the full Mikro mode, written up as a prompt
+first) waits for that report.
+

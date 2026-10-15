@@ -42,7 +42,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 12 | RESAMPLE + vintage CHARACTER modes | **done** — 464/464 automated checks |
 | 13 | Scene A / B + crossfader | **done** — 485/485 automated checks |
 | 0.14 | Sequence pads: launch a pad's sequence by hitting it, SWAP between sequences; 0.14.1: launched sequences follow Live's playhead | **done** |
-| 0.15 | Push 3 mode: play and program the plugin from Push 3 in User mode; per-pad pressure | **done** — 556/556 automated checks |
+| 0.15 | Push 3 mode: play and program the plugin from Push 3 in User mode; per-pad pressure | **done** |
+| 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) before the full Mikro mode | **built** — 567/567 automated checks; waiting for the hardware test |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
