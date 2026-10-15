@@ -11,6 +11,7 @@
 #include "Core/Mutator.h"
 #include "Core/Resampler.h"
 #include "Core/BreakBank.h"
+#include "Core/PushController.h"
 
 /*
     TwistedBreaksProcessor
@@ -69,6 +70,7 @@ public:
     tb::BreakBank&       getBank() noexcept      { return *bank; }
     tb::Mutator&         getMutator() noexcept   { return *mutator; }
     tb::Resampler&       getResampler() noexcept { return *resampler; }
+    tb::PushController&  getPush() noexcept      { return *push; }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -145,6 +147,7 @@ private:
     std::unique_ptr<tb::SnapshotManager> snapshots;
     std::unique_ptr<tb::Mutator>         mutator;
     std::unique_ptr<tb::Resampler>       resampler;
+    std::unique_ptr<tb::PushController>  push;       // A7: Push 3 mode (after mutator / resampler: destroyed first)
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;
     void applySnapshotFrame (tb::SnapshotFrame*) noexcept;
@@ -202,6 +205,7 @@ private:
         std::atomic<float>* launch = nullptr;
         std::atomic<float>* seqLen = nullptr;
         std::atomic<float>* swapFrom = nullptr;
+        std::atomic<float>* press = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

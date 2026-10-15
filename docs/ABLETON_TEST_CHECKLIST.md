@@ -102,6 +102,19 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## Push 3 mode (0.15)
+- [ ] Live's Settings › Link, Tempo & MIDI: Track OFF for "Ableton Push 3 (User Port)" input
+- [ ] LIGHTS › Push 3 mode: the menu says Connected; press USER on Push: the grid lights (A left, B right, steps below)
+- [ ] Hit pads on Push: they play with velocity, select in the plugin window (B pads flip the view)
+- [ ] Tap steps: on / off; hold a step + turn encoders (VEL, PITCH ...); hold one + tap another for a range; DELETE + step
+- [ ] Encoder pages (keys over the display): PAD / FX / SEQ / MIX; each move is one undo step in Live
+- [ ] Touch strip moves the crossfader; scene column: MUTATE, FILL (hold), RESAMPLE, VIEW, LAYOUT
+- [ ] Push Setup › Pads › Expression = Poly Aftertouch: press into a pad: FILTER / DRIVE / STUTTER / PITCH (PAD page encoder 8)
+- [ ] Lights: playing white, sequences green, queued flashing, muted red, step playhead moving
+- [ ] Press USER again: Push controls Live as normal; nothing stuck
+- [ ] Two Twisted Breaks in the set: clicking a window hands Push to it
+- [ ] If any key does nothing: note the status strip's LAST FROM PUSH and report it
+
 ## Scenes A / B (Phase 13)
 - [ ] ✅ An older set opens exactly as before (scene A, crossfader in the middle, scene B empty)
 - [ ] ✅ VIEW B, load a different break and pattern onto B pads; play both: crossfader A <-> B blends them, CURVE SHARP cuts at the edges, CUT A / CUT B while held

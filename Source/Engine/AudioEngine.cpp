@@ -1468,6 +1468,22 @@ namespace tb
         applyPadCommands();
         computeVoiceSettings (params);
 
+        // ---- A7: Push 3 pad pressure -> each pad's voices (smoothed per block).
+        {
+            const double bpm = transport.bpm > 0.0 ? transport.bpm : 120.0;
+            const double sixteenth = sampleRate * 60.0 / bpm * 0.25;
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                const float target = juce::jlimit (0.0f, 1.0f, bridge.padPressure[(size_t) p].load (std::memory_order_relaxed));
+                auto& sm = pressNow[(size_t) p];
+                sm += (target - sm) * 0.5f;
+                if (sm < 1.0e-4f) sm = 0.0f;
+                const int what = params.pads[(size_t) p].press;
+                for (auto& v : voices[(size_t) p])
+                    if (v.isActive()) v.setPressure (sm, what, sixteenth);
+            }
+        }
+
         // ---- Synced loops re-lock to the host's position at the block start.
         if (transport.isPlaying)
             for (auto& padVoices : voices)
@@ -1496,6 +1512,14 @@ namespace tb
         PadUiEvent ev;
         while (bridge.padEvents.pop (ev))
         {
+            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
+            else           releasePad (ev.pad);
+        }
+        // ---- ...and pads played on a controller's own port (A7: Push 3 User mode).
+        while (bridge.controllerPadEvents.pop (ev))
+        {
+            if (ev.pad < 0 || ev.pad >= kNumPads) continue;
+            if (ev.noteOn) pressNow[(size_t) ev.pad] = 0.0f;       // a fresh hit starts without the last press's pressure
             if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
             else           releasePad (ev.pad);
         }

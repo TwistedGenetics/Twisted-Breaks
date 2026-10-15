@@ -91,6 +91,19 @@ namespace tb
         /** Re-locks a synced loop to the host position at the start of this block. */
         void syncTo (double ppq) noexcept;
 
+        /**
+            A7: Push 3 pad pressure, 0..1, once per block. What it does
+            (params::PressTarget):
+              FILTER   2-pole low-pass closing from 18 kHz to 300 Hz
+              DRIVE    tanh drive up to x16 into a level-matched saturator
+              STUTTER  repeats a slice from where the press bit: 1/16, then
+                       1/32 past half pressure and 1/64 near full
+              PITCH    bends down up to an octave
+            A synced loop that is stuttering or bent is let off the grid, and
+            snaps back to it on the next block after you let go.
+        */
+        void setPressure (float amount, int target, double sixteenthSamples) noexcept;
+
         bool   isActive()    const noexcept { return active; }
         bool   isReleasing() const noexcept { return releasing; }
         bool   isLooping()   const noexcept { return looping; }
@@ -144,6 +157,21 @@ namespace tb
         float fadeInStep        = 1.0f;
         float releaseGain       = 1.0f;
         float releaseStep       = 0.005f;
+
+        // A7 pressure.
+        float  pressAmount = 0.0f;
+        int    pressTarget = 4;          // params::pressOff (Parameters.h isn't included here)
+        float  pressCoef   = 0.0f;
+        float  pf1L = 0, pf2L = 0, pf1R = 0, pf2R = 0;
+        float  driveGain = 1.0f, driveNorm = 1.0f, driveMix = 0.0f;
+        double pitchMul = 1.0;
+        bool   stuttering = false, stutterWrapped = false;
+        bool   offGrid = false;          // a synced loop was stuttered / bent: re-lock with a fade
+        static constexpr int kSnapFade = 32;
+        int    snapCountdown = 0;
+        double snapOffset = 0.0;
+        double stutterAnchor = 0.0;
+        int    stutterLen = 0, stutterCount = 0;
 
         int   characterIndex    = 0;
         float lpCoef            = 0.0f;                 // output filter (0 = off)

@@ -73,10 +73,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.launch     = apvts.getRawParameterValue (padId (pad, padLaunch));
         pp.seqLen     = apvts.getRawParameterValue (padId (pad, padSeqLen));
         pp.swapFrom   = apvts.getRawParameterValue (padId (pad, padSwapFrom));
+        pp.press      = apvts.getRawParameterValue (padId (pad, padPress));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
                  && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character
-                 && pp.launch && pp.seqLen && pp.swapFrom);
+                 && pp.launch && pp.seqLen && pp.swapFrom && pp.press);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -109,11 +110,14 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     snapshots = std::make_unique<tb::SnapshotManager> (*this);
     mutator   = std::make_unique<tb::Mutator> (*this);
     resampler = std::make_unique<tb::Resampler> (*this);
+    push      = std::make_unique<tb::PushController> (*this);
     lights.onSettingsChanged = [this] { markStateChanged(); };
+    push->onSettingsChanged  = [this] { markStateChanged(); };
 }
 
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
 {
+    push.reset();      // first: it uses the mutator and resampler
     // Frames still handed over to the audio thread (audio has stopped now).
     for (auto* f : { armedFrame.exchange (nullptr), overrideFrame.exchange (nullptr), appliedFrame.exchange (nullptr) })
         if (f != nullptr) snapshots->adoptForDeletion (f);
@@ -278,6 +282,7 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.launch     = juce::roundToInt (ld (src.launch));
         dst.seqLen     = juce::roundToInt (ld (src.seqLen));
         dst.swapFrom   = juce::roundToInt (ld (src.swapFrom));
+        dst.press      = juce::roundToInt (ld (src.press));
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -495,6 +500,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (midiMap, nullptr);
     state.appendChild (samples.toValueTree(), nullptr);
     state.appendChild (lights.toValueTree(), nullptr);
+    state.appendChild (push->toValueTree(), nullptr);
 
     state.appendChild (bridge.seq.toValueTree(), nullptr);
     state.appendChild (bridge.sliceSeq.toValueTree(), nullptr);
@@ -528,6 +534,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
+    push->fromValueTree (state.getChildWithName (tb::PushController::pushId));
     bridge.seq.fromValueTree (state.getChildWithName (tb::SequencerData::seqId));
     bridge.sliceSeq.fromValueTree (state.getChildWithName (tb::SliceSeqData::sliceSeqId));
     {

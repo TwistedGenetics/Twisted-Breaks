@@ -302,3 +302,65 @@ Exit tests (automated):
   velocity scaling;
 * the state round trip, and an old set opening unchanged;
 * zero allocations on the audio thread.
+
+## A7. Push 3 mode — play and program Twisted Breaks from Push 3
+
+**Status: built in 0.15.0.** Push 3 keeps Push 2's MIDI protocol (Ableton's
+published Push 2 MIDI and Display Interface Manual); the User port, the
+mode echo (sysex 0x0A) and the palette read (0x04) come from it. As built,
+with these changes from the prompt below: RESAMPLE is on the scene column
+(Push 2's spec has no Capture key to check against) instead of a long
+press on Capture; the pad Pressure target is a new per-pad parameter
+(`padNN_press`, kV17: Filter / Drive / Stutter / Pitch / Off), set from
+the PAD encoder page or LIGHTS › Pad .. pressure; the PAD page has
+PRESSURE in place of VEL SENS; the plugin window's status strip is the
+"Push panel"; "hold one step and tap another" copies the first across the
+range. Push's screen stays Live's.
+
+Prompt:
+
+> I want to play and program Twisted Breaks from my Ableton Push 3
+> (plugged into the Mac, running Live 12) without looking at the screen.
+> When I press Push's **User** button, Push becomes a dedicated Twisted
+> Breaks controller. When I press it again, it's back to normal Live
+> control.
+
+What to build:
+
+* **Connection**: PUSH 3 in the LIGHTS menu; the plugin talks to Push's
+  User port directly (lights out; pads, encoders, buttons, touch strip
+  in), only while Push is in User mode, handing everything back cleanly.
+  Several instances don't fight: the one touched last gets Push. Check
+  Push 3's real User-mode map first. Live's own setup: Track off for the
+  User port on the Twisted Breaks track (in the manual).
+* **Grid**: top 4 rows = the 32 pads (A left 4x4, B right 4x4, like the
+  matrix), lit by state (dim loaded, white playing, green sequence
+  running, flashing queued, dim red muted); hit = play with velocity +
+  select. Bottom 4 rows = the selected pad's 32 steps: on / off and
+  velocity, moving playhead, dark past LEN; tap toggles, hold + encoder
+  edits VEL / CHANCE / RATCHET / PITCH / SLICE / MICRO, hold + tap = range.
+* **Pressure**: per-pad pressure to a per-pad target (filter, drive,
+  stutter, pitch; default filter).
+* **Encoders**: 8 encoders, 4 pages (PAD, FX, SEQ, MIX), relative, SHIFT =
+  fine, every move automatable with gestures; touching shows the
+  parameter in the plugin window.
+* **Touch strip**: the A/B crossfader.
+* **Buttons**: Play / Record stay Live's; Mute / Solo / Duplicate / Delete
+  / Shift + pad; Fixed Length cycles LEN; Layout / Note / Scale: lower half
+  steps <-> big 4x4 pads; arrows: scene A/B; MUTATE (GO), FILL (hold);
+  long press Capture: RESAMPLE.
+* **Display**: a small Push panel in the plugin window (page, parameter
+  names, selected pad).
+* **When it stops**: leaving User mode, closing or unplugging releases
+  everything and switches the lights off; coming back redraws at once.
+  No Push = exactly as now.
+* **Real-time safety**: Push input into the engine through lock-free
+  queues; lights from the message thread at ~30 Hz, changes only; nothing
+  new on the audio thread.
+
+Exit tests (automated, fake Push port): pad notes play the right pad with
+velocity and select it; step pads toggle, hold + encoder edits; encoders
+per page with gestures, fine and relative wrap; touch strip; each button;
+LED output matches state and only changes are sent; leaving User mode
+releases everything; two instances don't fight; no allocations on the
+audio thread; all earlier tests pass.

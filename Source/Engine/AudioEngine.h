@@ -96,6 +96,7 @@ namespace tb
             int   launch    = 2;      // params::Launch (SEQ modes)
             int   seqLen    = 0;      // 0 = global LEN
             int   swapFrom  = 0;      // 0 same step, 1 step 1
+            int   press     = 0;      // params::PressTarget (Push 3 pad pressure)
         };
 
         struct GroupParams
@@ -398,6 +399,7 @@ namespace tb
         std::array<int, kNumPads> padLaunch {}, padSeqLen {}, padSwapFrom {};
         bool   clockWasPlaying = false, seqFillNow = false;
         std::array<bool, kNumPads> laneQueued {};
+        std::array<float, kNumPads> pressNow {};      // A7: smoothed Push 3 pad pressure
         const TransportState* lastTransport = nullptr;
         std::array<bool, kNumPads> padSliceSeq {};
         std::array<int,  kNumPads> padSliceSlot {};

@@ -82,6 +82,10 @@ namespace tb
     {
         // ---- UI -> audio -----------------------------------------------------
         SpscQueue<PadUiEvent, 256> padEvents;
+        /** A7: pads played from a controller's own port (Push 3 User mode). Producer: that port's MIDI thread. */
+        SpscQueue<PadUiEvent, 256> controllerPadEvents;
+        /** A7: Push 3 pad pressure per pad, 0..1 (MIDI thread writes, audio reads). */
+        std::array<std::atomic<float>, kNumPads> padPressure {};
         std::atomic<bool>          panicRequested { false };
 
         // ---- audio -> UI -----------------------------------------------------

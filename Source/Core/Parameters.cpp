@@ -152,6 +152,11 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padSwapFrom), kV16 }, prefix + "Swap From",
                 StringArray { "Same Step", "Step 1" }, 0));
+
+            // ---- 0.15: Push 3 pad pressure (A7) ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padPress), kV17 }, prefix + "Pressure",
+                StringArray (kPressNames, 5), pressFilter));
         }
     }
 

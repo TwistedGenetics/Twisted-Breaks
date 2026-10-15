@@ -61,6 +61,9 @@ namespace tb::ui
         float    midiLamp  = 0.0f;
         int      lastNote  = -1, lastVel = 0, selPad = 0, selNote = 36;
         juce::String message;      // replaces SELECTED PAD while LIGHTS is learning
+        // A7: while Push 3 is in User mode, the strip shows its page, pad and the knob you touch.
+        bool pushShown = false;
+        juce::String pushCaption, pushValue, pushCaption2, pushValue2;
     };
 
     //==========================================================================
@@ -96,8 +99,10 @@ namespace tb::ui
         void showMixer (bool show) { showView (show ? View::mixer : View::crt); }
         bool isMixerShown() const noexcept { return view == View::mixer; }
 
-        /** LIGHTS menu: controller LEDs (iRig Pads). */
+        /** LIGHTS menu: controller LEDs (iRig Pads) and Push 3 mode. */
         void showLightsMenu();
+
+        void mouseDown (const juce::MouseEvent&) override;   // (all children) this instance takes Push
 
     private:
         void updateNavLamps();
@@ -119,6 +124,7 @@ namespace tb::ui
         SceneStrip       sceneStrip;
         int              shownScene = 0;
         uint32_t         shownSeqVersion = 0;
+        uint32_t         shownPushSelection = 0;
         View             view = View::crt;
         NeedleMeter      meter;
         FXGrid           fxGrid;
@@ -127,7 +133,7 @@ namespace tb::ui
         juce::Slider  masterKnob;
         ToggleSwitch  limiterSwitch { "LIMITER", "Master limiter (zero latency, -0.3 dBFS ceiling)" };
         PanicButton   panicButton;
-        PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads to show what's playing", juce::Colour (0xff7dff5a) };
+        PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads, and Push 3 mode (play the plugin from Push in User mode)", juce::Colour (0xff7dff5a) };
         juce::OwnedArray<SelectorKey> navKeys;
 
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;

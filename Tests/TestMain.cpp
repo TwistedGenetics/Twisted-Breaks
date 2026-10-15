@@ -19,6 +19,8 @@
 #include "PluginEditor.h"
 #include "Engine/TransientDetector.h"
 #include "Core/FxDefs.h"
+#include "Core/PushController.h"
+#include "Engine/PadVoice.h"
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -363,7 +365,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1065, "1065 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 25 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 1097, "1097 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 26 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3513,8 +3515,8 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065,
-               "LAUNCH, SEQ LEN and SWAP FROM on every pad (1065 parameters in total)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097,
+               "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
         auto setPad = [&x] (int pad, const char* id, float v) { setPadParam (x.r.p, pad, id, v); };
@@ -3748,6 +3750,492 @@ namespace
         setPadParam (r.p, 0, tb::params::padMode, 0.0f);
     }
 
+
+    //==========================================================================
+    //  0.15: Push 3 mode (spec addition A7)
+    //==========================================================================
+    struct PushRec final : tb::PushHub::Sink
+    {
+        std::vector<juce::MidiMessage> msgs;
+        std::array<int, 128> pads, ccs;              // what Push shows now (survives msgs.clear())
+        PushRec() { pads.fill (-1); ccs.fill (-1); }
+        void send (const juce::MidiMessage& m) override
+        {
+            msgs.push_back (m);
+            const int st = m.getRawData()[0] & 0xf0;
+            if (st == 0x90) pads[(size_t) m.getNoteNumber()] = m.getRawData()[2];
+            if (st == 0xb0) ccs[(size_t) m.getControllerNumber()] = m.getControllerValue();
+        }
+        int padLed (int note) const { return pads[(size_t) note]; }
+        int buttonLed (int cc) const { return ccs[(size_t) cc]; }
+        int count (bool sysex) const { int n = 0; for (auto& m : msgs) n += m.isSysEx() == sysex ? 1 : 0; return n; }
+    };
+
+    juce::MidiMessage pushSysex (std::initializer_list<juce::uint8> body)
+    {
+        std::vector<juce::uint8> d { 0x00, 0x21, 0x1D, 0x01, 0x01 };
+        d.insert (d.end(), body.begin(), body.end());
+        return juce::MidiMessage::createSysExMessage (d.data(), (int) d.size());
+    }
+
+    juce::MidiMessage paletteReply (int i, int r, int g, int b)
+    {
+        auto lo = [] (int v) { return (juce::uint8) (v & 0x7f); };
+        auto hi = [] (int v) { return (juce::uint8) ((v >> 7) & 1); };
+        return pushSysex ({ 0x04, (juce::uint8) i, lo (r), hi (r), lo (g), hi (g), lo (b), hi (b), 0, 0 });
+    }
+
+    void testPush3()
+    {
+        using namespace tb::push;
+        std::cout << "\n== 0.15: Push 3 mode (User mode, fake Push port) ==" << std::endl;
+
+        {
+            juce::Array<juce::MidiDeviceInfo> d;
+            d.add ({ "IAC Driver Bus 1", "a" }); d.add ({ "Ableton Push 3 Live Port", "b" }); d.add ({ "Ableton Push 3 User Port", "c" });
+            juce::Array<juce::MidiDeviceInfo> w; w.add ({ "MIDIIN2 (Ableton Push 3)", "x" });
+            juce::Array<juce::MidiDeviceInfo> both; both.add ({ "Ableton Push 2 User Port", "p2" }); both.add ({ "Ableton Push 3 User Port", "p3" });
+            check (tb::PushHub::findPort (d) == 2 && tb::PushHub::findPort (w) == 0 && tb::PushHub::findPort (both) == 1,
+                   "finds Push's User port by name (Mac, Windows; Push 3 before a Push 2), not its Live port");
+        }
+
+        Rig r;
+        auto& push = r.p.getPush();
+        auto& br = r.p.getBridge();
+        auto hub = std::make_shared<tb::PushHub> (false);
+        PushRec rec;
+        hub->setSinkForTesting (&rec);
+        push.useHubForTesting (hub);
+        double now = 1000.0;
+        auto step = [&] (int ticks = 1) { for (int i = 0; i < ticks; ++i) { now += 25.0; push.processPending (now); push.tick (now); } };
+        auto in = [&] (const juce::MidiMessage& m) { hub->dispatch (m); };
+        auto drainPads = [&br] { std::vector<tb::PadUiEvent> v; tb::PadUiEvent e; while (br.controllerPadEvents.pop (e)) v.push_back (e); return v; };
+
+        step (10);
+        check (rec.count (true) == 128 && rec.count (false) == 0 && rec.msgs.front().getSysExDataSize() == 7
+                 && rec.msgs.front().getSysExData()[5] == 0x04,
+               "connected, Live mode: reads Push's 128 colour palette entries (sysex), sends no lights yet");
+
+        // Palette: the nearest entries become the colours used.
+        in (paletteReply (9, 255, 160, 32));   // amber
+        in (paletteReply (10, 74, 44, 6));     // dim amber
+        in (paletteReply (3, 255, 255, 255));  // white
+        in (paletteReply (21, 48, 255, 48));   // green
+        in (paletteReply (12, 64, 8, 4));      // dim red
+        in (paletteReply (5, 255, 30, 10));    // red
+        in (paletteReply (13, 24, 24, 24));    // dark
+        in (paletteReply (45, 30, 60, 255));   // blue
+        step();
+        check (push.paletteIndexFor (amber) == 9 && push.paletteIndexFor (amberDim) == 10 && push.paletteIndexFor (white) == 3
+                 && push.paletteIndexFor (dark) == 13, "colours map to the nearest entries of Push's own palette");
+
+        // User mode, from Push's echo of the mode switch.
+        rec.msgs.clear();
+        in (pushSysex ({ 0x0A, 0x01 }));
+        step();
+        int padMsgs = 0;
+        for (auto& m : rec.msgs) padMsgs += (m.getRawData()[0] & 0xf0) == 0x90 && m.getNoteNumber() >= 36 && m.getNoteNumber() <= 99 ? 1 : 0;
+        check (push.isUserMode() && push.isActive() && padMsgs == 64, "USER pressed (Push echoes the mode sysex): all 64 pads lit at once");
+        rec.msgs.clear();
+        step();
+        check (rec.msgs.empty(), "...and after that only lights that change are sent");
+
+        // Lights follow state.
+        r.load (1, writeAudio ("push_blip", [] { juce::AudioBuffer<float> b (1, 4800); b.clear(); for (int i = 0; i < 2000; ++i) b.setSample (0, i, 0.5f); return b; }(),
+                               48000.0, Fmt::wavFloat));
+        r.load (0, writeAudio ("push_blip0", [] { juce::AudioBuffer<float> b (1, 4800); b.clear(); for (int i = 0; i < 2000; ++i) b.setSample (0, i, 0.5f); return b; }(),
+                               48000.0, Fmt::wavFloat));
+        step();
+        const int lenNow = juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::seqLength)->load());
+        check (rec.padLed (padNote (7, 0)) == 9 && rec.padLed (padNote (7, 1)) == 10 && rec.padLed (padNote (7, 2)) == 0
+                 && rec.padLed (padNote (3, 0)) == 13 && (lenNow > 16 || rec.padLed (padNote (1, 0)) == 0),
+               "pads: selected amber, loaded dim amber, empty off; steps: empty dark, past LEN off");
+        setPadParam (r.p, 1, tb::params::padMute, 1.0f);
+        step();
+        check (rec.padLed (padNote (7, 1)) == 12, "a muted pad shows dim red");
+        setPadParam (r.p, 1, tb::params::padMute, 0.0f);
+
+        // Playing pads: velocity, A / B layout, selection.
+        drainPads();
+        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 7), (juce::uint8) 64));
+        auto ev = drainPads();
+        check (ev.size() == 2 && ev[0].pad == 1 && ev[0].noteOn && std::abs (ev[0].velocity - 100.0f / 127.0f) < 1e-4f
+                 && ev[1].pad == 31 && std::abs (ev[1].velocity - 64.0f / 127.0f) < 1e-4f,
+               "top half = the 32 pads (A left, B right, 01 top left), played straight from the MIDI thread with velocity");
+        step();
+        check (push.getSelectedPad() == 31 && juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::sceneView)->load()) == 1,
+               "a hit selects the pad, and a scene B pad flips the view to B");
+        in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
+        in (juce::MidiMessage::noteOff (1, padNote (4, 7)));
+        ev = drainPads();
+        check (ev.size() == 2 && ! ev[0].noteOn && ev[0].pad == 1 && ! ev[1].noteOn, "releases go through too (loops stop)");
+        {
+            in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 127));
+            juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
+            runBlock (r.p, r.host, buf, midi);
+            check (peakOf (buf) > 0.1f, "a Push hit plays the pad's sound");
+            in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
+            r.settle();
+            drainPads();
+        }
+
+        // Pressure.
+        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
+        in (juce::MidiMessage::aftertouchChange (1, padNote (7, 1), 64));
+        const float pr = br.padPressure[1].load();
+        in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
+        check (std::abs (pr - 64.0f / 127.0f) < 1e-4f && br.padPressure[1].load() == 0.0f, "per-pad pressure (poly aftertouch) goes to that pad, back to 0 on release");
+        drainPads();
+
+        // Modifiers: MUTE / SOLO / SHIFT + pad don't play.
+        in (juce::MidiMessage::controllerEvent (1, mute, 127));
+        in (juce::MidiMessage::noteOn (1, padNote (7, 2), (juce::uint8) 100));
+        step();
+        in (juce::MidiMessage::noteOff (1, padNote (7, 2)));
+        in (juce::MidiMessage::controllerEvent (1, mute, 0));
+        step();
+        check (drainPads().empty() && r.p.getParameters().getRawParameterValue (tb::params::padId (2, tb::params::padMute))->load() > 0.5f,
+               "MUTE + pad mutes it (and doesn't play it)");
+        setPadParam (r.p, 2, tb::params::padMute, 0.0f);
+        in (juce::MidiMessage::controllerEvent (1, shift, 127));
+        in (juce::MidiMessage::noteOn (1, padNote (7, 0), (juce::uint8) 100));
+        step();
+        in (juce::MidiMessage::controllerEvent (1, shift, 0));
+        in (juce::MidiMessage::noteOff (1, padNote (7, 0)));
+        step();
+        check (drainPads().empty() && push.getSelectedPad() == 0, "SHIFT + pad selects without playing");
+
+        // Steps: the bottom half is pad 01's lane.
+        auto& seq = br.seq;
+        seq.clearAll();
+        const int s0 = padNote (3, 0), s2 = padNote (3, 2), s4 = padNote (3, 4), s7 = padNote (3, 7);
+        auto tap = [&] (int note) { in (juce::MidiMessage::noteOn (1, note, (juce::uint8) 90)); step(); in (juce::MidiMessage::noteOff (1, note)); step(); };
+        tap (s0);
+        const bool onAfterTap = seq.get (0, 0).on;
+        tap (s0);
+        check (onAfterTap && ! seq.get (0, 0).on && drainPads().empty(), "tap a step: on; tap again: off (steps don't play the pad)");
+        in (juce::MidiMessage::noteOn (1, s2, (juce::uint8) 90));
+        step();
+        const auto lbl = push.encoderLabel (0);
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc, 5));         // VEL +5
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 3, 6));     // PITCH +2
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 1, 127));   // CHANCE -1
+        step();
+        in (juce::MidiMessage::noteOff (1, s2));
+        step();
+        const auto st2 = seq.get (0, 2);
+        check (lbl == "VEL" && st2.on && st2.velocity == 105 && st2.pitch == 2 && st2.probability == 99,
+               "hold a step + encoders: VEL, PITCH, CHANCE ... of that step (the step stays on)");
+        in (juce::MidiMessage::noteOn (1, s4, (juce::uint8) 90));
+        step();
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 2, 4));     // RATCHET x2
+        step();
+        in (juce::MidiMessage::noteOn (1, s7, (juce::uint8) 90));
+        step();
+        in (juce::MidiMessage::noteOff (1, s7)); in (juce::MidiMessage::noteOff (1, s4));
+        step();
+        bool range = true;
+        for (int k = 4; k <= 7; ++k) range = range && seq.get (0, k).on && seq.get (0, k).ratchet == 2;
+        check (range && ! seq.get (0, 3).on && ! seq.get (0, 8).on, "hold a step and tap another: it's copied across the range");
+        in (juce::MidiMessage::controllerEvent (1, deleteButton, 127));
+        tap (s4);
+        in (juce::MidiMessage::controllerEvent (1, deleteButton, 0));
+        step();
+        check (! seq.get (0, 4).on, "DELETE + step clears it");
+        step (2);
+        check (rec.padLed (s2) == 9 && rec.padLed (padNote (3, 3)) == 13 && rec.buttonLed (upperRow1) == 3 && rec.buttonLed (sceneTop - 3) == 9,
+               "steps light: on amber, off dark; the PAD page key and the VIEW A key are lit");
+
+        // Encoder pages.
+        auto rawP = [&r] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+        struct Gestures final : juce::AudioProcessorParameter::Listener
+        {
+            int starts = 0, ends = 0;
+            void parameterValueChanged (int, float) override {}
+            void parameterGestureChanged (int, bool s) override { (s ? starts : ends) += 1; }
+        } gest;
+        auto* pitchP = r.p.getParameters().getParameter (tb::params::padId (0, tb::params::padPitch));
+        pitchP->addListener (&gest);
+        in (juce::MidiMessage::controllerEvent (1, upperRow1, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1, 0));
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 2, 15));
+        step();
+        const float pitch1 = rawP (tb::params::padId (0, tb::params::padPitch));
+        const int startsMid = gest.starts, endsMid = gest.ends;
+        now += 600.0; push.processPending (now);
+        check (std::abs (pitch1 - 2.4f) < 0.05f && startsMid == 1 && endsMid == 0 && gest.ends == 1,
+               "PAD page: encoder 3 = the selected pad's PITCH, one undoable gesture per move (+" + juce::String (pitch1, 2) + " st)");
+        in (juce::MidiMessage::controllerEvent (1, shift, 127));
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 2, 127));
+        step();
+        in (juce::MidiMessage::controllerEvent (1, shift, 0));
+        step();
+        const float pitch2 = rawP (tb::params::padId (0, tb::params::padPitch));
+        check (pitch2 < pitch1 && pitch1 - pitch2 < 0.05f, "SHIFT = fine, anticlockwise = down");
+        pitchP->removeListener (&gest);
+        setPadParam (r.p, 0, tb::params::padPitch, 0.0f);
+
+        in (juce::MidiMessage::controllerEvent (1, upperRow1 + 2, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1 + 2, 0));
+        setParam (r.p, tb::params::seqLength, 16.0f);
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc + 1, 3));
+        step();
+        check (push.getPage() == tb::PushController::Page::seq && juce::roundToInt (rawP (tb::params::seqLength)) == 17,
+               "SEQ page: encoder 2 = LEN, one step per 3 ticks");
+        in (juce::MidiMessage::controllerEvent (1, upperRow1 + 3, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1 + 3, 0));
+        in (juce::MidiMessage::controllerEvent (1, kFirstEncoderCc, 30));
+        step();
+        check (push.encoderLabel (0) == "GROUP A" && rawP (tb::params::groupId (0, tb::params::grpLevel)) > 0.5f, "MIX page: group A level");
+        in (juce::MidiMessage::controllerEvent (1, upperRow1 + 1, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1 + 1, 0));
+        step();
+        const auto lpfOn = tb::fx::paramId (0, tb::fx::lpf);
+        const bool lpfBefore = rawP (lpfOn) > 0.5f;
+        in (juce::MidiMessage::controllerEvent (1, lowerRow1, 127)); in (juce::MidiMessage::controllerEvent (1, lowerRow1, 0));
+        step();
+        check (push.encoderLabel (0).startsWith ("LPF") && (rawP (lpfOn) > 0.5f) != lpfBefore,
+               "FX page: encoders = the group's effects, the key under each switches it");
+        setParam (r.p, lpfOn, 0.0f);
+        {
+            // A momentary effect: on while its key is held, and a key pressed on another page switches nothing off.
+            r.p.setFxLocked (tb::fx::stutter, false);
+            const auto stOn = tb::fx::paramId (0, tb::fx::stutter);
+            in (juce::MidiMessage::controllerEvent (1, lowerRow1 + 5, 127));
+            step();
+            const bool heldOn = rawP (stOn) > 0.5f;
+            in (juce::MidiMessage::controllerEvent (1, upperRow1, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1, 0));   // PAD page
+            in (juce::MidiMessage::controllerEvent (1, lowerRow1 + 5, 0));
+            step();
+            const bool releasedOff = rawP (stOn) < 0.5f;
+            setParam (r.p, stOn, 1.0f);
+            in (juce::MidiMessage::controllerEvent (1, lowerRow1 + 5, 127)); in (juce::MidiMessage::controllerEvent (1, lowerRow1 + 5, 0));
+            step();
+            check (heldOn && releasedOff && rawP (stOn) > 0.5f,
+                   "momentary FX keys: on while held, off on release even after a page change; keys on other pages switch nothing off");
+            setParam (r.p, stOn, 0.0f);
+            in (juce::MidiMessage::controllerEvent (1, upperRow1 + 1, 127)); in (juce::MidiMessage::controllerEvent (1, upperRow1 + 1, 0));
+            step();
+        }
+        setParam (r.p, tb::params::groupId (0, tb::params::grpLevel), 0.0f);
+        in (juce::MidiMessage::controllerEvent (1, kMasterEncoderCc, 10));
+        const float mg0 = rawP (tb::params::masterGain);
+        step();
+        check (rawP (tb::params::masterGain) > mg0, "the master encoder = master level");
+        setParam (r.p, tb::params::masterGain, 0.0f);
+
+        // Touch strip = crossfader, only while touched.
+        setParam (r.p, tb::params::xfade, 0.5f);
+        in (juce::MidiMessage::noteOn (1, kStripTouchNote, (juce::uint8) 127));
+        in (juce::MidiMessage::pitchWheel (1, 16383));
+        step();
+        const float xf = rawP (tb::params::xfade);
+        in (juce::MidiMessage::noteOff (1, kStripTouchNote));
+        in (juce::MidiMessage::pitchWheel (1, 8192));
+        step();
+        check (xf > 0.99f && rawP (tb::params::xfade) > 0.99f, "touch strip = A/B crossfader while touched (the spring back on release is ignored)");
+        setParam (r.p, tb::params::xfade, 0.5f);
+
+        // Buttons.
+        in (juce::MidiMessage::controllerEvent (1, sceneTop - 1, 127));
+        step();
+        const bool fillOn = rawP (tb::params::seqFill) > 0.5f;
+        in (juce::MidiMessage::controllerEvent (1, sceneTop - 1, 0));
+        step();
+        check (fillOn && rawP (tb::params::seqFill) < 0.5f, "scene key 2 = FILL while held");
+        in (juce::MidiMessage::controllerEvent (1, down, 127)); in (juce::MidiMessage::controllerEvent (1, down, 0));
+        step();
+        const bool toB = juce::roundToInt (rawP (tb::params::sceneView)) == 1 && push.getSelectedPad() == 16;
+        in (juce::MidiMessage::controllerEvent (1, up, 127)); in (juce::MidiMessage::controllerEvent (1, up, 0));
+        in (juce::MidiMessage::controllerEvent (1, right, 127)); in (juce::MidiMessage::controllerEvent (1, right, 0));
+        step();
+        check (toB && juce::roundToInt (rawP (tb::params::sceneView)) == 0 && push.getSelectedPad() == 1, "down / up = scene B / A, > = next pad");
+        in (juce::MidiMessage::controllerEvent (1, fixedLength, 127)); in (juce::MidiMessage::controllerEvent (1, fixedLength, 0));
+        step();
+        check (juce::roundToInt (rawP (tb::params::seqLength)) == 32, "FIXED LENGTH steps LEN 8 / 16 / 32");
+        setParam (r.p, tb::params::seqLength, 16.0f);
+        in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0));
+        step();
+        check (push.getLayout() == tb::PushController::Layout::pads && push.padAt (3, 0) == 0 && push.padAt (3, 1) == 0 && push.padAt (0, 7) == 15,
+               "LAYOUT: the bottom half becomes the scene on view as big pads");
+        in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0));
+        step();
+        in (juce::MidiMessage::controllerEvent (1, duplicate, 127));
+        seq.clearAll();
+        { tb::SeqStep st; st.on = true; seq.set (5, 3, st); }
+        in (juce::MidiMessage::noteOn (1, padNote (6, 1), (juce::uint8) 100));     // pad 06
+        step();
+        in (juce::MidiMessage::noteOff (1, padNote (6, 1)));
+        in (juce::MidiMessage::controllerEvent (1, duplicate, 0));
+        step();
+        check (seq.get (1, 3).on && drainPads().empty(), "DUPLICATE + pad copies that pad's lane onto the selected pad");
+
+        // Leaving User mode lets go of everything.
+        in (juce::MidiMessage::controllerEvent (1, sceneTop - 1, 127));             // FILL held
+        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
+        step();
+        drainPads();
+        rec.msgs.clear();
+        in (pushSysex ({ 0x0A, 0x00 }));
+        ev = drainPads();
+        step(3);
+        check (! push.isUserMode() && ev.size() == 1 && ! ev[0].noteOn && rawP (tb::params::seqFill) < 0.5f && rec.count (false) == 0,
+               "USER again (Live mode): held pads released, FILL let go, no more lights");
+        in (pushSysex ({ 0x0A, 0x01 }));
+        step();
+        check (push.isActive() && rec.count (false) >= 64, "back in User mode: everything redrawn");
+
+        // Two instances: the last one touched owns Push.
+        {
+            Rig r2;
+            auto& push2 = r2.p.getPush();
+            push2.useHubForTesting (hub);
+            drainPads();
+            rec.msgs.clear();
+            in (juce::MidiMessage::noteOn (1, padNote (7, 3), (juce::uint8) 100));
+            in (juce::MidiMessage::noteOff (1, padNote (7, 3)));
+            tb::PadUiEvent e; int n2 = 0;
+            while (r2.p.getBridge().controllerPadEvents.pop (e)) ++n2;
+            now += 25.0; push.processPending (now); push.tick (now);
+            check (push2.isOwner() && ! push.isOwner() && n2 == 2 && drainPads().empty() && rec.count (false) == 0,
+                   "two instances: the one you touched last gets Push's pads; the other goes quiet");
+            push.claim();
+            check (push.isOwner() && ! push2.isOwner(), "clicking the first one's window takes Push back");
+        }
+        check (push.isOwner(), "closing the other instance leaves Push with this one");
+
+        // Without the mode echo, the USER key itself is followed.
+        {
+            Rig r3;
+            auto hub3 = std::make_shared<tb::PushHub> (false);
+            PushRec rec3;
+            hub3->setSinkForTesting (&rec3);
+            r3.p.getPush().useHubForTesting (hub3);
+            hub3->dispatch (juce::MidiMessage::controllerEvent (1, user, 127));
+            const bool on = r3.p.getPush().isUserMode();
+            hub3->dispatch (juce::MidiMessage::controllerEvent (1, user, 0));
+            hub3->dispatch (juce::MidiMessage::controllerEvent (1, user, 127));
+            check (on && ! r3.p.getPush().isUserMode(), "if Push doesn't echo the mode, the USER key toggles it");
+        }
+
+        // Saved with the set.
+        {
+            juce::MemoryBlock blob;
+            r.p.getStateInformation (blob);
+            const auto xml = juce::AudioProcessor::getXmlFromBinary (blob.getData(), (int) blob.getSize());
+            check (xml != nullptr && xml->getChildByName ("PUSH") != nullptr && xml->getChildByName ("PUSH")->getBoolAttribute ("enabled"),
+                   "Push 3 mode is saved with the set");
+        }
+        hub->setSinkForTesting (nullptr);
+    }
+
+    void testPushView()
+    {
+        using namespace tb::push;
+        std::cout << "\n== 0.15: Push 3 and the plugin window ==" << std::endl;
+        Rig r;
+        auto hub = std::make_shared<tb::PushHub> (false);
+        PushRec rec;
+        hub->setSinkForTesting (&rec);
+        auto& push = r.p.getPush();
+        push.useHubForTesting (hub);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (r.p.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        tb::ui::PadGrid* grid = nullptr;
+        std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+        {
+            if (auto* g = dynamic_cast<tb::ui::PadGrid*> (&c)) grid = g;
+            for (auto* child : c.getChildren()) find (*child);
+        };
+        find (*ed);
+        if (grid == nullptr) { check (false, "found the pad grid"); return; }
+        hub->dispatch (pushSysex ({ 0x0A, 0x01 }));
+        hub->dispatch (juce::MidiMessage::controllerEvent (1, shift, 127));
+        hub->dispatch (juce::MidiMessage::noteOn (1, padNote (5, 6), (juce::uint8) 100));    // B11
+        push.processPending (juce::Time::getMillisecondCounterHiRes());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        check (grid->getSelectedPad() == 26, "a pad picked on Push is selected in the plugin window, scene B and all (" + tb::padLabel (grid->getSelectedPad()) + ")");
+        grid->setSelectedPad (19);
+        check (push.getSelectedPad() == 19, "...and a pad picked in the window is the one Push edits");
+        hub->dispatch (juce::MidiMessage::controllerEvent (1, shift, 0));
+        auto* other = std::make_unique<TwistedBreaksProcessor>().release();
+        std::unique_ptr<TwistedBreaksProcessor> otherOwner (other);
+        other->getPush().useHubForTesting (hub);
+        check (! push.isOwner(), "(another instance took Push)");
+        juce::ModifierKeys mods;
+        tb::ui::MainView* mv = nullptr;
+        std::function<void (juce::Component&)> findMv = [&] (juce::Component& c)
+        {
+            if (auto* m = dynamic_cast<tb::ui::MainView*> (&c)) mv = m;
+            for (auto* child : c.getChildren()) findMv (*child);
+        };
+        findMv (*ed);
+        if (auto* comp = mv)
+        {
+            const auto pos = comp->getLocalBounds().getCentre().toFloat();
+            juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), pos, mods, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                comp, comp, juce::Time::getCurrentTime(), pos, juce::Time::getCurrentTime(), 1, false);
+            comp->mouseDown (e);
+        }
+        check (push.isOwner(), "clicking in this plugin window takes Push back");
+        otherOwner.reset();
+        ed.reset();
+        hub->setSinkForTesting (nullptr);
+    }
+
+    void testPressure()
+    {
+        std::cout << "\n== 0.15: pad pressure (PadVoice) ==" << std::endl;
+        auto make = [] (std::function<float (int)> f, int n)
+        {
+            tb::SampleBuffer::Ptr b = new tb::SampleBuffer();
+            b->audio.setSize (1, n);
+            for (int i = 0; i < n; ++i) b->audio.setSample (0, i, f (i));
+            b->sourceSampleRate = kSr;
+            return b;
+        };
+        auto render = [] (const tb::SampleBuffer::Ptr& b, float amount, int target, int n, bool loop = false)
+        {
+            tb::PadVoice v;
+            v.prepare (kSr);
+            tb::PadVoice::Settings s;
+            s.regionStart = 0; s.regionEnd = b->getNumSamples(); s.loop = loop;
+            v.start (b, s, 1.0f);
+            juce::AudioBuffer<float> out (2, n);
+            out.clear();
+            for (int pos = 0; pos < n; pos += kBlock)
+            {
+                v.setPressure (amount, target, 6000.0);
+                v.renderAdding (out, pos, juce::jmin (kBlock, n - pos));
+            }
+            return out;
+        };
+        auto hf = [] (const juce::AudioBuffer<float>& a)
+        {
+            double e = 0.0;
+            for (int i = 1000; i < a.getNumSamples(); ++i) { const double d = a.getSample (0, i) - a.getSample (0, i - 1); e += d * d; }
+            return e;
+        };
+        const int n = 24000;
+        auto noise = make ([] (int i) { return (float) (((i * 1103515245 + 12345) >> 8) & 0xffff) / 32768.0f - 1.0f; }, n + 100);
+        const double open = hf (render (noise, 0.0f, tb::params::pressFilter, n)), closed = hf (render (noise, 1.0f, tb::params::pressFilter, n));
+        check (closed < open * 0.05, "FILTER: full pressure closes a low-pass on that pad (" + juce::String (closed / open, 4) + " of the top end left)");
+
+        auto quiet = make ([] (int i) { return 0.05f * std::sin (i * 0.05f); }, n + 100);
+        const float dry = peakOf (render (quiet, 0.0f, tb::params::pressDrive, n)), wet = peakOf (render (quiet, 1.0f, tb::params::pressDrive, n));
+        check (wet > dry * 4.0f && wet <= 1.0f, "DRIVE: pressure pushes it into saturation (quiet parts come up, peaks stay under 0 dBFS)");
+
+        auto ramp = make ([] (int i) { return (float) i / 100000.0f; }, 100000);
+        const auto bent = render (ramp, 1.0f, tb::params::pressPitch, 4800);
+        check (std::abs (bent.getSample (0, 4000) - 2000.0f / 100000.0f) < 0.0005f, "PITCH: full pressure plays it an octave down (half speed)");
+
+        const auto st = render (ramp, 0.3f, tb::params::pressStutter, 20000);
+        // From the press (sample 0), a 1/16 (6000 samples) slice repeats: sample 6100 reads what 100 did.
+        check (std::abs (st.getSample (0, 6100) - st.getSample (0, 100)) < 0.0002f && std::abs (st.getSample (0, 12100) - st.getSample (0, 100)) < 0.0002f,
+               "STUTTER: pressure repeats a 1/16 slice from where the press landed");
+        check (std::abs (st.getSample (0, 1) - 1.0f / 100000.0f) < 1.0e-6f && std::abs (st.getSample (0, 3000) - 3000.0f / 100000.0f) < 1.0e-6f,
+               "STUTTER engages without a dip: the first pass plays at full level");
+        const auto off = render (ramp, 1.0f, tb::params::pressOff, 4800);
+        check (std::abs (off.getSample (0, 4000) - 4000.0f / 100000.0f) < 0.0005f, "OFF: pressure does nothing");
+    }
+
     //==========================================================================
     //  PHASE 13: Scene A / B + crossfader
     //==========================================================================
@@ -3757,7 +4245,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1065 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1097 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -3919,7 +4407,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -4127,7 +4615,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -4407,7 +4895,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1065, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -5038,6 +5526,9 @@ int main (int argc, char* argv[])
         testSceneView();
         testSeqPads();
         testSeqPadView();
+        testPush3();
+        testPushView();
+        testPressure();
         testEditorDrivesState();
         testRealtimeSafety();
 

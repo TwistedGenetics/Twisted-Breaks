@@ -409,6 +409,33 @@ Hand-off between breaks at slice points (spec addition A1 in
   shift `start` / ends by the jump; Live starting or
   stopping (a clock domain change) ends launched sequences.
 
+## 6m. Push 3 mode (0.15, spec addition A7)
+
+* `PushProtocol.h`: Push 2/3 User-mode numbers (pads 36-99 row-major from
+  bottom left, button CCs, relative encoders 71-79 with touch notes 0-8,
+  strip note 12 + pitch bend, sysex header 00 21 1D 01 01, mode echo 0x0A,
+  palette read 0x04) and nearest-colour mapping onto Push's own palette.
+* `PushHub` (one per process, `shared()`): opens the User port by name,
+  retries every 2 s, dispatches MIDI to the owning `PushController` under a
+  lock (never the audio thread) and drops sends from non-owners. Owner =
+  the instance whose window was clicked last (`MainView` mouse listener ->
+  `claim()`).
+* `PushController` (per instance): on the MIDI thread it follows User mode
+  (Push's mode echo, or the USER key if there is none), plays pads into
+  `bridge.controllerPadEvents` (its own SPSC queue; the engine drains it
+  after the UI queue, same `recordHit` / `triggerPad` path) and writes
+  `bridge.padPressure`; encoder / jog ticks go to atomics, everything else
+  into an ordered SPSC inbox. A 50 Hz message-thread timer drains it
+  (selection, steps, parameters with gestures, FILL / MUTATE / RESAMPLE)
+  and diffs the 64 pad + button LEDs against what was last sent (full
+  redraw on entering User mode and every 5 s). Leaving User mode or losing
+  ownership releases held pads, FILL, gestures and held steps.
+* Pressure: the engine smooths `padPressure` per block and calls
+  `PadVoice::setPressure` with the pad's `press` parameter (kV17): 2-pole
+  low-pass 18 kHz -> 300 Hz, tanh drive, stutter (1/16, 1/32, 1/64 from the
+  press point, 32-sample edges) or pitch down an octave. Synced loops skip
+  `syncTo` while stuttering or bent and re-lock afterwards.
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -597,4 +624,5 @@ Ableton stores in the `.als` file:
 | **11 ✅** | Performance macros: DESTROY, AMEN MANGLE, REWIND, DARKEN, TAPE STOP, PITCH DIVE, JUNGLE ROLL, SCI-FI; AMOUNT (mild .. hard), GROUP, LATCH, MIDI E4-B4 | 441/441 checks: every macro engages exactly its recipe in every group with its settings and releases; AMOUNT mild .. hard; single group; borrowed effects return exactly; MIDI hold / latch; DARKEN measured on noise; snapshots skip them; UI |
 | **12 ✅** | RESAMPLE (master or a group, 1-8 bars from the bar line, onto a pad as a synced, sliced loop, saved as WAV) + vintage CHARACTER per pad (CLEAN, SP-1200, MPC60, S950, LO-FI) | 464/464 checks: character read path (bit grid, machine-rate steps, pitched-down holds twice as long, output filters measured), 12-bit values through a pad; the take equals one bar of the output from the bar-line sample, 24-bit WAV, loaded as a synced loop, sliced, group-only take, stopped / NOW, cancel, parameter, reload from the set; UI |
 | **0.14 ✅** | Sequence pads (A6); 0.14.1 phase-locks launched lanes to Live's playhead: SEQ ONE / SEQ LOOP, LAUNCH, per-pad LEN, stop / restart, SWAP between sequences (STEP / 1/16 / BEAT / BAR, SAME STEP / STEP 1), mixed groups | 507/507 checks: launch on NOW / 1/16 / BEAT / BAR mid-block, ONE vs LOOP, idle until hit, stop + cancel, SEQ ONE restart, SEQ LEN, velocity, conditions from the launch, free clock, SWAP at STEP / 1/16 / BEAT / BAR with no doubled or missing step, SAME STEP / STEP 1, mixed group, choke, Live stop, loop-brace wrap, state, UI |
+| **0.15 ✅** | Push 3 mode (A7): User-mode grid (32 pads + 32 steps / big pads), step edit, encoder pages, touch-strip crossfader, buttons, lights on Push's palette, instance ownership; per-pad pressure | 556/556 checks: port naming, palette read + mapping, mode echo / USER fallback, pad play + velocity + A/B layout, selection both ways, pressure, modifiers, step tap / edit / range / delete, pages + gestures + fine, strip, buttons, LED states + diffing, leaving User mode, two instances, state; pressure FILTER / DRIVE / PITCH / STUTTER / OFF |
 | **13 ✅** | Scene A / B (32 pads, each scene its own pads + patterns), crossfader (SMOOTH / SHARP, CUT keys, automatable), VIEW A / B (parameter), notes follow the view, iRig follows the view | 485/485 checks: both scenes play at once; crossfader gains (centre, ends, SMOOTH 3/4, SHARP edge), CUT; view-aware MIDI, learned notes; snapshots / state with scene B, old sets open with B empty; SPREAD stays in its scene; UI view switch keeps the position, sequencer follows, fader drag / double-click, CUT |

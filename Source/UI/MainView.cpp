@@ -155,6 +155,25 @@ namespace tb::ui
                              : String();
         if (msg != message) { message = msg; changed = true; }
 
+        // Push 3 mode.
+        auto& push = processor.getPush();
+        const bool ps = push.isActive();
+        String c1, v1, c2, v2;
+        if (ps)
+        {
+            c1 = "PUSH 3  -  " + String (push.isEditingSteps() ? "STEP EDIT" : PushController::pageName (push.getPage()))
+                 + (push.getLayout() == PushController::Layout::pads ? "  -  PADS" : "");
+            v1 = "PAD " + padLabel (push.getSelectedPad());
+            const int e = push.getActiveEncoder();
+            if (e >= 0) { c2 = push.encoderLabel (e); v2 = push.encoderValue (e); }
+            else        { c2 = "LAST FROM PUSH"; v2 = push.getLastInput(); }
+        }
+        if (ps != pushShown || c1 != pushCaption || v1 != pushValue || c2 != pushCaption2 || v2 != pushValue2)
+        {
+            pushShown = ps; pushCaption = c1; pushValue = v1; pushCaption2 = c2; pushValue2 = v2;
+            changed = true;
+        }
+
         if (note != lastNote || vel != lastVel || selectedPad != selPad || sNote != selNote)
         {
             lastNote = note; lastVel = vel; selPad = selectedPad; selNote = sNote;
@@ -186,6 +205,12 @@ namespace tb::ui
 
         auto noteName = [] (int n) { return n < 0 ? String ("---") : MidiMessage::getMidiNoteName (n, true, true, 3) + " (" + String (n) + ")"; };
 
+        if (pushShown)
+        {
+            readout (b.removeFromLeft (b.getWidth() * 0.5f), pushCaption, pushValue);
+            readout (b, pushCaption2, pushValue2);
+            return;
+        }
         readout (b.removeFromLeft (b.getWidth() * 0.5f), "LAST MIDI NOTE IN",
                  lastNote < 0 ? String ("--- waiting ---") : noteName (lastNote) + "  v" + String (lastVel));
         if (message.isNotEmpty())
@@ -302,8 +327,11 @@ namespace tb::ui
             sliceSeq.setPad (pad);
             snapshotPanel.setSelectedPad (pad);
             resamplePanel.setSelectedPad (pad);
+            processor.getPush().setSelectedPad (pad);
             status.refresh (pad);
         };
+        // Touching this window gives Push to this instance (A7).
+        addMouseListener (this, true);
 
         shownNoteMapVersion = p.getEngine().getNoteMapVersion();
         shownSeqVersion     = p.getBridge().seq.getVersion();
@@ -351,6 +379,16 @@ namespace tb::ui
     {
         padGrid.refresh();
         transportDisplay.refresh();
+        // A pad picked on Push (before the scene view below, so a pad on the
+        // other scene is kept rather than replaced by the same position).
+        {
+            auto& push = processor.getPush();
+            if (push.getSelectionVersion() != shownPushSelection)
+            {
+                shownPushSelection = push.getSelectionVersion();
+                if (push.getSelectedPad() != padGrid.getSelectedPad()) padGrid.setSelectedPad (push.getSelectedPad());
+            }
+        }
         // Scene view (the VIEW keys, automation or a MIDI-mapped control): show
         // the other 16 pads, keeping the same pad position selected.
         sceneStrip.refresh();
@@ -397,9 +435,16 @@ namespace tb::ui
         panicButton.tick();
 
         auto& lights = processor.getLights();
-        lightsKey.setToggleState (lights.isConnected(), dontSendNotification);
-        lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected()));
+        auto& push = processor.getPush();
+        lightsKey.setToggleState (lights.isConnected() || push.isActive(), dontSendNotification);
+        lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected())
+                               || (push.isEnabled() && ! push.isConnected()));
         lightsKey.tick();
+    }
+
+    void MainView::mouseDown (const MouseEvent&)
+    {
+        processor.getPush().claim();
     }
 
     void MainView::showLightsMenu()
@@ -427,6 +472,38 @@ namespace tb::ui
         m.addItem ("Forget learned layout", lights.hasLearnedLayout(), false, [&lights] { lights.forgetLearnedLayout(); });
         m.addItem ("Test lights", on, false, [&lights] { lights.runTest(); });
         m.addItem ("Swap red / green", true, lights.getSwapColours(), [&lights] { lights.setSwapColours (! lights.getSwapColours()); });
+
+        // ---- A7: Push 3 mode.
+        auto& push = processor.getPush();
+        m.addSeparator();
+        m.addSectionHeader ("PUSH 3 - press USER on Push to play Twisted Breaks from it");
+        m.addItem ("Push 3 mode", true, push.isEnabled(), [&push] { push.setEnabled (! push.isEnabled()); push.claim(); });
+        if (push.isEnabled())
+        {
+            String st;
+            if (! push.isConnected())    st = "Push not found - plug it in (User port)";
+            else if (! push.isOwner())   st = "Another Twisted Breaks has Push - click this window to take it";
+            else if (! push.isUserMode()) st = "Connected (" + push.getPortName() + ") - press USER on Push";
+            else                          st = "In User mode on " + push.getPortName();
+            m.addItem (st, false, false, nullptr);
+        }
+        {
+            const int pad = padGrid.getSelectedPad();
+            PopupMenu press;
+            const auto id = params::padId (pad, params::padPress);
+            const int cur = roundToInt (processor.getParameters().getRawParameterValue (id)->load());
+            for (int i = 0; i < 5; ++i)
+                press.addItem (String (params::kPressNames[i]).toUpperCase(), true, i == cur, [this, id, i]
+                {
+                    if (auto* prm = processor.getParameters().getParameter (id))
+                    {
+                        prm->beginChangeGesture();
+                        prm->setValueNotifyingHost (prm->convertTo0to1 ((float) i));
+                        prm->endChangeGesture();
+                    }
+                });
+            m.addSubMenu ("Pad " + padLabel (pad) + " pressure", press);
+        }
 
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
     }

@@ -1,4 +1,5 @@
 #include "Engine/PadVoice.h"
+#include "Core/Parameters.h"
 #include <cmath>
 
 namespace tb
@@ -166,6 +167,8 @@ namespace tb
         characterIndex = -1;
         setCharacter (s.character);
         lp1L = lp2L = lp1R = lp2R = 0.0f;
+        pressAmount = 0.0f; pressCoef = 0.0f; driveMix = 0.0f; pitchMul = 1.0; stuttering = false;
+        offGrid = false; snapCountdown = 0;
         velocityGain = juce::jlimit (0.0f, 1.0f, level);
         releaseGain  = 1.0f;
         releaseStep  = 1.0f / juce::jmax (1.0f, (float) (hostRate * 0.005));
@@ -233,9 +236,48 @@ namespace tb
         }
     }
 
+    void PadVoice::setPressure (float amount, int target, double sixteenthSamples) noexcept
+    {
+        amount = juce::jlimit (0.0f, 1.0f, amount);
+        if (target != pressTarget)
+        {
+            pressTarget = target;          // (the filter state tracks the input while open: no reset needed)
+            stuttering = false;
+        }
+        if (target == params::pressOff) amount = 0.0f;
+        pressAmount = amount;
+
+        // FILTER: cutoff 18 kHz (no pressure) .. 300 Hz (full).
+        if (target == params::pressFilter && amount > 0.0f)
+        {
+            const double fc = 18000.0 * std::pow (300.0 / 18000.0, (double) amount);
+            pressCoef = (float) (1.0 - std::exp (-juce::MathConstants<double>::twoPi * juce::jmin (fc, hostRate * 0.45) / hostRate));
+        }
+        else pressCoef = 0.0f;
+
+        // DRIVE: up to x16 into tanh, scaled so a -6 dBFS peak stays where it was.
+        driveMix  = target == params::pressDrive ? juce::jmin (1.0f, amount * 4.0f) : 0.0f;
+        driveGain = 1.0f + 15.0f * amount;
+        driveNorm = 0.5f / std::tanh (driveGain * 0.5f);
+
+        // PITCH: down to an octave.
+        pitchMul = target == params::pressPitch ? std::pow (2.0, -(double) amount) : 1.0;
+
+        // STUTTER: from 10 % pressure, from where the playhead is right then.
+        if (target == params::pressStutter && amount > 0.1f)
+        {
+            const double div = amount > 0.85f ? 0.25 : (amount > 0.5f ? 0.5 : 1.0);
+            stutterLen = juce::jmax (64, (int) std::lround (sixteenthSamples * div));
+            if (! stuttering) { stuttering = true; stutterWrapped = false; stutterAnchor = position; stutterCount = 0; }
+        }
+        else if (amount < 0.05f || target != params::pressStutter) stuttering = false;
+        if (stuttering || pitchMul < 0.9999) offGrid = true;
+    }
+
     void PadVoice::syncTo (double ppq) noexcept
     {
         if (! active || ! looping || syncPeriod <= 0.0) return;
+        if (stuttering || pitchMul < 0.9999) return;     // let off the grid while pressed (A7)
 
         const double len     = (double) (regionEnd - regionStart);
         const double desired = phaseLockedPosition (ppq);
@@ -247,7 +289,16 @@ namespace tb
         // sample. Only a tempo change, a loop-brace wrap or a relocate moves
         // it by more — then snap back onto the grid.
         if (std::abs (err) > 2.0)
-            position = desired;
+        {
+            if (offGrid)
+            {
+                // Back from a stutter / bend: fade out over 32 samples, jump, fade in (no click).
+                snapOffset = err;
+                snapCountdown = kSnapFade;
+            }
+            else position = desired;
+        }
+        offGrid = false;
     }
 
     void PadVoice::release (float fadeMs) noexcept
@@ -286,7 +337,28 @@ namespace tb
 
         for (int i = startSample; i < startSample + numSamples; ++i)
         {
-            const double inc = increment.getNextValue();
+            const double inc = increment.getNextValue() * pitchMul;
+
+            // A7 STUTTER: jump back to where the press bit, with 32-sample edges.
+            float stutterEnv = 1.0f;
+            if (stuttering)
+            {
+                if (stutterCount >= stutterLen) { position = stutterAnchor; stutterCount = 0; stutterWrapped = true; }
+                const int edge = juce::jmin (32, stutterLen / 4);
+                const float out = (float) (stutterLen - stutterCount) / (float) edge;
+                const float in  = stutterWrapped ? (float) (stutterCount + 1) / (float) edge : 1.0f;   // the first pass is already playing
+                stutterEnv = juce::jmin (1.0f, in, out);
+                ++stutterCount;
+            }
+            if (snapCountdown > 0)
+            {
+                stutterEnv *= (float) snapCountdown / (float) kSnapFade;
+                if (--snapCountdown == 0)
+                {
+                    position += snapOffset;      // back on the grid (the loop wrap below keeps it in range)
+                    fadeIn = 0.0f;
+                }
+            }
             float env = fadeIn * velocityGain;
             if (fadeIn < 1.0f) fadeIn = juce::jmin (1.0f, fadeIn + fadeInStep);
 
@@ -336,6 +408,23 @@ namespace tb
                 lp1L += lpCoef * (l - lp1L);  lp2L += lpCoef * (lp1L - lp2L);  l = lp2L;
                 lp1R += lpCoef * (r - lp1R);  lp2R += lpCoef * (lp1R - lp2R);  r = lp2R;
             }
+
+            // A7 pressure: FILTER / DRIVE.
+            if (pressCoef > 0.0f)
+            {
+                pf1L += pressCoef * (l - pf1L);  pf2L += pressCoef * (pf1L - pf2L);  l = pf2L;
+                pf1R += pressCoef * (r - pf1R);  pf2R += pressCoef * (pf1R - pf2R);  r = pf2R;
+            }
+            else
+            {
+                pf1L = pf2L = l;  pf1R = pf2R = r;     // ready to close without a jump
+            }
+            if (driveMix > 0.0f)
+            {
+                l += driveMix * (std::tanh (driveGain * l) * driveNorm - l);
+                r += driveMix * (std::tanh (driveGain * r) * driveNorm - r);
+            }
+            env *= stutterEnv;
 
             if (releasing)
             {

@@ -42,6 +42,7 @@ namespace tb::params
     inline constexpr int kV14 = 14; // parameters introduced in 0.12.x (resample, character)
     inline constexpr int kV15 = 15; // parameters introduced in 0.13.x (scenes: pads 17-32, crossfader)
     inline constexpr int kV16 = 16; // parameters introduced in 0.14.x (sequence pads)
+    inline constexpr int kV17 = 17; // parameters introduced in 0.15.x (Push 3 mode)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -164,6 +165,11 @@ namespace tb::params
     inline constexpr const char* padLaunch   = "launch";   // choice: Now / 1/16 / Beat / Bar: when a hit starts the pad's sequence
     inline constexpr const char* padSeqLen   = "seqlen";   // int 0..32: 0 = the sequencer's LEN
     inline constexpr const char* padSwapFrom = "swapfrom"; // choice: Same Step / Step 1 (a sequence taking over in a SWAP group)
+
+    // ---- 0.15: Push 3 mode (A7) ---------------------------------------------------
+    inline constexpr const char* padPress = "press";       // choice: what Push 3 pad pressure does to this pad
+    enum PressTarget { pressFilter = 0, pressDrive, pressStutter, pressPitch, pressOff };   // append only
+    inline const char* const kPressNames[] = { "Filter", "Drive", "Stutter", "Pitch", "Off" };
     enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------

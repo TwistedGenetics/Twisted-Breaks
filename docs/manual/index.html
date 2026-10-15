@@ -278,7 +278,7 @@ a { color: var(--amber-ink); }
     <li><a href="#snapshots"><span>12</span>Snapshots &amp; bank</a></li>
     <li><a href="#resample"><span>13</span>Resample &amp; character</a></li>
     <li><a href="#scenes"><span>14</span>Scenes A / B</a></li>
-    <li><a href="#midi"><span>15</span>Controller &amp; MIDI</a></li>
+    <li><a href="#midi"><span>15</span>Controller, MIDI &amp; Push 3</a></li>
     <li><a href="#trouble"><span>16</span>Saving &amp; troubleshooting</a></li>
     <li><a href="#card"><span>17</span>Quick reference</a></li>
   </ol>
@@ -675,7 +675,7 @@ a { color: var(--amber-ink); }
 
 <!-- ===================================================================== 15 MIDI -->
 <section class="plate" id="midi"><span class="rivets"></span>
-  <header><h2 class="label">Controller &amp; MIDI</h2><span class="no">§ 15</span></header>
+  <header><h2 class="label">Controller, MIDI &amp; Push 3</h2><span class="no">§ 15</span></header>
   <h3>MIDI map</h3>
   <div class="tablewrap"><table>
     <thead><tr><th>Input</th><th>Range</th><th>Does</th></tr></thead>
@@ -689,6 +689,50 @@ a { color: var(--amber-ink); }
   </table></div>
   <h3>iRig Pads lights</h3>
   <p>Press <span class="key">Lights</span> in the status strip and pick your <b>iRig Pads</b> as the output. Its pads then show the scene on view: <b>green</b> while a pad plays (brightness follows the sound), <b>dim green</b> for loaded pads, <b>flashing red</b> while a SWAP hand-off is waiting. It works on the iRig's default scene; for any other layout choose <b>Learn pad layout</b> and hit each pad as it lights red. <b>Test lights</b> and <b>Swap red / green</b> are in the same menu. The layout is saved with the set.</p>
+  <h3>Push 3 mode</h3>
+  <p>With Push 3 plugged into the Mac, Twisted Breaks can take Push over completely. Press Push's <b>USER</b> key and the grid, encoders, touch strip and keys play and edit the plugin; press USER again and Push controls Live as normal. Live keeps the transport: Play and Record stay Live's.</p>
+  <ol class="steps">
+    <li><div>In Live's <b>Settings › Link, Tempo &amp; MIDI</b>, turn <b>Track</b> off for the input <b>Ableton Push 3 (User Port)</b>, so Push's User mode notes don't also reach the track and play pads twice.</div></li>
+    <li><div>In the plugin, <span class="key">Lights</span> › <b>Push 3 mode</b>. The menu shows whether Push was found.</div></li>
+    <li><div>On Push, set <b>Setup › Pads › Expression</b> to <b>Poly Aftertouch</b> for per-pad pressure.</div></li>
+    <li><div>Press <b>USER</b>. With several Twisted Breaks in a set, the one whose window you last clicked gets Push.</div></li>
+  </ol>
+  <div class="tablewrap"><table>
+    <thead><tr><th colspan="4">Scene A</th><th colspan="4">Scene B</th></tr></thead>
+    <tbody>
+      <tr><td>01</td> <td>02</td> <td>03</td> <td>04</td> <td>B01</td> <td>B02</td> <td>B03</td> <td>B04</td></tr>
+      <tr><td>05</td> <td>06</td> <td>07</td> <td>08</td> <td>B05</td> <td>B06</td> <td>B07</td> <td>B08</td></tr>
+      <tr><td>09</td> <td>10</td> <td>11</td> <td>12</td> <td>B09</td> <td>B10</td> <td>B11</td> <td>B12</td></tr>
+      <tr><td>13</td> <td>14</td> <td>15</td> <td>16</td> <td>B13</td> <td>B14</td> <td>B15</td> <td>B16</td></tr>
+      <tr><td class="num">1</td> <td class="num">2</td> <td class="num">3</td> <td class="num">4</td> <td class="num">5</td> <td class="num">6</td> <td class="num">7</td> <td class="num">8</td></tr>
+      <tr><td class="num">9</td> <td class="num">10</td> <td class="num">11</td> <td class="num">12</td> <td class="num">13</td> <td class="num">14</td> <td class="num">15</td> <td class="num">16</td></tr>
+      <tr><td class="num">17</td> <td class="num">18</td> <td class="num">19</td> <td class="num">20</td> <td class="num">21</td> <td class="num">22</td> <td class="num">23</td> <td class="num">24</td></tr>
+      <tr><td class="num">25</td> <td class="num">26</td> <td class="num">27</td> <td class="num">28</td> <td class="num">29</td> <td class="num">30</td> <td class="num">31</td> <td class="num">32</td></tr>
+    </tbody>
+  </table></div>
+  <p>The top four rows are all 32 pads, laid out like the matrix: hit one to play it (with velocity and pressure) and select it. The bottom four rows are the selected pad's 32 steps, eight to a row. Tap a step to switch it on or off. Hold a step and turn the encoders to set its VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV and COND. Hold one step and tap another to copy it across the range. <span class="key">Layout</span> swaps the bottom half for big pads of the scene on view.</p>
+  <p><b>Lights.</b> Dim amber: loaded. Amber: selected. White: playing. Green: its sequence is running. Flashing: a launch, stop or SWAP is waiting. Red: muted. On the steps: amber is on (dim if soft), white is the playhead, and nothing is lit past LEN.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Push</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td>Keys over the display 1–4</td><td>Encoder page: <b>PAD</b> (gain, pan, pitch, start, end, slice, character, pressure) · <b>FX</b> (LPF, HPF, crush, drive, tape, stutter, delay, reverb of the pad's group) · <b>SEQ</b> (step, LEN, pad LEN, launch, mutate amount / auto / at, quantise) · <b>MIX</b> (groups A–D, crossfader, curve, macro amount, master)</td></tr>
+      <tr><td>Keys under the display</td><td>FX page: switch those eight effects (momentary ones while held)</td></tr>
+      <tr><td>Encoders 1–8</td><td>The page's settings; SHIFT for fine moves. Each move is one undo step in Live.</td></tr>
+      <tr><td>Master encoder</td><td>Master level</td></tr>
+      <tr><td>Touch strip</td><td>The A / B crossfader, while you touch it</td></tr>
+      <tr><td>Column right of the pads, from the top</td><td><b>MUTATE</b> · <b>FILL</b> (hold) · <b>RESAMPLE</b> (again to cancel) · <b>VIEW</b> A / B · <b>LAYOUT</b></td></tr>
+      <tr><td>Mute / Solo + pad</td><td>Mute / solo that pad</td></tr>
+      <tr><td>Duplicate + pad</td><td>Copy that pad's lane onto the selected pad</td></tr>
+      <tr><td>Delete + pad / step</td><td>Clear that lane / step</td></tr>
+      <tr><td>Shift or Select + pad</td><td>Select it without playing</td></tr>
+      <tr><td>‹ › and the jog wheel</td><td>Previous / next pad</td></tr>
+      <tr><td>Up / Down (and Octave)</td><td>Scene A / B</td></tr>
+      <tr><td>Fixed Length</td><td>LEN 8 / 16 / 32 (SHIFT: the pad's own LEN)</td></tr>
+      <tr><td>Accent / Repeat / Undo</td><td>MUTATE / FILL / undo the last MUTATE</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Pressure</b> (each pad's <code>Pressure</code> setting, on the PAD page or <span class="key">Lights</span> › <b>Pad … pressure</b>): FILTER closes a low-pass, DRIVE saturates, STUTTER repeats a 1/16 from where you pressed (1/32 and 1/64 harder), PITCH bends down up to an octave, OFF does nothing. A synced loop you stutter or bend snaps back to the bar when you let go.</p>
+  <div class="note"><p>Push's screen stays Live's: the plugin can't draw on it. While Push is in User mode, the plugin's status strip shows the page, the selected pad and the knob you're touching, plus the last message from Push, which is handy if a key does nothing on your unit.</p></div>
   <h3>Worth mapping in Live</h3>
   <p>Press <b>⌘M</b> in Live, click the control in the plugin's device view (or its parameter in the automation chooser), then move the controller.</p>
   <div class="tablewrap"><table>
@@ -710,7 +754,7 @@ a { color: var(--amber-ink); }
 <section class="plate" id="trouble"><span class="rivets"></span>
   <header><h2 class="label">Saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
   <h3>What the Live set keeps</h3>
-  <p>All 1065 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank and the iRig light layout. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
+  <p>All 1097 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout and Push 3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>
@@ -720,6 +764,8 @@ a { color: var(--amber-ink); }
       <tr><td>Scene B is silent</td><td>Check the crossfader isn't fully on A and that no CUT key is held.</td></tr>
       <tr><td>A synced loop plays at half or double speed</td><td>Its tempo reads outside 90–180 BPM. Trim START / END to whole bars, or switch SYNC off for it.</td></tr>
       <tr><td>Sound keeps ringing</td><td>The red <span class="key red">Stop</span> button (or CC 120) stops every voice and tail and switches the effects off.</td></tr>
+      <tr><td>Push pads play twice in User mode</td><td>Turn <b>Track</b> off for Push's User Port in Live's MIDI settings (§ 15).</td></tr>
+      <tr><td>Push stays dark after USER</td><td><span class="key">Lights</span> › <b>Push 3 mode</b> must be on, and that plugin window was the last one clicked.</td></tr>
       <tr><td>The sequencer doesn't move</td><td>It follows Live's transport: press play in Live, and check <span class="key">Run</span>.</td></tr>
     </tbody>
   </table></div>
