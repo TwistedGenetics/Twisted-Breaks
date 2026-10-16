@@ -437,6 +437,42 @@ namespace tb
         startVoice (pad, level, sampleOffset);
     }
 
+    void AudioEngine::controllerSliceHit (int pad, int slice, float velocity, int sampleOffset) noexcept
+    {
+        // KEYBOARD on the Mikro (A8): slice n of the pad, straight to a voice (no SWAP / launch / slice seq).
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || padSample[(size_t) pad] == nullptr) return;
+        bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
+        padFlash[(size_t) pad] = true;
+        chokeOthers (pad, padChoke[(size_t) pad]);
+        if (slice <= 0) { startVoice (pad, levelFor (pad, velocity), sampleOffset); return; }
+        SeqStep st;
+        st.on = true;
+        st.slice = juce::jlimit (1, 16, slice);
+        const auto s = tweakedSettings (pad, st);
+        startVoice (pad, levelFor (pad, velocity), sampleOffset, -1.0, &s);
+    }
+
+    void AudioEngine::addRollEvents (int numSamples) noexcept
+    {
+        // NOTE REPEAT (A8): while held, the pad hits again on every 1/8, 1/16 or 1/32 of
+        // the clock (Live's grid, or the free clock when stopped), sample-accurately.
+        static constexpr double kRollPpq[] = { 0.5, 0.25, 0.125 };
+        if (clockDppq <= 0.0) return;
+        const double c0 = clockAt (0), c1 = clockAt (numSamples);
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const auto& r = rollRun[(size_t) p];
+            if (! r.active) continue;
+            const double step = kRollPpq[juce::jlimit (0, 2, r.rate)];
+            for (double t = std::ceil ((c0 - 1.0e-9) / step) * step; t < c1 - 1.0e-9; t += step)
+            {
+                if (t < r.skipUntil) continue;          // the press itself just played: no flam
+                const int off = juce::jlimit (0, numSamples - 1, (int) std::llround ((t - c0) / clockDppq));
+                insertEvent ({ off, p, r.velocity, SeqKind::rollHit, (uint64_t) r.slice, 0, -1, 0 });
+            }
+        }
+    }
+
     PadVoice::Settings AudioEngine::tweakedSettings (int pad, const SeqStep& st) const noexcept
     {
         PadVoice::Settings s = padSettings[(size_t) pad];
@@ -699,6 +735,7 @@ namespace tb
             for (auto& v : padVoices)
                 v.release();       // 5 ms fade, never a hard cut
 
+        for (auto& r : rollRun) r.active = false;
         pendingSwap.fill ({});
         swapPlaying.fill (-1);
         for (int p = 0; p < kNumPads; ++p)
@@ -1515,6 +1552,29 @@ namespace tb
             if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
             else           releasePad (ev.pad);
         }
+        // ---- A8: the Mikro MK3 (pads, slices, note-repeat rolls).
+        {
+            ControllerHit h;
+            while (bridge.mikroEvents.pop (h))
+            {
+                const int p = h.pad;
+                if (p < 0 || p >= kNumPads) continue;
+                switch (h.kind)
+                {
+                    case ControllerHit::padOn:     pressNow[(size_t) p] = 0.0f; recordHit (p, h.velocity, 0); triggerPad (p, h.velocity, 0); break;
+                    case ControllerHit::padOff: releasePad (p); break;
+                    case ControllerHit::sliceOn:   controllerSliceHit (p, h.slice, h.velocity, 0); break;
+                    case ControllerHit::rollOn:
+                        // A press that just played (velocity > 0 = it came with the hit) skips grid points in the next 10 ms.
+                        rollRun[(size_t) p] = { true, juce::jlimit (0, 2, (int) h.rate), juce::jmax (0.01f, std::abs (h.velocity)), h.slice,
+                                                h.velocity > 0.0f ? clockAt (0) + 0.010 * sampleRate * clockDppq : -1.0e300 };
+                        break;
+                    case ControllerHit::rollOff: rollRun[(size_t) p].active = false; break;
+                }
+            }
+            addRollEvents (numSamples);
+        }
+
         // ---- ...and pads played on a controller's own port (A7: Push 3 User mode).
         while (bridge.controllerPadEvents.pop (ev))
         {
@@ -1562,6 +1622,9 @@ namespace tb
                     case SeqKind::sliceHit:
                         if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)
                             sliceHit (e.pad, SliceStep::unpack (e.step), e.velocity, e.offset);
+                        break;
+                    case SeqKind::rollHit:
+                        if (rollRun[(size_t) e.pad].active) controllerSliceHit (e.pad, (int) e.step, e.velocity, e.offset);
                         break;
                     case SeqKind::sliceRelease:
                         if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)

@@ -43,7 +43,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 13 | Scene A / B + crossfader | **done** — 485/485 automated checks |
 | 0.14 | Sequence pads: launch a pad's sequence by hitting it, SWAP between sequences; 0.14.1: launched sequences follow Live's playhead | **done** |
 | 0.15 | Push 3 mode: play and program the plugin from Push 3 in User mode; per-pad pressure | **done** |
-| 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) before the full Mikro mode | **built** — 567/567 automated checks; waiting for the hardware test |
+| 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) | **done** — tested on Jamie's Mikro |
+| 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** — 598/598 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -150,6 +151,16 @@ Sections that aren't built yet are visibly marked offline on the panel
   crossfader; per-pad pressure goes to each pad's **Pressure** setting
   (filter, drive, stutter, pitch). Press USER again to give Push back to
   Live. In Live's MIDI settings turn **Track** off for Push's User Port.
+* **MIKRO MK3 MODE** (0.16): close NI's Maschine app, then **LIGHTS ›
+  Mikro MK3 mode**. The plugin talks to the Mikro over USB and owns its
+  pads, lights, touch strip and screen. **PAD MODE**: the 16 pads of the
+  scene on view (**GROUP** flips A / B); **STEP**: the selected pad's steps
+  (‹ › for 17-32, hold + encoder to edit); **KEYBOARD**: its 16 slices;
+  **PERFORM**: the 16 FX; **SCENE**: snapshots 1-8 (SHIFT stores). The
+  encoder + screen edit the **PLUG-IN** (pad), **SWING** (sequencer) and
+  **VOLUME** (mix) pages; the strip is the crossfader; **NOTE REPEAT**
+  rolls held pads (SHIFT: 1/8 / 1/16 / 1/32); **VARIATION** = MUTATE,
+  **TAP** = FILL, **SAMPLING** = RESAMPLE.
 * **SCENES** (0.13, the strip under the pad matrix): two decks of 16 pads,
   **A** and **B**, each with its own samples, settings and patterns, both
   playing all the time. **VIEW A / B** picks which 16 the matrix, editor,

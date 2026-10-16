@@ -112,6 +112,8 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     resampler = std::make_unique<tb::Resampler> (*this);
     push      = std::make_unique<tb::PushController> (*this);
     mikro     = std::make_unique<tb::MikroTester>();
+    mikroMode = std::make_unique<tb::MikroController> (*this);
+    mikroMode->onSettingsChanged = [this] { markStateChanged(); };
     lights.onSettingsChanged = [this] { markStateChanged(); };
     push->onSettingsChanged  = [this] { markStateChanged(); };
 }
@@ -119,6 +121,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
 {
     push.reset();      // first: it uses the mutator and resampler
+    mikroMode.reset(); // (it uses them too, and the snapshots)
     mikro.reset();
     // Frames still handed over to the audio thread (audio has stopped now).
     for (auto* f : { armedFrame.exchange (nullptr), overrideFrame.exchange (nullptr), appliedFrame.exchange (nullptr) })
@@ -503,6 +506,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (samples.toValueTree(), nullptr);
     state.appendChild (lights.toValueTree(), nullptr);
     state.appendChild (push->toValueTree(), nullptr);
+    state.appendChild (mikroMode->toValueTree(), nullptr);
 
     state.appendChild (bridge.seq.toValueTree(), nullptr);
     state.appendChild (bridge.sliceSeq.toValueTree(), nullptr);
@@ -537,6 +541,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     push->fromValueTree (state.getChildWithName (tb::PushController::pushId));
+    mikroMode->fromValueTree (state.getChildWithName (tb::MikroController::mikroId));
     bridge.seq.fromValueTree (state.getChildWithName (tb::SequencerData::seqId));
     bridge.sliceSeq.fromValueTree (state.getChildWithName (tb::SliceSeqData::sliceSeqId));
     {

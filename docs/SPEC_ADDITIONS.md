@@ -365,7 +365,30 @@ LED output matches state and only changes are sent; leaving User mode
 releases everything; two instances don't fight; no allocations on the
 audio thread; all earlier tests pass.
 
-## A8. Maschine Mikro MK3 mode (in progress)
+## A8. Maschine Mikro MK3 mode
+
+**Status: built in 0.16.0.** Step 1 (0.15.1 / 0.15.2) proved the USB route
+on Jamie's Mikro: it connected (64-byte input, 265-byte output reports),
+all 39 buttons and the pads (velocity + pressure) read as the open-source
+drivers describe, lights and screen accepted. NI's Maschine 3 app takes
+the Mikro over when it opens, so Mikro mode wants it closed. Step 2 is
+the full mode, as prompted below (built as written; KEYBOARD plays the
+selected pad's 16 slices; NOTE REPEAT rolls are a new engine feature,
+sample-accurate on Live's grid). Prompt:
+
+> When I turn on Mikro MK3 mode, the Mikro becomes a dedicated Twisted
+> Breaks controller. Its screen, pad colours and button lights all
+> belong to the plugin. PAD MODE: the 16 pads of the scene on view
+> (velocity, pressure, lit like the plugin; GROUP flips A/B). STEP: the
+> selected pad's steps (< > for 17-32, hold + encoder edits, push picks
+> the field). KEYBOARD: its slices. PERFORM: the 16 FX. Encoder + screen:
+> PLUG-IN = PAD page, SWING = SEQ page, VOLUME = MIX page; push or
+> SHIFT + turn = next parameter. Strip = crossfader (SHIFT: macro
+> amount). MUTE / SOLO / DUPLICATE / ERASE / SELECT + pad; FIXED VEL;
+> VARIATION = MUTATE; TAP = FILL; SAMPLING = RESAMPLE; NOTE REPEAT rolls
+> at 1/16 (SHIFT: 1/8, 1/32); SCENE = snapshots 1-8; PLAY lit while Live
+> plays (PLAY / REC / STOP stay Live's). One instance owns it (the one
+> clicked last); replugging just works; nothing on the audio thread.
 
 **Step 1 built in 0.15.1: the hardware test.** Jamie asked to "fully
 integrate" his Maschine Mikro MK3. Chosen route: talk to it over USB HID

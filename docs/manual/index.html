@@ -278,7 +278,7 @@ a { color: var(--amber-ink); }
     <li><a href="#snapshots"><span>12</span>Snapshots &amp; bank</a></li>
     <li><a href="#resample"><span>13</span>Resample &amp; character</a></li>
     <li><a href="#scenes"><span>14</span>Scenes A / B</a></li>
-    <li><a href="#midi"><span>15</span>Controller, MIDI &amp; Push 3</a></li>
+    <li><a href="#midi"><span>15</span>Controller, MIDI, Push &amp; Mikro</a></li>
     <li><a href="#trouble"><span>16</span>Saving &amp; troubleshooting</a></li>
     <li><a href="#card"><span>17</span>Quick reference</a></li>
   </ol>
@@ -675,7 +675,7 @@ a { color: var(--amber-ink); }
 
 <!-- ===================================================================== 15 MIDI -->
 <section class="plate" id="midi"><span class="rivets"></span>
-  <header><h2 class="label">Controller, MIDI &amp; Push 3</h2><span class="no">§ 15</span></header>
+  <header><h2 class="label">Controller, MIDI, Push &amp; Mikro</h2><span class="no">§ 15</span></header>
   <h3>MIDI map</h3>
   <div class="tablewrap"><table>
     <thead><tr><th>Input</th><th>Range</th><th>Does</th></tr></thead>
@@ -733,6 +733,31 @@ a { color: var(--amber-ink); }
   </table></div>
   <p><b>Pressure</b> (each pad's <code>Pressure</code> setting, on the PAD page or <span class="key">Lights</span> › <b>Pad … pressure</b>): FILTER closes a low-pass, DRIVE saturates, STUTTER repeats a 1/16 from where you pressed (1/32 and 1/64 harder), PITCH bends down up to an octave, OFF does nothing. A synced loop you stutter or bend snaps back to the bar when you let go.</p>
   <div class="note"><p>Push's screen stays Live's: the plugin can't draw on it. While Push is in User mode, the plugin's status strip shows the page, the selected pad and the knob you're touching, plus the last message from Push, which is handy if a key does nothing on your unit.</p></div>
+  <h3>Maschine Mikro MK3 mode</h3>
+  <p>Twisted Breaks talks to the Mikro MK3 directly over USB and owns its pads, lights, touch strip and screen. NI's Maschine app takes the Mikro over when it opens, so close it first.</p>
+  <ol class="steps">
+    <li><div>Plug the Mikro in with a data USB cable (some USB-C cables only charge), straight into the Mac.</div></li>
+    <li><div><span class="key">Lights</span> › <b>Mikro MK3 mode</b>. The pads light and the screen shows the mode and the selected pad. With several Twisted Breaks in a set, the one whose window you last clicked gets the Mikro.</div></li>
+  </ol>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Mikro</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td>Pad Mode</td><td>The 16 pads of the scene on view, laid out like the matrix (Mikro pad 13, top left, is 01). Velocity and pressure; lit like the tiles (dim: loaded, bright: selected, white: playing, green: sequence running, red: muted, flashing: waiting).</td></tr>
+      <tr><td>Group</td><td>Scene A / B</td></tr>
+      <tr><td>Step</td><td>The selected pad's steps 1–16 (‹ › for 17–32). Tap: on / off. Hold a step and turn the encoder; push the encoder for the next field (VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV, COND). Hold one and tap another to copy it across. Erase + step clears it.</td></tr>
+      <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad</td></tr>
+      <tr><td>Perform</td><td>The 16 performance FX of the selected pad's group; the encoder edits the last one you hit</td></tr>
+      <tr><td>Scene</td><td>Pads 1–8 recall snapshots 1–8 (Shift + pad stores)</td></tr>
+      <tr><td>Plug-In / Swing / Volume</td><td>Encoder page: PAD (gain, pan, pitch, start, end, slice, character, pressure …) · SEQ (step, LEN, launch, mutate …) · MIX (groups, crossfader, curve, macro, master). Turn: value. Push, or Shift + turn: next setting. The screen shows name and value.</td></tr>
+      <tr><td>Touch strip</td><td>Crossfader (Shift: macro amount)</td></tr>
+      <tr><td>Note Repeat (hold)</td><td>Held pads roll in time on Live's grid; Shift + Note Repeat: 1/8, 1/16, 1/32</td></tr>
+      <tr><td>Mute / Solo / Duplicate / Erase / Select + pad</td><td>Mute, solo, copy its lane to the selected pad, clear its lane, select without playing</td></tr>
+      <tr><td>Fixed Vel</td><td>Every hit at full velocity</td></tr>
+      <tr><td>Variation / Tap / Sampling</td><td>MUTATE (Shift: undo) / FILL while held / RESAMPLE</td></tr>
+      <tr><td>Play</td><td>Lit while Live plays (Play, Rec and Stop stay Live's)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><p>Unplug it and plug it back in at any time: it reconnects within a couple of seconds, and anything held (rolls, FILL, effects) lets go when the cable comes out. <b>Mikro MK3 test</b> in the same menu shows exactly what the Mikro sends, if something misbehaves.</p></div>
   <h3>Worth mapping in Live</h3>
   <p>Press <b>⌘M</b> in Live, click the control in the plugin's device view (or its parameter in the automation chooser), then move the controller.</p>
   <div class="tablewrap"><table>
@@ -754,7 +779,7 @@ a { color: var(--amber-ink); }
 <section class="plate" id="trouble"><span class="rivets"></span>
   <header><h2 class="label">Saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
   <h3>What the Live set keeps</h3>
-  <p>All 1097 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout and Push 3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
+  <p>All 1097 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>

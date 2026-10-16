@@ -15,6 +15,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/PushController.cpp
     ${TB_SRC}/Core/MikroUsb.cpp
     ${TB_SRC}/Core/MikroTester.cpp
+    ${TB_SRC}/Core/MikroController.cpp
     ${TB_SRC}/Core/SnapshotManager.cpp
     ${TB_SRC}/Core/BreakBank.cpp
     ${TB_SRC}/Core/Mutator.cpp

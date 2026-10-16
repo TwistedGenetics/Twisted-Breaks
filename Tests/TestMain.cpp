@@ -21,6 +21,7 @@
 #include "Core/FxDefs.h"
 #include "Core/PushController.h"
 #include "Core/MikroTester.h"
+#include "Core/MikroController.h"
 #include "Engine/PadVoice.h"
 #include <atomic>
 #include <cmath>
@@ -4269,6 +4270,277 @@ namespace
         check (tb::MikroUsb::isSupported() == isMac, "USB access is built on the Mac (elsewhere it says it's Mac only)");
     }
 
+
+    //==========================================================================
+    //  A8: Mikro MK3 mode (fake Mikro: reports in, lights / screen out)
+    //==========================================================================
+    struct MikroRec final : tb::MikroHub::Sink
+    {
+        std::vector<std::vector<uint8_t>> reports;
+        void send (const std::vector<uint8_t>& r) override { reports.push_back (r); }
+        int count (uint8_t id) const { int n = 0; for (auto& r : reports) n += (! r.empty() && r[0] == id) ? 1 : 0; return n; }
+    };
+
+    struct MikroIn
+    {
+        std::array<bool, tb::mikro::kNumButtons> buttons {};
+        int enc = 0, strip = 0;
+        std::vector<uint8_t> report() const
+        {
+            std::vector<uint8_t> r (14, 0);
+            r[0] = 0x01;
+            for (int b = 0; b < tb::mikro::kNumButtons; ++b) if (buttons[(size_t) b]) r[(size_t) (1 + b / 8)] |= (uint8_t) (1u << (b % 8));
+            r[7] = (uint8_t) (enc & 15);
+            r[10] = (uint8_t) strip;
+            return r;
+        }
+        static std::vector<uint8_t> pad (int idx, int ev, int value)
+        {
+            std::vector<uint8_t> r (64, 0);
+            r[0] = 0x02; r[1] = (uint8_t) idx; r[2] = (uint8_t) (ev | ((value >> 8) & 0x0f)); r[3] = (uint8_t) (value & 0xff);
+            return r;
+        }
+    };
+
+    void testMikroMode()
+    {
+        using namespace tb::mikro;
+        std::cout << "\n== A8: Mikro MK3 mode (fake Mikro) ==" << std::endl;
+        Rig r;
+        auto& mm = r.p.getMikroMode();
+        auto& br = r.p.getBridge();
+        auto hub = std::make_shared<tb::MikroHub> (false);
+        MikroRec rec;
+        hub->setSinkForTesting (&rec);
+        mm.useHubForTesting (hub);
+        double now = 1000.0;
+        MikroIn in;
+        auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
+        auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
+        auto press = [&] (int b) { in.buttons[(size_t) b] = true; send (in.report()); adv(); in.buttons[(size_t) b] = false; send (in.report()); adv(); };
+        auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+        auto hit = [&] (int idx, int value = 3000) { send (MikroIn::pad (idx, 0x10, value)); };
+        auto lift = [&] (int idx) { send (MikroIn::pad (idx, 0x30, 0)); };
+        auto drain = [&br] { std::vector<tb::ControllerHit> v; tb::ControllerHit h; while (br.mikroEvents.pop (h)) v.push_back (h); return v; };
+        auto rawP = [&r] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+
+        send (in.report());          // first report: the encoder's starting position
+        adv (2);
+        check (rec.count (0x80) == 1 && rec.count (0xe0) == 2 && mm.getMode() == tb::MikroController::Mode::pads && mm.paramLabel() == "GAIN",
+               "connected: lights and the screen go out at once (PADS, PAD page, GAIN)");
+        bool headLit = false;
+        for (int x = 0; x < 24; ++x) for (int y = 0; y < 7; ++y) headLit = headLit || mm.getScreen().get (x, y);
+        check (headLit, "the screen shows the mode at the top");
+        const auto n0 = rec.reports.size();
+        adv (3);
+        check (rec.reports.size() == n0, "nothing more is sent while nothing changes");
+
+        // Pads: Mikro pad 13 (top left, HID 12) = plugin pad 01; Mikro pad 1 (bottom left) = 13.
+        check (tb::MikroController::positionOf (12) == 0 && tb::MikroController::positionOf (0) == 12 && tb::MikroController::positionOf (3) == 15,
+               "the pads are laid out like the plugin's matrix (01 top left)");
+        drain();
+        hit (12, 4095); lift (12);
+        hit (0, 1024);
+        auto ev = drain();
+        check (ev.size() == 3 && ev[0].kind == tb::ControllerHit::padOn && ev[0].pad == 0 && std::abs (ev[0].velocity - 1.0f) < 1e-4f
+                 && ev[1].kind == tb::ControllerHit::padOff && ev[2].pad == 12 && std::abs (ev[2].velocity - 32.0f / 127.0f) < 1e-4f,
+               "pads play straight from the USB thread, with velocity, and release");
+        send (MikroIn::pad (0, 0x40, 2048));
+        const float pr = br.padPressure[12].load();
+        lift (0);
+        adv();
+        check (std::abs (pr - 2048.0f / 4095.0f) < 1e-3f && br.padPressure[12].load() == 0.0f && mm.getSelectedPad() == 12,
+               "pressure goes to the held pad (0 on release); a hit selects the pad");
+        drain();
+
+        // Lights follow the plugin.
+        r.load (1, writeAudio ("mikro_blip", [] { juce::AudioBuffer<float> b (1, 4800); b.clear(); for (int i = 0; i < 100; ++i) b.setSample (0, i, 0.5f); return b; }(),
+                               48000.0, Fmt::wavFloat));
+        adv();
+        check (mm.getLights().state[(size_t) (39 + 13)] == padByte (orange, 1) && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3)
+                 && mm.getLights().state[(size_t) padMode] == levelBright && mm.getLights().state[(size_t) step] == levelDim,
+               "lights: loaded pad dim orange, selected bright; PAD MODE lit, the other modes dim");
+
+        // Modifiers.
+        hold (mute, true);
+        hit (13); lift (13);
+        adv();
+        hold (mute, false);
+        check (drain().empty() && rawP (tb::params::padId (1, tb::params::padMute)) > 0.5f, "MUTE + pad mutes it (and doesn't play it)");
+        setPadParam (r.p, 1, tb::params::padMute, 0.0f);
+        press (group);
+        check (juce::roundToInt (rawP (tb::params::sceneView)) == 1 && mm.getSelectedPad() == 28, "GROUP flips to scene B (same pad position)");
+        hit (12); lift (12);
+        ev = drain();
+        check (! ev.empty() && ev[0].pad == 16, "...and the pads play scene B");
+        press (group);
+        adv();
+
+        // Encoder pages.
+        press (volume);
+        const float a0 = rawP (tb::params::groupId (0, tb::params::grpLevel));
+        in.enc = 5; send (in.report()); adv();
+        const bool levelUp = rawP (tb::params::groupId (0, tb::params::grpLevel)) > a0;
+        hold (shift, true);
+        in.enc = 6; send (in.report()); adv();
+        hold (shift, false);
+        check (levelUp && mm.paramLabel() == "GROUP B", "VOLUME = MIX page: the encoder sets GROUP A; SHIFT + turn moves to GROUP B");
+        setParam (r.p, tb::params::groupId (0, tb::params::grpLevel), 0.0f);
+        press (plugin);
+        press (encoderPress);
+        check (mm.paramLabel() == "PAN", "PLUG-IN = PAD page; pushing the encoder moves to the next setting");
+
+        // Touch strip.
+        in.strip = 200; send (in.report()); adv();
+        const float xf = rawP (tb::params::xfade);
+        in.strip = 0; send (in.report()); adv();
+        check (xf > 0.99f, "the touch strip is the crossfader");
+        setParam (r.p, tb::params::xfade, 0.5f);
+
+        // STEP mode.
+        auto& seq = br.seq;
+        seq.clearAll();
+        press (step);
+        const int sp = mm.getSelectedPad();
+        hit (12); lift (12);                       // step 1
+        adv();
+        const bool on1 = seq.get (sp, 0).on;
+        hit (13);                                  // hold step 2
+        adv();
+        in.enc = 9; send (in.report()); adv();    // +3
+        press (encoderPress);                      // -> CHANCE
+        in.enc = 8; send (in.report()); adv();    // -1
+        lift (13);
+        adv();
+        const auto s2 = seq.get (sp, 1);
+        check (mm.getMode() == tb::MikroController::Mode::steps && on1 && s2.on && s2.velocity == 103 && s2.probability == 99 && drain().empty(),
+               "STEP: pads = steps (tap = on), hold + encoder edits VEL, push = next field (CHANCE)");
+        press (right);
+        hit (12); lift (12);
+        adv();
+        check (seq.get (sp, 16).on && mm.getStepPage() == 1, "> = steps 17-32");
+        const bool pastLenOff = mm.getLights().state[(size_t) (39 + 12)] == 0;      // step 17 > LEN 16
+        press (left);
+        check (pastLenOff && mm.getLights().state[(size_t) (39 + 12)] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
+
+        // KEYBOARD = slices.
+        press (keyboard);
+        hit (12); lift (12);
+        hit (0); lift (0);
+        ev = drain();
+        check (ev.size() == 2 && ev[0].kind == tb::ControllerHit::sliceOn && ev[0].slice == 1 && ev[0].pad == sp && ev[1].slice == 13,
+               "KEYBOARD: the pads play the selected pad's slices 1-16");
+
+        // NOTE REPEAT.
+        press (padMode);
+        hold (noteRepeat, true);
+        hit (12);
+        ev = drain();
+        lift (12);
+        auto ev2 = drain();
+        hold (noteRepeat, false);
+        check (ev.size() == 2 && ev[0].kind == tb::ControllerHit::padOn && ev[1].kind == tb::ControllerHit::rollOn && ev[1].rate == 1
+                 && ev2.size() == 2 && ev2[0].kind == tb::ControllerHit::rollOff,
+               "NOTE REPEAT held: a pad rolls (1/16) until it's let go");
+        hold (shift, true); press (noteRepeat); hold (shift, false);
+        hold (noteRepeat, true); hit (12);
+        ev = drain();
+        lift (12); hold (noteRepeat, false); drain();
+        check (ev.size() == 2 && ev[1].rate == 2, "SHIFT + NOTE REPEAT steps the rate (1/32)");
+
+        // PERFORM = FX.
+        press (perform);
+        const auto lpfOn = tb::fx::paramId (0, tb::fx::lpf);
+        hit (13); lift (13);
+        adv();
+        check (rawP (lpfOn) > 0.5f && mm.paramLabel().startsWith ("LPF"), "PERFORM: pads are the 16 FX (pad 2 = LPF), the encoder edits that effect");
+        setParam (r.p, lpfOn, 0.0f);
+
+        // SCENE = snapshots.
+        press (scene);
+        hold (shift, true);
+        hit (12); lift (12);
+        adv();
+        hold (shift, false);
+        check (r.p.getSnapshots().getState (0) != tb::SnapshotManager::SlotState::empty, "SCENE: SHIFT + pad 1 stores snapshot 1 (pad recalls it)");
+        press (padMode);
+
+        // Buttons.
+        hold (tap, true);
+        const bool fillOn = rawP (tb::params::seqFill) > 0.5f;
+        hold (tap, false);
+        check (fillOn && rawP (tb::params::seqFill) < 0.5f, "TAP = FILL while held");
+        press (fixedVel);
+        hit (12, 200);
+        ev = drain();
+        lift (12); drain();
+        check (! ev.empty() && std::abs (ev[0].velocity - 1.0f) < 1e-4f, "FIXED VEL: every hit at full velocity");
+        press (fixedVel);
+
+        // Ownership.
+        {
+            Rig r2;
+            auto& mm2 = r2.p.getMikroMode();
+            mm2.useHubForTesting (hub);
+            hit (12); lift (12);
+            tb::ControllerHit h; int n2 = 0;
+            while (r2.p.getBridge().mikroEvents.pop (h)) ++n2;
+            check (mm2.isOwner() && ! mm.isOwner() && n2 == 2 && drain().empty(), "two instances: the one you touched last gets the Mikro");
+            mm.claim();
+            check (mm.isOwner(), "clicking the first window takes it back");
+        }
+
+        // Saved with the set.
+        {
+            juce::MemoryBlock blob;
+            r.p.getStateInformation (blob);
+            const auto xml = juce::AudioProcessor::getXmlFromBinary (blob.getData(), (int) blob.getSize());
+            check (xml != nullptr && xml->getChildByName ("MIKRO") != nullptr && xml->getChildByName ("MIKRO")->getBoolAttribute ("enabled"),
+                   "Mikro MK3 mode is saved with the set");
+        }
+        rec.reports.clear();
+        mm.setEnabled (false);
+        bool cleared = false;
+        for (auto& rep : rec.reports)
+            if (rep[0] == 0x80) { cleared = true; for (size_t k = 1; k < rep.size(); ++k) cleared = cleared && rep[k] == 0; }
+        check (cleared && rec.count (0xe0) == 2, "switching it off clears the Mikro's lights and screen");
+        hub->setSinkForTesting (nullptr);
+    }
+
+    void testMikroEngine()
+    {
+        std::cout << "\n== A8: rolls and slice hits in the engine ==" << std::endl;
+        SeqRig x;
+        x.seq.clearAll();
+        x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::rollOn, 0, 0, 1, -1.0f });      // a pad already held
+        auto o = onsets (x.run (29000), 0);
+        check (o == std::vector<int> { 0, 6000, 12000, 18000, 24000 }, "NOTE REPEAT: a roll hits on every 1/16 of Live's grid, sample-exact (" + listOf (o) + ")");
+        x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::rollOff, 0, 0, 1, 1.0f });
+        o = onsets (x.run (20000), 0);
+        check (o.empty(), "...and stops when the pad is let go");
+        x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::padOn, 0, 0, 0, 1.0f });
+        x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::rollOn, 0, 0, 1, 1.0f });       // pressed with NOTE REPEAT held
+        const auto flamOut = x.run (14000);
+        o = onsets (flamOut, 0);
+        x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::rollOff, 0, 0, 1, 1.0f });
+        x.run (2048);
+        const float firstPeak = peakOf (flamOut, 0, 60), secondPeak = peakOf (flamOut, 6000, 60);
+        check (o == std::vector<int> { 0, 6000, 12000 } && std::abs (firstPeak - secondPeak) < 0.01f * secondPeak,
+               "a press on the grid plays once, not twice (no flam or doubling with the roll) (" + listOf (o) + ", "
+                 + juce::String (firstPeak, 3) + " / " + juce::String (secondPeak, 3) + ")");
+
+        // Slice 9 of a ramp: plays from half way through.
+        Rig r;
+        juce::AudioBuffer<float> ramp (1, 32000);
+        for (int i = 0; i < 32000; ++i) ramp.setSample (0, i, (float) i / 32000.0f);
+        r.load (3, writeAudio ("mikro_ramp", ramp, 48000.0, Fmt::wavFloat));
+        r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::sliceOn, 3, 9, 0, 1.0f });
+        juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
+        runBlock (r.p, r.host, buf, midi);
+        const float v = buf.getSample (0, 100);
+        check (std::abs (v - (0.5f + 100.0f / 32000.0f)) < 0.01f, "KEYBOARD: slice 9 starts half way into the break (" + juce::String (v, 3) + ")");
+    }
+
     void testPressure()
     {
         std::cout << "\n== 0.15: pad pressure (PadVoice) ==" << std::endl;
@@ -5626,6 +5898,8 @@ int main (int argc, char* argv[])
         testPushView();
         testPressure();
         testMikro();
+        testMikroMode();
+        testMikroEngine();
         testEditorDrivesState();
         testRealtimeSafety();
 

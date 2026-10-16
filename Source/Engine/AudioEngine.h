@@ -266,7 +266,7 @@ namespace tb
         // ---- Sequencer
         // Order = priority on a tie. A step FX's ON comes before the previous
         // step's OFF, so the same effect on back-to-back steps runs unbroken.
-        enum class SeqKind : uint8_t { bankSwitch, stepFxOn, stepFxOff, laneStop, padHit, sliceRelease, sliceHit };
+        enum class SeqKind : uint8_t { bankSwitch, stepFxOn, stepFxOff, laneStop, padHit, sliceRelease, sliceHit, rollHit };
         /** owner >= 0: a launched sequence's event, dropped if that run's generation moved on. */
         struct SeqEvent { int offset; int pad; float velocity; SeqKind kind; uint64_t step; uint32_t gen; int owner = -1; uint32_t ownerGen = 0; };
         void collectSequencerEvents (const TransportState&, const BlockParams&, int numSamples) noexcept;
@@ -400,6 +400,13 @@ namespace tb
         bool   clockWasPlaying = false, seqFillNow = false;
         std::array<bool, kNumPads> laneQueued {};
         std::array<float, kNumPads> pressNow {};      // A7: smoothed Push 3 pad pressure
+
+        // A8: Mikro MK3 slice hits and note-repeat rolls.
+        struct RollRun { bool active = false; int rate = 1; float velocity = 1.0f; int slice = 0; double skipUntil = -1.0e300; };
+        std::array<RollRun, kNumPads> rollRun {};
+        /** Slice `slice` (1..16) of the pad, or (0) its plain sound: straight to a voice, no SWAP / launch / slice seq. */
+        void controllerSliceHit (int pad, int slice, float velocity, int sampleOffset) noexcept;
+        void addRollEvents (int numSamples) noexcept;
         const TransportState* lastTransport = nullptr;
         std::array<bool, kNumPads> padSliceSeq {};
         std::array<int,  kNumPads> padSliceSlot {};

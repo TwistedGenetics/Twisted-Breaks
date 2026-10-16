@@ -125,6 +125,7 @@ namespace tb::ui
         int              shownScene = 0;
         uint32_t         shownSeqVersion = 0;
         uint32_t         shownPushSelection = 0;
+        uint32_t         shownMikroSelection = 0;
         View             view = View::crt;
         NeedleMeter      meter;
         FXGrid           fxGrid;

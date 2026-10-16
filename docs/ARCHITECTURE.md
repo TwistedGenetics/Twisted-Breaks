@@ -436,6 +436,30 @@ Hand-off between breaks at slice points (spec addition A1 in
   press point, 32-sample edges) or pitch down an octave. Synced loops skip
   `syncTo` while stuttering or bent and re-lock afterwards.
 
+## 6n. Maschine Mikro MK3 mode (0.16, spec addition A8)
+
+* `MikroProtocol.h`: the Mikro's USB HID reports (buttons / encoder /
+  strip report 0x01, pads 0x02, lights 0x80, screen 0xE0) from the
+  open-source drivers, plus a 5x7 font for the 128 x 32 screen.
+* `MikroUsb` (macOS IOKit HID): opens VID 0x17CC / PID 0x1700 non-
+  exclusively, input reports on its own CFRunLoop thread.
+* `MikroHub` (one per process): a thread (re)opens the Mikro every 2 s and
+  writes the newest lights / screen halves (the message thread never waits
+  on USB; 5 refused writes = treat as gone). Input goes to the owning
+  `MikroController` under a lock; owner = the window clicked last.
+* `MikroController`: on the USB thread it parses reports, switches mode /
+  FIXED VEL / roll rate at once, and pushes pad hits, slice hits and roll
+  on/off into `bridge.mikroEvents` (its own SPSC queue); the rest goes to
+  an inbox drained at 50 Hz on the message thread (selection, steps,
+  parameters with gestures, FX, snapshots, MUTATE / FILL / RESAMPLE), which
+  rebuilds lights and screen and sends them only when they change. Any
+  loss (unplugged, another owner) releases held pads, rolls, FILL, FX and
+  gestures; a new owner or reconnect resets the input parser.
+* Engine: `controllerSliceHit` (a slice, or the plain sound, straight to a
+  voice) and `RollRun` per pad: `addRollEvents` inserts `rollHit` events on
+  every 1/8 / 1/16 / 1/32 of the clock (Live's grid, or free), skipping
+  grid points within 10 ms of the press that started the roll.
+
 ## 6e. Slice sequencer (Phase 7.1, implemented)
 
 * `Core/SliceSeqData`: 16 pads x 8 slots x 32 steps, one 64-bit atomic per
@@ -625,4 +649,5 @@ Ableton stores in the `.als` file:
 | **12 ✅** | RESAMPLE (master or a group, 1-8 bars from the bar line, onto a pad as a synced, sliced loop, saved as WAV) + vintage CHARACTER per pad (CLEAN, SP-1200, MPC60, S950, LO-FI) | 464/464 checks: character read path (bit grid, machine-rate steps, pitched-down holds twice as long, output filters measured), 12-bit values through a pad; the take equals one bar of the output from the bar-line sample, 24-bit WAV, loaded as a synced loop, sliced, group-only take, stopped / NOW, cancel, parameter, reload from the set; UI |
 | **0.14 ✅** | Sequence pads (A6); 0.14.1 phase-locks launched lanes to Live's playhead: SEQ ONE / SEQ LOOP, LAUNCH, per-pad LEN, stop / restart, SWAP between sequences (STEP / 1/16 / BEAT / BAR, SAME STEP / STEP 1), mixed groups | 507/507 checks: launch on NOW / 1/16 / BEAT / BAR mid-block, ONE vs LOOP, idle until hit, stop + cancel, SEQ ONE restart, SEQ LEN, velocity, conditions from the launch, free clock, SWAP at STEP / 1/16 / BEAT / BAR with no doubled or missing step, SAME STEP / STEP 1, mixed group, choke, Live stop, loop-brace wrap, state, UI |
 | **0.15 ✅** | Push 3 mode (A7): User-mode grid (32 pads + 32 steps / big pads), step edit, encoder pages, touch-strip crossfader, buttons, lights on Push's palette, instance ownership; per-pad pressure | 556/556 checks: port naming, palette read + mapping, mode echo / USER fallback, pad play + velocity + A/B layout, selection both ways, pressure, modifiers, step tap / edit / range / delete, pages + gestures + fine, strip, buttons, LED states + diffing, leaving User mode, two instances, state; pressure FILTER / DRIVE / PITCH / STUTTER / OFF |
+| **0.16 ✅** | Mikro MK3 mode (A8): pads / steps / slices / FX / snapshots, encoder + screen pages, strip crossfader, note-repeat rolls, buttons, ownership, USB writes off the UI thread | 598/598 checks: protocol, pad layout, play + velocity + pressure, modifiers, GROUP, pages, strip, STEP edit + pages + lights, KEYBOARD slices, NOTE REPEAT rolls (grid-exact, no flam), PERFORM FX, SCENE snapshots, FILL, FIXED VEL, two instances, state, off clears; engine slice 9 + rolls |
 | **13 ✅** | Scene A / B (32 pads, each scene its own pads + patterns), crossfader (SMOOTH / SHARP, CUT keys, automatable), VIEW A / B (parameter), notes follow the view, iRig follows the view | 485/485 checks: both scenes play at once; crossfader gains (centre, ends, SMOOTH 3/4, SHARP edge), CUT; view-aware MIDI, learned notes; snapshots / state with scene B, old sets open with B empty; SPREAD stays in its scene; UI view switch keeps the position, sequencer follows, fader drag / double-click, CUT |

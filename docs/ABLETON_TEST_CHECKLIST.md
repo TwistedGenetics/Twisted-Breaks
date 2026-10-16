@@ -102,6 +102,17 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## Mikro MK3 mode (0.16)
+- [ ] NI's Maschine app closed. LIGHTS > Mikro MK3 mode: the pads light, the screen shows PADS A and the pad
+- [ ] PAD MODE: pads play with velocity (Mikro pad 13 top left = plugin 01), pressure works (pad's Pressure setting), GROUP flips to B
+- [ ] STEP: tap steps on / off, hold one + turn the encoder (push = next field), > for 17-32, playhead moves
+- [ ] KEYBOARD: a sliced break plays slice by slice; PERFORM: pads switch the FX; SCENE: SHIFT + pad stores, pad recalls
+- [ ] Encoder pages: PLUG-IN / SWING / VOLUME, push = next setting, the screen shows name + value
+- [ ] Strip = crossfader (SHIFT: macro amount); NOTE REPEAT + pad rolls in time (SHIFT + NOTE REPEAT: rate)
+- [ ] VARIATION = MUTATE, TAP = FILL, SAMPLING = RESAMPLE, MUTE / SOLO / DUPLICATE / ERASE + pad
+- [ ] Unplug mid-roll: the roll stops; plug back in: lights and screen come back
+- [ ] Two Twisted Breaks: clicking a window hands the Mikro over
+
 ## Mikro MK3 USB test (0.15.1)
 - [ ] Mikro plugged in, Maschine software closed. LIGHTS > Mikro MK3 test
 - [ ] Pads light in 16 colours, buttons dim, strip lit; screen: TWISTED / BREAKS - MIKRO MK3 TEST

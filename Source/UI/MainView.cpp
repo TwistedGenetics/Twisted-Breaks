@@ -160,7 +160,16 @@ namespace tb::ui
         bool ps = push.isActive();
         String c1, v1, c2, v2;
         auto& mk = processor.getMikro();
-        if (! ps && mk.isRunning())
+        auto& mm = processor.getMikroMode();
+        if (! ps && mm.isActive())
+        {
+            ps = true;
+            c1 = "MIKRO MK3  -  " + String (MikroController::modeName (mm.getMode()));
+            v1 = "PAD " + padLabel (mm.getSelectedPad());
+            c2 = mm.paramLabel();
+            v2 = mm.paramValue();
+        }
+        else if (! ps && mk.isRunning())
         {
             ps = true;
             c1 = "MIKRO MK3 TEST";
@@ -337,6 +346,7 @@ namespace tb::ui
             snapshotPanel.setSelectedPad (pad);
             resamplePanel.setSelectedPad (pad);
             processor.getPush().setSelectedPad (pad);
+            processor.getMikroMode().setSelectedPad (pad);
             status.refresh (pad);
         };
         // Touching this window gives Push to this instance (A7).
@@ -397,6 +407,12 @@ namespace tb::ui
                 shownPushSelection = push.getSelectionVersion();
                 if (push.getSelectedPad() != padGrid.getSelectedPad()) padGrid.setSelectedPad (push.getSelectedPad());
             }
+            auto& mm = processor.getMikroMode();
+            if (mm.getSelectionVersion() != shownMikroSelection)
+            {
+                shownMikroSelection = mm.getSelectionVersion();
+                if (mm.getSelectedPad() != padGrid.getSelectedPad()) padGrid.setSelectedPad (mm.getSelectedPad());
+            }
         }
         // Scene view (the VIEW keys, automation or a MIDI-mapped control): show
         // the other 16 pads, keeping the same pad position selected.
@@ -445,7 +461,7 @@ namespace tb::ui
 
         auto& lights = processor.getLights();
         auto& push = processor.getPush();
-        lightsKey.setToggleState (lights.isConnected() || push.isActive(), dontSendNotification);
+        lightsKey.setToggleState (lights.isConnected() || push.isActive() || processor.getMikroMode().isActive(), dontSendNotification);
         lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected())
                                || (push.isEnabled() && ! push.isConnected()));
         lightsKey.tick();
@@ -454,6 +470,7 @@ namespace tb::ui
     void MainView::mouseDown (const MouseEvent&)
     {
         processor.getPush().claim();
+        processor.getMikroMode().claim();
     }
 
     void MainView::showLightsMenu()
@@ -517,8 +534,20 @@ namespace tb::ui
         // ---- Maschine Mikro MK3 over USB: step 1, a hardware test.
         auto& mk = processor.getMikro();
         m.addSeparator();
-        m.addSectionHeader ("MASCHINE MIKRO MK3 - USB test");
-        m.addItem ("Mikro MK3 test", MikroUsb::isSupported(), mk.isRunning(), [&mk] { if (mk.isRunning()) mk.stop(); else mk.start(); });
+        auto& mm = processor.getMikroMode();
+        m.addSectionHeader ("MASCHINE MIKRO MK3 - over USB (close NI's Maschine app first)");
+        m.addItem ("Mikro MK3 mode", MikroUsb::isSupported(), mm.isEnabled(), [&mm, &mk]
+        {
+            if (mk.isRunning()) mk.stop();
+            mm.setEnabled (! mm.isEnabled());
+            mm.claim();
+        });
+        if (mm.isEnabled())
+            m.addItem (mm.isConnected() ? (mm.isOwner() ? String ("Connected: ") + mm.getHubStatus()
+                                                        : String ("Another Twisted Breaks has the Mikro - click this window to take it"))
+                                        : "Not connected: " + mm.getHubStatus(), false, false, nullptr);
+        m.addItem ("Mikro MK3 test (diagnostics)", MikroUsb::isSupported() && ! mm.isEnabled(), mk.isRunning(),
+                   [&mk] { if (mk.isRunning()) mk.stop(); else mk.start(); });
         if (mk.isRunning()) m.addItem (mk.getStatus(), false, false, nullptr);
         if (! MikroUsb::isSupported()) m.addItem ("(Mac only)", false, false, nullptr);
         m.addItem ("Copy Mikro test report", mk.isRunning() || mk.getStatus().isNotEmpty(), false,

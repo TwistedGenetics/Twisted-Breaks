@@ -13,6 +13,7 @@
 #include "Core/BreakBank.h"
 #include "Core/PushController.h"
 #include "Core/MikroTester.h"
+#include "Core/MikroController.h"
 
 /*
     TwistedBreaksProcessor
@@ -73,6 +74,7 @@ public:
     tb::Resampler&       getResampler() noexcept { return *resampler; }
     tb::PushController&  getPush() noexcept      { return *push; }
     tb::MikroTester&     getMikro() noexcept     { return *mikro; }
+    tb::MikroController& getMikroMode() noexcept { return *mikroMode; }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -150,7 +152,8 @@ private:
     std::unique_ptr<tb::Mutator>         mutator;
     std::unique_ptr<tb::Resampler>       resampler;
     std::unique_ptr<tb::PushController>  push;
-    std::unique_ptr<tb::MikroTester>     mikro;      // Mikro MK3 USB test (not saved)       // A7: Push 3 mode (after mutator / resampler: destroyed first)
+    std::unique_ptr<tb::MikroTester>     mikro;      // Mikro MK3 USB test (not saved)
+    std::unique_ptr<tb::MikroController> mikroMode;  // A8: Mikro MK3 mode       // A7: Push 3 mode (after mutator / resampler: destroyed first)
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;
     void applySnapshotFrame (tb::SnapshotFrame*) noexcept;

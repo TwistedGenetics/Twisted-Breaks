@@ -69,6 +69,17 @@ namespace tb
         bool  noteOn   = true;
     };
 
+    /** A8: what the Mikro MK3 asks of the engine (its USB thread is the only producer). */
+    struct ControllerHit
+    {
+        enum Kind : uint8_t { padOn, padOff, sliceOn, rollOn, rollOff };
+        Kind    kind = padOn;
+        int8_t  pad = 0;
+        uint8_t slice = 0;       // 1..16 (slice hits, rolls of a slice)
+        uint8_t rate = 1;        // rolls: 0 = 1/8, 1 = 1/16, 2 = 1/32
+        float   velocity = 1.0f;     // rollOn: > 0 = with a hit just now; < 0 = a pad already held (|velocity|)
+    };
+
     /*
         EngineBridge
         ------------
@@ -86,6 +97,8 @@ namespace tb
         SpscQueue<PadUiEvent, 256> controllerPadEvents;
         /** A7: Push 3 pad pressure per pad, 0..1 (MIDI thread writes, audio reads). */
         std::array<std::atomic<float>, kNumPads> padPressure {};
+        /** A8: Mikro MK3 pads, slices and rolls. Producer: the Mikro's USB thread. */
+        SpscQueue<ControllerHit, 256> mikroEvents;
         std::atomic<bool>          panicRequested { false };
 
         // ---- audio -> UI -----------------------------------------------------
