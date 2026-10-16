@@ -6,6 +6,7 @@
  #include <IOKit/hid/IOHIDManager.h>
  #include <IOKit/hid/IOHIDKeys.h>
  #include <IOKit/IOReturn.h>
+ #include <IOKit/IOKitLib.h>
  #include <CoreFoundation/CoreFoundation.h>
 #endif
 
@@ -39,6 +40,44 @@ namespace tb
                 if (CFGetTypeID (ref) == CFNumberGetTypeID())
                     CFNumberGetValue (ref, kCFNumberIntType, &v);
             return v;
+        }
+
+        /** What the USB bus itself shows from Native Instruments (vendor 0x17CC), whatever driver has it. */
+        juce::String usbDevicesFromNI()
+        {
+            juce::StringArray found;
+            for (const char* cls : { "IOUSBHostDevice", "IOUSBDevice" })
+            {
+                CFMutableDictionaryRef m = IOServiceMatching (cls);
+                if (m == nullptr) continue;
+                int vid = mikro::kVendorId;
+                auto v = CFNumberCreate (kCFAllocatorDefault, kCFNumberIntType, &vid);
+                CFDictionarySetValue (m, CFSTR ("idVendor"), v);
+                CFRelease (v);
+                io_iterator_t it = 0;
+                if (IOServiceGetMatchingServices (MACH_PORT_NULL, m, &it) != KERN_SUCCESS) continue;   // consumes m
+                while (io_object_t o = IOIteratorNext (it))
+                {
+                    juce::String name = "?";
+                    if (auto ref = (CFStringRef) IORegistryEntryCreateCFProperty (o, CFSTR ("USB Product Name"), kCFAllocatorDefault, 0))
+                    {
+                        char buf[128] = {};
+                        if (CFGetTypeID (ref) == CFStringGetTypeID() && CFStringGetCString (ref, buf, sizeof (buf), kCFStringEncodingUTF8))
+                            name = juce::String::fromUTF8 (buf);
+                        CFRelease (ref);
+                    }
+                    int pid = 0;
+                    if (auto num = (CFNumberRef) IORegistryEntryCreateCFProperty (o, CFSTR ("idProduct"), kCFAllocatorDefault, 0))
+                    {
+                        if (CFGetTypeID (num) == CFNumberGetTypeID()) CFNumberGetValue (num, kCFNumberIntType, &pid);
+                        CFRelease (num);
+                    }
+                    found.addIfNotAlreadyThere (name + " (0x" + juce::String::toHexString (pid).paddedLeft ('0', 4) + ")");
+                    IOObjectRelease (o);
+                }
+                IOObjectRelease (it);
+            }
+            return found.isEmpty() ? juce::String ("nothing from Native Instruments on USB") : "on USB: " + found.joinIntoString (", ");
         }
 
         juce::String stringProperty (IOHIDDeviceRef d, CFStringRef key)
@@ -98,26 +137,59 @@ namespace tb
 
             manager = IOHIDManagerCreate (kCFAllocatorDefault, kIOHIDOptionsTypeNone);
             if (manager == nullptr) { error = "couldn't create the HID manager"; return false; }
-            auto match = CFDictionaryCreateMutable (kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-            int vid = mikro::kVendorId, pid = mikro::kProductId;
-            auto v = CFNumberCreate (kCFAllocatorDefault, kCFNumberIntType, &vid);
-            auto p = CFNumberCreate (kCFAllocatorDefault, kCFNumberIntType, &pid);
-            CFDictionarySetValue (match, CFSTR (kIOHIDVendorIDKey), v);
-            CFDictionarySetValue (match, CFSTR (kIOHIDProductIDKey), p);
-            IOHIDManagerSetDeviceMatching (manager, match);
-            CFRelease (v); CFRelease (p); CFRelease (match);
 
-            CFSetRef set = IOHIDManagerCopyDevices (manager);
-            if (set == nullptr || CFSetGetCount (set) == 0)
+            // Every HID device from Native Instruments: the Mikro may show more than one interface.
+            auto match = CFDictionaryCreateMutable (kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            int vid = mikro::kVendorId;
+            auto v = CFNumberCreate (kCFAllocatorDefault, kCFNumberIntType, &vid);
+            CFDictionarySetValue (match, CFSTR (kIOHIDVendorIDKey), v);
+            IOHIDManagerSetDeviceMatching (manager, match);
+            CFRelease (v); CFRelease (match);
+
+            // The manager only lists devices once it's scheduled and open.
+            IOHIDManagerScheduleWithRunLoop (manager, loop, kCFRunLoopDefaultMode);
+            const IOReturn mo = IOHIDManagerOpen (manager, kIOHIDOptionsTypeNone);
+            managerOpen = true;
+
+            CFSetRef set = nullptr;
+            for (int attempt = 0; attempt < 20; ++attempt)
+            {
+                set = IOHIDManagerCopyDevices (manager);
+                if (set != nullptr && CFSetGetCount (set) > 0) break;
+                if (set != nullptr) { CFRelease (set); set = nullptr; }
+                juce::Thread::sleep (50);
+            }
+
+            // Pick the Mikro's interface with the biggest output report (lights + screen).
+            juce::StringArray seen;
+            IOHIDDeviceRef best = nullptr;
+            int bestOut = -1;
+            if (set != nullptr)
+            {
+                const CFIndex n = CFSetGetCount (set);
+                std::vector<const void*> devs ((size_t) n);
+                CFSetGetValues (set, devs.data());
+                for (auto* d : devs)
+                {
+                    auto dev = (IOHIDDeviceRef) d;
+                    const int pid = intProperty (dev, CFSTR (kIOHIDProductIDKey));
+                    const int out = intProperty (dev, CFSTR (kIOHIDMaxOutputReportSizeKey));
+                    seen.add (stringProperty (dev, CFSTR (kIOHIDProductKey)) + " (0x" + juce::String::toHexString (pid).paddedLeft ('0', 4)
+                              + ", usage page 0x" + juce::String::toHexString (intProperty (dev, CFSTR (kIOHIDPrimaryUsagePageKey)))
+                              + ", in " + juce::String (intProperty (dev, CFSTR (kIOHIDMaxInputReportSizeKey))) + " / out " + juce::String (out) + ")");
+                    if (pid == mikro::kProductId && out > bestOut) { best = dev; bestOut = out; }
+                }
+            }
+            hidSeen = seen.joinIntoString ("; ");
+            if (best == nullptr)
             {
                 if (set != nullptr) CFRelease (set);
-                error = "no Maschine Mikro MK3 found on USB";
+                error = "no Maschine Mikro MK3 found. HID: " + (seen.isEmpty() ? juce::String ("none from NI") : hidSeen)
+                        + ". USB: " + usbDevicesFromNI()
+                        + (mo != kIOReturnSuccess ? ". HID manager: " + ioReturnText (mo) : juce::String());
                 return false;
             }
-            const CFIndex n = CFSetGetCount (set);
-            std::vector<const void*> devs ((size_t) n);
-            CFSetGetValues (set, devs.data());
-            device = (IOHIDDeviceRef) devs[0];
+            device = best;
             CFRetain (device);
             CFRelease (set);
 
@@ -151,7 +223,14 @@ namespace tb
                 CFRelease (device);
                 device = nullptr;
             }
-            if (manager != nullptr) { CFRelease (manager); manager = nullptr; }
+            if (manager != nullptr)
+            {
+                if (loop != nullptr) IOHIDManagerUnscheduleFromRunLoop (manager, loop, kCFRunLoopDefaultMode);
+                if (managerOpen) IOHIDManagerClose (manager, kIOHIDOptionsTypeNone);
+                managerOpen = false;
+                CFRelease (manager);
+                manager = nullptr;
+            }
             stopThread (1000);
             loop = nullptr;
         }
@@ -177,7 +256,8 @@ namespace tb
         std::vector<uint8_t> inBuffer;
         std::atomic<bool> removed { false };
         int maxIn = 0, maxOut = 0;
-        juce::String product, error;
+        juce::String product, error, hidSeen;
+        bool managerOpen = false;
     };
 
     MikroUsb::MikroUsb() : impl (std::make_unique<Impl> (*this)) {}
@@ -199,7 +279,8 @@ namespace tb
     juce::String MikroUsb::describe() const
     {
         return (impl->product.isNotEmpty() ? impl->product : juce::String ("Maschine Mikro MK3"))
-               + ", reports in " + juce::String (impl->maxIn) + " / out " + juce::String (impl->maxOut) + " bytes";
+               + ", reports in " + juce::String (impl->maxIn) + " / out " + juce::String (impl->maxOut) + " bytes"
+               + " [NI HID: " + impl->hidSeen + "]";
     }
 
 #else
