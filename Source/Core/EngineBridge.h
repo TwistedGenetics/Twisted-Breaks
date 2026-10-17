@@ -6,6 +6,7 @@
 #include "Core/TransportSync.h"
 #include "Core/SequencerData.h"
 #include "Core/SliceSeqData.h"
+#include "Core/MacroRecipes.h"
 
 namespace tb
 {
@@ -92,6 +93,7 @@ namespace tb
     struct EngineBridge
     {
         // ---- UI -> audio -----------------------------------------------------
+        MacroRecipes macros;               // A12: the macros' recipes (editable)
         SpscQueue<PadUiEvent, 256> padEvents;
         /** A7: pads played from a controller's own port (Push 3 User mode). Producer: that port's MIDI thread. */
         SpscQueue<PadUiEvent, 256> controllerPadEvents;

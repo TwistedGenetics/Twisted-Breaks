@@ -1409,12 +1409,14 @@ namespace tb
             for (int m = 0; m < macro::kNumMacros; ++m)
                 if ((macros >> m) & 1u)
                 {
-                    const auto& d = macro::def (m);
-                    for (int i = 0; i < d.numSettings; ++i)
+                    // A12: the (editable) recipe.
+                    const auto& rc = bridge.macros;
+                    for (int f = 0; f < fx::kNumFx; ++f)
                     {
-                        const auto& s = d.settings[i];
-                        mask |= 1u << s.fx;
-                        if (s.param >= 0) params[(size_t) s.fx][(size_t) s.param] = macro::valueAt (s, macroAmountNow);
+                        if (! rc.usesFx (m, f)) continue;
+                        mask |= 1u << f;
+                        for (int k = 0; k < fx::def (f).numParams; ++k)
+                            if (rc.setsParam (m, f, k)) params[(size_t) f][(size_t) k] = rc.valueAt (m, f, k, macroAmountNow);
                     }
                 }
         groups[(size_t) g].setFx (mask, params);

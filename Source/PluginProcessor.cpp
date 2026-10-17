@@ -546,6 +546,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (tb::SnapshotManager::snapshotsId), nullptr);
     state.removeChild (state.getChildWithName (tb::BreakBank::bankId), nullptr);
     state.removeChild (state.getChildWithName (tb::SongMode::songId), nullptr);
+    state.removeChild (state.getChildWithName (tb::MacroRecipes::macrosId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -580,6 +581,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (snapshots->toValueTree(), nullptr);
     state.appendChild (bank->toValueTree(), nullptr);
     if (song != nullptr) state.appendChild (song->toValueTree(), nullptr);
+    state.appendChild (bridge.macros.toValueTree(), nullptr);
 
     juce::ValueTree fxState ("FX");
     fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
@@ -607,6 +609,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
                                (int) pad.getProperty (kNoteId, -1));
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
+    bridge.macros.fromValueTree (state.getChildWithName (tb::MacroRecipes::macrosId));
     if (padOps != nullptr) padOps->reset();             // a new project: no undo back into the old one
     {
         const auto m = state.getChildWithName (kMetaId);

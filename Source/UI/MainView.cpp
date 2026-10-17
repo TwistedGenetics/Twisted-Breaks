@@ -260,6 +260,7 @@ namespace tb::ui
           resamplePanel (p),
           sceneStrip (p),
           presetPanel (p),
+          macroEditor (p),
           kitBar (p),
           meter (p.getBridge()),
           fxGrid (p),
@@ -278,6 +279,7 @@ namespace tb::ui
         addChildComponent (snapshotPanel);
         addChildComponent (resamplePanel);
         addChildComponent (presetPanel);
+        addChildComponent (macroEditor);
         addAndMakeVisible (kitBar);
         kitBar.onOpen = [this] { showView (view == View::presets ? View::crt : View::presets); };
         addAndMakeVisible (sceneStrip);
@@ -358,6 +360,7 @@ namespace tb::ui
         navKeys[6]->onClick = [this] { showView (view == View::resample ? View::crt : View::resample); };
         navKeys[7]->onClick = [this] { showView (view == View::presets ? View::crt : View::presets); };
         fxGrid.onSelectionChanged = [this] (int g, int f) { fxEditor.setTarget (g, f); };
+        fxGrid.onEditMacro = [this] (int m) { macroEditor.setMacro (m); showView (View::macroEdit); };
         fxEditor.setTarget (fxGrid.getGroup(), fxGrid.getSelected());
         padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
         {
@@ -424,6 +427,7 @@ namespace tb::ui
         snapshotPanel.setBounds (layout::seqView);       // 0.22: taller for the SONG chain
         resamplePanel.setBounds (layout::scope);
         presetPanel.setBounds (layout::seqView);
+        macroEditor.setBounds (layout::seqView);
         kitBar.setBounds (layout::kitBar);
         sceneStrip.setBounds (layout::sceneStrip);
         padEditor.setBounds (layout::padEditor);
@@ -488,6 +492,7 @@ namespace tb::ui
             case View::snapshots: snapshotPanel.refresh(); break;
             case View::resample:  resamplePanel.refresh(); break;
             case View::presets:   presetPanel.refresh(); break;
+            case View::macroEdit: macroEditor.refresh(); break;
             case View::crt:   waveform.refresh(); break;
         }
         kitBar.refresh();
@@ -662,7 +667,8 @@ namespace tb::ui
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
-        transportDisplay.setVisible (v != View::sequencer && v != View::presets && v != View::snapshots);   // the sequencer shows BPM / position itself
+        transportDisplay.setVisible (v != View::sequencer && v != View::presets && v != View::snapshots && v != View::macroEdit);
+        macroEditor.setVisible (v == View::macroEdit);   // the sequencer shows BPM / position itself
         presetPanel.setVisible (v == View::presets);
         if (v == View::presets) processor.getPresets().ensureFactoryContent();
         sliceSeq.setVisible (v == View::sliceSeq);
@@ -678,7 +684,7 @@ namespace tb::ui
         navKeys[0]->setToggleState (crt && ! slice,     dontSendNotification);
         navKeys[1]->setToggleState (crt && slice,       dontSendNotification);
         navKeys[2]->setToggleState (view == View::sequencer, dontSendNotification);
-        navKeys[3]->setToggleState (view == View::fx,   dontSendNotification);
+        navKeys[3]->setToggleState (view == View::fx || view == View::macroEdit, dontSendNotification);
         navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
         navKeys[5]->setToggleState (view == View::snapshots, dontSendNotification);
         navKeys[6]->setToggleState (view == View::resample, dontSendNotification);

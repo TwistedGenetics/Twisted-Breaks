@@ -69,6 +69,8 @@ namespace tb::ui
         juce::Rectangle<float> macroTabBounds() const;
         juce::Rectangle<float> macroKeyBounds (int m) const;
         juce::Button& latchButton() { return latchKey; }
+        /** A12: EDIT (or right-click a macro): open the macro editor on macro m. */
+        std::function<void (int)> onEditMacro;
 
     private:
         void setFxParam (int fxId, bool on);
@@ -89,5 +91,7 @@ namespace tb::ui
         DragReadout groupRead  { "GROUP",  "Which group the macros hit: A-D or ALL" };
         PushKey     latchKey   { "LATCH",  "On: macro keys (and notes E4-B4) toggle. Off: on while held", juce::Colour (0xffffa928) };
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> latchAtt;
+        PushKey     editKey    { "EDIT", "Edit the macros: which effects each one uses, and its MILD / HARD settings" };
+        int         lastMacro = 0;
     };
 }

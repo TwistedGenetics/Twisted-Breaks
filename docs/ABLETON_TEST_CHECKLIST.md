@@ -102,6 +102,13 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.24: macro editor
+
+- [ ] FX > MACRO > EDIT (or right-click a macro): change DESTROY's CRUSH HARD, take DRIVE out, add LPF; HOLD TO HEAR and AMOUNT 0 / 100 %.
+- [ ] Rename a macro: the key shows the new name. RESET / RESET ALL.
+- [ ] SAVE a macro as .tbmacro, LOAD it into another slot.
+- [ ] Save and reopen the set, and save / load a kit: the edits come back.
+
 ## 0.23: stretch
 
 - [ ] A 170 BPM break on a pad (ONE), Live at 174 / 160 / 140: Stretch > Beats keeps it on the grid at its pitch; try the three gap fills at 140.

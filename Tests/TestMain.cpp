@@ -16,6 +16,7 @@
 */
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "UI/MacroEditorPanel.h"
 #include "PluginEditor.h"
 #include "Engine/TransientDetector.h"
 #include "Core/FxDefs.h"
@@ -5628,6 +5629,74 @@ namespace
         check (std::abs (fFit - 750.0) < 15.0, "a 0.21 pad with FIT on plays as REPITCH");
     }
 
+    void testA12Macros()
+    {
+        std::cout << "\n== A12: macro editor ==" << std::endl;
+        namespace F = tb::fx;
+        Rig r;
+        auto& rc = r.p.getBridge().macros;
+        auto& eng = r.p.getEngine();
+        auto& br = r.p.getBridge();
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        auto blocks = [&] (int n) { for (int i = 0; i < n; ++i) runBlock (r.p, r.host, buf, midi); };
+        check (rc.toValueTree().getNumChildren() == 0 && rc.isFactory (0), "a new plugin has the factory recipes (nothing stored)");
+
+        // Edit DESTROY: crush harder, no DRIVE, add a LOW PASS.
+        rc.setHard (0, F::crush, 0, 0.9f);
+        rc.setUsesFx (0, F::drive, false);
+        rc.setUsesFx (0, F::lpf, true);
+        rc.setSetsParam (0, F::lpf, 0, true);
+        rc.setMild (0, F::lpf, 0, 0.8f);
+        rc.setHard (0, F::lpf, 0, 0.2f);
+        setParam (r.p, tb::params::macroAmount, 100.0f);
+        setParam (r.p, tb::macro::paramId (0), 1.0f);
+        blocks (2);
+        const auto live = br.fxEngaged[0].load() | br.fxArmed[0].load();
+        check (std::abs (eng.getAppliedFxParam (0, F::crush, 0) - 0.9f) < 1.0e-6f && std::abs (eng.getAppliedFxParam (0, F::lpf, 0) - 0.2f) < 1.0e-6f
+                 && (live & (1u << F::lpf)) != 0 && (live & (1u << F::drive)) == 0,
+               "an edited recipe: new HARD values, an effect taken out, one added");
+        setParam (r.p, tb::params::macroAmount, 0.0f);
+        blocks (1);
+        check (std::abs (eng.getAppliedFxParam (0, F::lpf, 0) - 0.8f) < 1.0e-6f, "...MACRO AMOUNT 0 % plays its MILD values");
+        const float ownCutoff = r.p.getParameters().getParameter (F::paramId (0, F::lpf, 0))->getValue();
+        setParam (r.p, tb::macro::paramId (0), 0.0f);
+        blocks (2);
+        check (std::abs (eng.getAppliedFxParam (0, F::lpf, 0) - ownCutoff) < 1.0e-4f && (br.fxEngaged[0].load() & (1u << F::lpf)) == 0,
+               "...letting go puts your own settings back");
+        rc.setName (0, "MY DESTROY");
+
+        // Saved with the set and in kit presets.
+        juce::MemoryBlock mb;
+        r.p.getStateInformation (mb);
+        Rig r2;
+        r2.p.setStateInformation (mb.getData(), (int) mb.getSize());
+        auto& rc2 = r2.p.getBridge().macros;
+        check (rc2.getName (0) == "MY DESTROY" && ! rc2.usesFx (0, F::drive) && std::abs (rc2.getHard (0, F::crush, 0) - 0.9f) < 1.0e-6f && rc2.isFactory (1),
+               "edited recipes are saved with the Live set (only the edited macros are stored)");
+        const auto root = testDir().getChildFile ("macro_presets");
+        root.deleteRecursively();
+        r.p.getPresets().setRootForTesting (root);
+        tb::PresetManager::Meta m; m.name = "Macro Kit";
+        const auto kit = r.p.getPresets().newFileFor (tb::PresetManager::Type::kit, m.name);
+        r.p.getPresets().saveKit (kit, m);
+        Rig r3;
+        r3.p.getPresets().setRootForTesting (root);
+        r3.p.getPresets().load (kit);
+        pumpPresets (r3);
+        check (r3.p.getBridge().macros.getName (0) == "MY DESTROY" && r3.p.getBridge().macros.usesFx (0, F::lpf), "...and in kit presets");
+        root.deleteRecursively();
+
+        rc.resetToFactory (0);
+        check (rc.isFactory (0) && rc.getName (0) == tb::macro::def (0).label, "RESET puts the factory recipe back");
+
+        // The editor opens on a macro.
+        tb::ui::MacroEditorPanel ed (r.p);
+        ed.setSize (572, 392);
+        ed.setMacro (6);
+        check (ed.getMacro() == 6 && rc.usesFx (6, ed.getFx()), "the editor opens on a macro, on the first effect it uses");
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -6937,6 +7006,15 @@ namespace
         {
             setParam (p, tb::params::xfade, 0.32f);
         }
+        if (out.getFileName().contains ("macroedit"))
+        {
+            std::function<void (juce::Component&)> findView = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) { mv->getMacroEditor().setMacro (6); mv->showView (tb::ui::MainView::View::macroEdit); }
+                for (auto* child : c.getChildren()) findView (*child);
+            };
+            findView (*ed);
+        }
         if (out.getFileName().contains ("presets"))
         {
             auto& pm = p.getPresets();
@@ -7139,6 +7217,7 @@ int main (int argc, char* argv[])
         testA11ExportSong();
         testA12MidiStop();
         testA12Stretch();
+        testA12Macros();
         testEditorDrivesState();
         testRealtimeSafety();
 

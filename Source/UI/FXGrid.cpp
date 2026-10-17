@@ -45,8 +45,9 @@ namespace tb::ui
         auto gm = paramModel (params::macroGroup, 0, 4, 4, 1, [] (int v) { return v >= 4 ? String ("ALL") : String::charToString ((juce_wchar) ('A' + v)); });
         gm.cycleOnClick = true;
         groupRead.bind (gm);
-        for (Component* comp : std::initializer_list<Component*> { &amountRead, &groupRead, &latchKey })
+        for (Component* comp : std::initializer_list<Component*> { &amountRead, &groupRead, &latchKey, &editKey })
             addChildComponent (comp);
+        editKey.onClick = [this] { if (onEditMacro) onEditMacro (lastMacro); };
     }
 
     Rectangle<float> FXGrid::groupBounds (int g) const
@@ -75,7 +76,7 @@ namespace tb::ui
         if (heldMacro >= 0) { setMacroParam (heldMacro, false); heldMacro = -1; }
         if (held >= 0)      { setFxParam (held, false); held = -1; }
         macroPage = show;
-        for (Component* comp : std::initializer_list<Component*> { &amountRead, &groupRead, &latchKey })
+        for (Component* comp : std::initializer_list<Component*> { &amountRead, &groupRead, &latchKey, &editKey })
             comp->setVisible (show);
         repaint();
     }
@@ -147,6 +148,8 @@ namespace tb::ui
             for (int m = 0; m < macro::kNumMacros; ++m)
                 if (macroKeyBounds (m).contains (pos))
                 {
+                    lastMacro = m;
+                    if (e.mods.isPopupMenu()) { if (onEditMacro) onEditMacro (m); return; }     // right-click: edit its recipe (A12)
                     if (processor.getParameters().getRawParameterValue (params::macroLatch)->load() > 0.5f)
                     {
                         const bool active = ((processor.getBridge().macroActive.load() >> m) & 1u) != 0;
@@ -234,7 +237,9 @@ namespace tb::ui
             row.removeFromLeft (8);
             groupRead.setBounds (row.removeFromLeft (52));
             row.removeFromLeft (10);
-            latchKey.setBounds (row.withTrimmedTop (10));
+            latchKey.setBounds (row.removeFromLeft (52).withTrimmedTop (10));
+            row.removeFromLeft (4);
+            editKey.setBounds (row.withTrimmedTop (10));
         }
         const float s = 2.0f;
         cache = Image (Image::ARGB, roundToInt (b.getWidth() * s), roundToInt (b.getHeight() * s), true);
@@ -290,7 +295,7 @@ namespace tb::ui
                 }
                 g.setColour (c::plateText.withAlpha (lit ? 1.0f : 0.85f));
                 g.setFont (industrialFont (12.0f));
-                g.drawFittedText (macro::def (m).label, key.reduced (3.0f).withTrimmedTop (10.0f).toNearestInt(),
+                g.drawFittedText (processor.getBridge().macros.getName (m), key.reduced (3.0f).withTrimmedTop (10.0f).toNearestInt(),
                                   Justification::centred, 2, 0.7f);
             }
             return;
