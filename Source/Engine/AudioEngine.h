@@ -98,6 +98,8 @@ namespace tb
             int   swapFrom  = 0;      // 0 same step, 1 step 1
             int   press     = 0;      // params::PressTarget (Push 3 pad pressure)
             bool  stepsWhole = false; // A10: steps play the whole pad, never a slice
+            bool  fit = false;        // A11: one-shots / slices follow Live's tempo
+            int   layerMode = 0;      // A11: params::LayerMode
         };
 
         struct GroupParams
@@ -142,6 +144,7 @@ namespace tb
         /** Pad commands with pad = kNumPads + slot fill break-bank slots. */
         static constexpr int kBankCommandBase = kNumPads;
         static constexpr int kPreviewCommand  = -100;     // PadCommand.pad: audition a buffer (preset browser)
+        static constexpr int kLayerCommandBase = 1000;    // PadCommand.pad: 1000 + pad * 4 + layer (A11 layers)
 
         /** Snapshot switch (audio thread, at the boundary): every pad's own sample + slices. */
         void applySnapshotPads (const std::array<SampleBuffer*, kNumPads>& buffers,
@@ -423,6 +426,19 @@ namespace tb
         std::array<bool, kNumPads> padSliceSeq {};
         std::array<int,  kNumPads> padSliceSlot {};
         std::array<float, kNumPads> padPitchNow {};
+        // A11: layers (round robin / velocity / random), fit to tempo.
+        std::array<std::array<SampleBuffer::Ptr, params::kMaxLayers>, kNumPads> layerSample;
+        std::array<PadParams, kNumPads> padParamsNow {};
+        std::array<int, kNumPads>   layerNext {};
+        std::array<float, kNumPads> lastVelocity {};
+        std::array<double, kNumPads> padFitFactor {};
+        juce::Random layerRandom { 0x7b5 };
+        /** Region, loop and speed of a pad's voice for this buffer (START / END / SLICE, sync, pitch, FIT). */
+        void regionAndRate (int pad, const PadParams&, const SampleBuffer&, PadVoice::Settings&) noexcept;
+    public:
+        /** The tempo a break plays at, from its length (90-180 BPM, see loopBeatsFor). */
+        static double tempoOf (const SampleBuffer&) noexcept;
+    private:
         double freePpq = 0.0, clock0 = 0.0, clockDppq = 0.0;   // slice-sequencer clock (Live's, or free when stopped)
         bool   clockPlaying = false;
         int    blockLength = 0;

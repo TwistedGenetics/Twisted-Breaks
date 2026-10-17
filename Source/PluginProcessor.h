@@ -219,6 +219,8 @@ private:
         std::atomic<float>* swapFrom = nullptr;
         std::atomic<float>* press = nullptr;
         std::atomic<float>* stepsWhole = nullptr;
+        std::atomic<float>* fit = nullptr;
+        std::atomic<float>* layers = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

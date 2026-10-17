@@ -104,6 +104,11 @@ namespace tb
                     previewActive.store (previewSample != nullptr, std::memory_order_relaxed);
                 }
             }
+            else if (cmd.pad >= kLayerCommandBase && cmd.pad < kLayerCommandBase + kNumPads * params::kMaxLayers)
+            {
+                const int k = cmd.pad - kLayerCommandBase;
+                if (cmd.setSample) layerSample[(size_t) (k / params::kMaxLayers)][(size_t) (k % params::kMaxLayers)] = cmd.buffer;
+            }
             else if (juce::isPositiveAndBelow (cmd.pad, kNumPads))
             {
                 if (cmd.setSlices) ownSlices[(size_t) cmd.pad] = cmd.slices;     // plain copy, no allocation
@@ -121,6 +126,77 @@ namespace tb
 
             if (cmd.buffer != nullptr)
                 cmd.buffer->decReferenceCountWithoutDeleting();       // adopt the sender's +1
+        }
+    }
+
+    double AudioEngine::tempoOf (const SampleBuffer& b) noexcept
+    {
+        const double secs = (double) b.getNumSamples() / juce::jmax (1.0, b.sourceSampleRate);
+        if (secs <= 0.0) return 0.0;
+        return PadVoice::loopBeatsFor (secs) * 60.0 / secs;
+    }
+
+    void AudioEngine::regionAndRate (int pad, const PadParams& pp, const SampleBuffer& buf, PadVoice::Settings& s) noexcept
+    {
+        const int len = buf.getNumSamples();
+
+        int s0, s1;
+        const auto& slices = padSlices[(size_t) pad];
+        if (pp.mode == params::modeSlice && ! slices.isEmpty())
+        {
+            // SLICE: the chosen slice is the region (START / END don't apply).
+            const auto r = slices.region (pp.slice - 1, len);
+            s0 = r.getStart();
+            s1 = r.getEnd();
+        }
+        else
+        {
+            // Region from START / END. If automation crosses them, use the span between.
+            float a = juce::jlimit (0.0f, 1.0f, pp.start);
+            float b = juce::jlimit (0.0f, 1.0f, pp.end);
+            if (b < a) std::swap (a, b);
+            s0 = (int) std::lround ((double) a * len);
+            s1 = (int) std::lround ((double) b * len);
+        }
+        if (s1 - s0 < kMinRegion)
+        {
+            s1 = juce::jmin (len, s0 + kMinRegion);
+            s0 = juce::jmax (0, s1 - kMinRegion);
+        }
+        s.regionStart = s0;
+        s.regionEnd   = s1;
+        s.reverse     = pp.reverse;
+        s.loop        = pp.mode == params::modeLoop;
+        s.character   = juce::jlimit (0, PadVoice::kNumCharacters - 1, pp.character);
+
+        const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
+        const double fileRate = buf.sourceSampleRate / sampleRate;
+
+        if (s.loop && pp.sync)
+        {
+            // Tempo-synced loop: the region spans N beats (from its own
+            // length), played at the host tempo x rate. Pitch follows speed.
+            const double beats  = PadVoice::loopBeatsFor ((double) (s1 - s0) / buf.sourceSampleRate);
+            s.syncPeriodBeats   = beats / rate;
+            const double bpm    = transportNow != nullptr ? transportNow->bpm : 120.0;
+            s.increment         = (double) (s1 - s0) * (bpm / 60.0) / (s.syncPeriodBeats * sampleRate);
+        }
+        else
+        {
+            // Free-running: file-rate compensation x semitones (x loop rate).
+            s.syncPeriodBeats = 0.0;
+            s.increment = fileRate * std::pow (2.0, (double) pp.pitch / 12.0) * (s.loop ? rate : 1.0);
+        }
+
+
+        // FIT (A11): a one-shot / slice break plays at Live's tempo, from its own.
+        padFitFactor[(size_t) pad] = 1.0;
+        if (pp.fit && ! s.loop)
+        {
+            const double own = tempoOf (buf);
+            const double bpm = transportNow != nullptr ? transportNow->bpm : 120.0;
+            if (own > 1.0 && bpm > 1.0) padFitFactor[(size_t) pad] = juce::jlimit (0.25, 4.0, bpm / own);
+            s.increment *= padFitFactor[(size_t) pad];
         }
     }
 
@@ -296,58 +372,10 @@ namespace tb
                 stopLane (p);                         // no longer a SEQ pad (edit, snapshot ...)
 
             auto& s = padSettings[(size_t) p];
+            padParamsNow[(size_t) p] = pp;
             const auto* buf = padSample[(size_t) p].get();
             if (buf == nullptr) continue;
-
-            const int len = buf->getNumSamples();
-
-            int s0, s1;
-            const auto& slices = padSlices[(size_t) p];
-            if (pp.mode == params::modeSlice && ! slices.isEmpty())
-            {
-                // SLICE: the chosen slice is the region (START / END don't apply).
-                const auto r = slices.region (pp.slice - 1, len);
-                s0 = r.getStart();
-                s1 = r.getEnd();
-            }
-            else
-            {
-                // Region from START / END. If automation crosses them, use the span between.
-                float a = juce::jlimit (0.0f, 1.0f, pp.start);
-                float b = juce::jlimit (0.0f, 1.0f, pp.end);
-                if (b < a) std::swap (a, b);
-                s0 = (int) std::lround ((double) a * len);
-                s1 = (int) std::lround ((double) b * len);
-            }
-            if (s1 - s0 < kMinRegion)
-            {
-                s1 = juce::jmin (len, s0 + kMinRegion);
-                s0 = juce::jmax (0, s1 - kMinRegion);
-            }
-            s.regionStart = s0;
-            s.regionEnd   = s1;
-            s.reverse     = pp.reverse;
-            s.loop        = pp.mode == params::modeLoop;
-            s.character   = juce::jlimit (0, PadVoice::kNumCharacters - 1, pp.character);
-
-            const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
-            const double fileRate = buf->sourceSampleRate / sampleRate;
-
-            if (s.loop && pp.sync)
-            {
-                // Tempo-synced loop: the region spans N beats (from its own
-                // length), played at the host tempo x rate. Pitch follows speed.
-                const double beats  = PadVoice::loopBeatsFor ((double) (s1 - s0) / buf->sourceSampleRate);
-                s.syncPeriodBeats   = beats / rate;
-                const double bpm    = transportNow != nullptr ? transportNow->bpm : 120.0;
-                s.increment         = (double) (s1 - s0) * (bpm / 60.0) / (s.syncPeriodBeats * sampleRate);
-            }
-            else
-            {
-                // Free-running: file-rate compensation x semitones (x loop rate).
-                s.syncPeriodBeats = 0.0;
-                s.increment = fileRate * std::pow (2.0, (double) pp.pitch / 12.0) * (s.loop ? rate : 1.0);
-            }
+            regionAndRate (p, pp, *buf, s);
 
             // Gain + balance-style pan (centre = unity on both sides); mute / solo.
             const bool audible = ! pp.mute && (! anySolo || pp.solo);
@@ -364,6 +392,7 @@ namespace tb
                     if (padSliceSeq[(size_t) p] || voiceCustom[(size_t) p][(size_t) i]) v.updateGains (s);
                     else                                                                 v.update (s);
                 }
+                else if (v.isActive()) v.updateGains (s);          // a layer (A11) or a sample on its way out
             }
         }
     }
@@ -408,6 +437,7 @@ namespace tb
 
         bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
         padFlash[(size_t) pad] = true;     // lamp blinks even on an empty pad
+        lastVelocity[(size_t) pad] = velocity;
 
         chokeOthers (pad, padChoke[(size_t) pad]);
 
@@ -530,7 +560,7 @@ namespace tb
             s.regionEnd   = juce::jmax (r.getStart() + kMinRegion, r.getEnd());
             s.loop = false;
             s.syncPeriodBeats = 0.0;
-            s.increment = fileRate * std::pow (2.0, (double) padPitchNow[(size_t) pad] / 12.0);
+            s.increment = fileRate * std::pow (2.0, (double) padPitchNow[(size_t) pad] / 12.0) * padFitFactor[(size_t) pad];
         }
         if (st.pitch != 0)
         {
@@ -557,10 +587,44 @@ namespace tb
         auto& slots = voices[(size_t) pad];
         auto& cur   = currentVoice[(size_t) pad];
 
+        // LAYERS (A11): a plain hit may play one of the pad's extra samples instead.
+        const SampleBuffer::Ptr* use = &sample;
+        PadVoice::Settings layered;
+        const auto& pp = padParamsNow[(size_t) pad];
+        if (custom == nullptr && startAt < 0.0 && pp.layerMode != params::layersOff && ! padFollowBank[(size_t) pad]
+             && pp.mode != params::modeSlice && ! padSliceSeq[(size_t) pad])
+        {
+            std::array<int, params::kMaxLayers + 1> avail {};
+            int n = 0;
+            avail[(size_t) n++] = 0;
+            for (int l = 0; l < params::kMaxLayers; ++l)
+                if (layerSample[(size_t) pad][(size_t) l] != nullptr) avail[(size_t) n++] = l + 1;
+            if (n > 1)
+            {
+                int pick = 0;
+                switch (pp.layerMode)
+                {
+                    case params::layersRoundRobin: pick = avail[(size_t) (layerNext[(size_t) pad]++ % n)]; break;
+                    case params::layersVelocity:   pick = avail[(size_t) juce::jlimit (0, n - 1, (int) (lastVelocity[(size_t) pad] * (float) n))]; break;
+                    case params::layersRandom:     pick = avail[(size_t) layerRandom.nextInt (n)]; break;
+                    default: break;
+                }
+                if (pick > 0)
+                {
+                    use = &layerSample[(size_t) pad][(size_t) (pick - 1)];
+                    layered = padSettings[(size_t) pad];                 // gains, character
+                    const double fit = padFitFactor[(size_t) pad];
+                    regionAndRate (pad, pp, **use, layered);
+                    padFitFactor[(size_t) pad] = fit;
+                    custom = &layered;
+                }
+            }
+        }
+
         slots[(size_t) cur].release();
         cur = (cur + 1) % kVoicesPerPad;
         slots[(size_t) cur].kill();
-        slots[(size_t) cur].start (sample, custom != nullptr ? *custom : padSettings[(size_t) pad], level, ppqHere, playing, startAt);
+        slots[(size_t) cur].start (*use, custom != nullptr ? *custom : padSettings[(size_t) pad], level, ppqHere, playing, startAt);
         voiceCustom[(size_t) pad][(size_t) cur] = custom != nullptr;
     }
 

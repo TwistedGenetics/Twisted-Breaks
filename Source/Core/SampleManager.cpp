@@ -96,7 +96,10 @@ namespace tb
     {
         const juce::ScopedLock sl (lock);
         for (const auto& p : pads)
+        {
             if (p.status == Status::loading || p.slicing) return true;
+            for (const auto& l : p.layers) if (l.status == Status::loading) return true;
+        }
         return false;
     }
 
@@ -174,9 +177,12 @@ namespace tb
         ++sliceGeneration[(size_t) pad];
         followLeader[(size_t) pad] = -1;
         hasRestoreSlices[(size_t) pad] = false;
+        const bool hadLayers = getInfo (pad).layerCount() > 0;
+        for (auto& g : layerGen[(size_t) pad]) ++g;
         setInfo (pad, {});
         sendSample (pad, nullptr);
         sendSlices (pad, {});
+        if (hadLayers) for (int l = 0; l < PadInfo::kLayers; ++l) sendLayer (pad, l, nullptr);
     }
 
     void SampleManager::installBuffer (int pad, const SampleBuffer::Ptr& buffer, const SliceTable* keepSlices)
@@ -310,6 +316,7 @@ namespace tb
 
             const auto path = e.isValid() ? e.getProperty (kPathId).toString() : juce::String();
             PadInfo info;
+            info.layers = getInfo (p).layers;          // layers follow separately (restoreLayers)
             if (path.isNotEmpty())
             {
                 info.file = juce::File (path);
@@ -501,14 +508,29 @@ namespace tb
                 p.sensitivity = src.sensitivity;
                 p.sliceCount  = src.sliceCount;
             }, false);
-            return;
+        }
+        else
+        {
+            modify (pad, [&] (PadInfo& p) { p.sensitivity = src.sensitivity; p.sliceCount = src.sliceCount; }, false);
+            restoreSlices[(size_t) pad]    = src.slices;
+            restoreDetected[(size_t) pad]  = src.detected;
+            hasRestoreSlices[(size_t) pad] = true;
+            startLoad (pad, src.file, &restoreSlices[(size_t) pad]);
         }
 
-        modify (pad, [&] (PadInfo& p) { p.sensitivity = src.sensitivity; p.sliceCount = src.sliceCount; }, false);
-        restoreSlices[(size_t) pad]    = src.slices;
-        restoreDetected[(size_t) pad]  = src.detected;
-        hasRestoreSlices[(size_t) pad] = true;
-        startLoad (pad, src.file, &restoreSlices[(size_t) pad]);
+        // Layers: shared buffers as they are, files reloaded, the rest cleared.
+        for (int l = 0; l < PadInfo::kLayers; ++l)
+        {
+            const auto& sl = src.layers[(size_t) l];
+            if (sl.buffer != nullptr)
+            {
+                ++layerGen[(size_t) pad][(size_t) l];
+                modify (pad, [&] (PadInfo& p) { p.layers[(size_t) l] = sl; }, false);
+                sendLayer (pad, l, sl.buffer);
+            }
+            else if (sl.status != Status::empty && sl.file != juce::File()) loadLayer (pad, l, sl.file);
+            else clearLayer (pad, l);
+        }
     }
 
     void SampleManager::repointFile (int pad, const juce::File& f)
@@ -617,6 +639,14 @@ namespace tb
             if (! info.detected.isEmpty()) pad.setProperty (kDetectedId, info.detected.toString(), nullptr);
             pad.setProperty (kSensId,  info.sensitivity, nullptr);
             pad.setProperty (kCountId, info.sliceCount, nullptr);
+            for (int l = 0; l < PadInfo::kLayers; ++l)
+                if (info.layers[(size_t) l].status != Status::empty)
+                {
+                    juce::ValueTree n ("LAYER");
+                    n.setProperty (kIndexId, l, nullptr);
+                    n.setProperty (kPathId, info.layers[(size_t) l].file.getFullPathName(), nullptr);
+                    pad.appendChild (n, nullptr);
+                }
             tree.appendChild (pad, nullptr);
         }
         return tree;
@@ -664,6 +694,95 @@ namespace tb
             restoreDetected[(size_t) p]  = detected;
             hasRestoreSlices[(size_t) p] = true;
             startLoad (p, juce::File (path), &restoreSlices[(size_t) p]);
+        }
+        restoreLayers (tree);
+    }
+
+    //==========================================================================
+    //  Layers (A11)
+    //==========================================================================
+    void SampleManager::sendLayer (int pad, int layer, const SampleBuffer::Ptr& buf)
+    {
+        if (buf != nullptr) retain (buf);
+        sendSample (AudioEngine::kLayerCommandBase + pad * PadInfo::kLayers + layer, buf);
+    }
+
+    int SampleManager::addLayer (int pad, const juce::File& f)
+    {
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return -1;
+        const auto info = getInfo (pad);
+        for (int l = 0; l < PadInfo::kLayers; ++l)
+            if (info.layers[(size_t) l].status == Status::empty) { loadLayer (pad, l, f); return l; }
+        return -1;
+    }
+
+    void SampleManager::loadLayer (int pad, int layer, const juce::File& f)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || ! juce::isPositiveAndBelow (layer, PadInfo::kLayers)) return;
+        const auto gen = ++layerGen[(size_t) pad][(size_t) layer];
+        modify (pad, [&] (PadInfo& i)
+        {
+            auto& l = i.layers[(size_t) layer];
+            l.status = Status::loading;
+            l.file = f;
+            l.name = f.getFileNameWithoutExtension();
+        }, false);
+        juce::WeakReference<SampleManager> weak (this);
+        requestBuffer (f, [weak, pad, layer, gen, f] (SampleBuffer::Ptr buf)
+        {
+            auto* self = weak.get();
+            if (self == nullptr || self->layerGen[(size_t) pad][(size_t) layer] != gen) return;
+            self->modify (pad, [&] (PadInfo& i)
+            {
+                auto& l = i.layers[(size_t) layer];
+                l.status = buf != nullptr ? Status::ready : (f.existsAsFile() ? Status::unreadable : Status::missing);
+                l.buffer = buf;
+                if (buf != nullptr) l.name = buf->name;
+            }, false);
+            self->sendLayer (pad, layer, buf);
+        });
+    }
+
+    void SampleManager::clearLayer (int pad, int layer)
+    {
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || ! juce::isPositiveAndBelow (layer, PadInfo::kLayers)) return;
+        ++layerGen[(size_t) pad][(size_t) layer];
+        if (getInfo (pad).layers[(size_t) layer].status == Status::empty) return;
+        modify (pad, [layer] (PadInfo& i) { i.layers[(size_t) layer] = {}; }, false);
+        sendLayer (pad, layer, nullptr);
+    }
+
+    void SampleManager::repointLayer (int pad, int layer, const juce::File& f)
+    {
+        if (! juce::isPositiveAndBelow (layer, PadInfo::kLayers)) return;
+        modify (pad, [&] (PadInfo& i) { if (i.layers[(size_t) layer].status != Status::empty) i.layers[(size_t) layer].file = f; }, false);
+    }
+
+    void SampleManager::restoreLayers (const juce::ValueTree& tree)
+    {
+        if (! juce::MessageManager::getInstance()->isThisTheMessageThread())
+        {
+            juce::WeakReference<SampleManager> weak (this);
+            juce::MessageManager::callAsync ([weak, copy = tree.createCopy()] { if (auto* self = weak.get()) self->restoreLayers (copy); });
+            return;
+        }
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            std::array<juce::String, PadInfo::kLayers> wanted;
+            for (const auto& e : tree)
+                if ((int) e.getProperty (kIndexId, -1) == p)
+                    for (const auto& n : e)
+                        if (n.hasType ("LAYER") && juce::isPositiveAndBelow ((int) n.getProperty (kIndexId, -1), PadInfo::kLayers))
+                            wanted[(size_t) (int) n.getProperty (kIndexId)] = n.getProperty (kPathId).toString();
+            const auto info = getInfo (p);
+            for (int l = 0; l < PadInfo::kLayers; ++l)
+            {
+                const auto& have = info.layers[(size_t) l];
+                if (wanted[(size_t) l].isEmpty()) { if (have.status != Status::empty) clearLayer (p, l); continue; }
+                if (have.status != Status::empty && have.file.getFullPathName() == wanted[(size_t) l]) continue;
+                loadLayer (p, l, juce::File (wanted[(size_t) l]));
+            }
         }
     }
 }

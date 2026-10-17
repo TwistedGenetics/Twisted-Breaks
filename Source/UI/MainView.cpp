@@ -24,7 +24,9 @@ namespace tb::ui
         const Rectangle<int> padEditor   {  36, 606,  540, 128 };
         const Rectangle<int> statusStrip {  36, 740,  540,  38 };
         const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
-        const Rectangle<int> undoKey     { 410, 138,   78,  28 };       // A11, on the PAD MATRIX title row
+        const Rectangle<int> twistKey    { 292, 138,   78,  28 };       // A11, on the PAD MATRIX title row
+        const Rectangle<int> twistMenu   { 372, 138,   30,  28 };
+        const Rectangle<int> undoKey     { 410, 138,   78,  28 };
         const Rectangle<int> redoKey     { 496, 138,   78,  28 };
         const Rectangle<int> kitBar      { 648,  17,  230,  38 };       // A11: the current kit
 
@@ -302,6 +304,33 @@ namespace tb::ui
         addAndMakeVisible (undoKey);
         addAndMakeVisible (redoKey);
         undoKey.onClick = [this] { processor.getPadOps().undo(); };
+        addAndMakeVisible (twistKey);
+        addAndMakeVisible (twistMenuKey);
+        twistKey.onClick = [this] { processor.getPadOps().twist (padGrid.getSelectedPad()); };
+        twistMenuKey.onClick = [this]
+        {
+            auto& apvts = processor.getParameters();
+            PopupMenu m;
+            m.addSectionHeader ("TWIST AMOUNT");
+            const int amt = roundToInt (apvts.getRawParameterValue (params::twistAmount)->load());
+            for (int a : { 10, 25, 50, 75, 100 })
+                m.addItem (String (a) + " %", true, amt == a, [this, a]
+                {
+                    if (auto* r = processor.getParameters().getParameter (params::twistAmount))
+                    { r->beginChangeGesture(); r->setValueNotifyingHost (r->convertTo0to1 ((float) a)); r->endChangeGesture(); }
+                });
+            m.addSectionHeader ("LOCKED (TWIST LEAVES THEM)");
+            for (int t = 0; t < params::kNumTwistTargets; ++t)
+            {
+                const bool on = apvts.getRawParameterValue (params::twistLockId (t))->load() > 0.5f;
+                m.addItem (params::twistTargetNames[t], true, on, [this, t, on]
+                {
+                    if (auto* r = processor.getParameters().getParameter (params::twistLockId (t)))
+                    { r->beginChangeGesture(); r->setValueNotifyingHost (on ? 0.0f : 1.0f); r->endChangeGesture(); }
+                });
+            }
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&twistMenuKey));
+        };
         redoKey.onClick = [this] { processor.getPadOps().redo(); };
         setWantsKeyboardFocus (true);
         // PANIC: stop every voice and tail, and switch the effects off so
@@ -355,6 +384,7 @@ namespace tb::ui
             mixer.setSelectedPad (pad);
             sequencer.setSelectedPad (pad);
             processor.getMutator().setSelectedPad (pad);
+            processor.getPadOps().setSelectedPad (pad);
             processor.getResampler().setSelectedPad (pad);
             sliceSeq.setPad (pad);
             snapshotPanel.setSelectedPad (pad);
@@ -403,6 +433,8 @@ namespace tb::ui
         panicButton.setBounds (layout::panic);
         lightsKey.setBounds (layout::lightsKey);
         undoKey.setBounds (layout::undoKey);
+        twistKey.setBounds (layout::twistKey);
+        twistMenuKey.setBounds (layout::twistMenu);
         redoKey.setBounds (layout::redoKey);
 
         auto rail = layout::navRail;

@@ -26,7 +26,7 @@ namespace tb
     bool SnapshotManager::isExcluded (const juce::String& id)
     {
         return id.startsWith ("master_") || id == params::snapRecall || id == params::snapAt
-            || id == params::bankActive || id == params::bankAt || id == params::seqFill || id == params::mutGo || id == params::rsmpRec
+            || id == params::bankActive || id == params::bankAt || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::twistGo
             || id == params::xfade || id == params::sceneView
             || (id.startsWith ("macro_") && id != params::macroAmount && id != params::macroGroup && id != params::macroLatch);   // macros are moves, not state
     }
@@ -245,6 +245,7 @@ namespace tb
                 if (std::abs (prm->getValue() - norm) > 1.0e-7f)
                     prm->setValueNotifyingHost (norm);
             processor.getSamples().adoptPads (f->pads, f->buffers);
+            processor.getSamples().restoreLayers (f->pads);           // A11: layers load after the switch
             processor.releaseSnapshotOverride (f);
             active = f->slot == kExternal ? -1 : f->slot;
             if (waitingSlot == f->slot) waitingSlot = -1;

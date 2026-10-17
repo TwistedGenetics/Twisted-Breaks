@@ -39,6 +39,7 @@ namespace tb::ui
 
         /** The right-click COPY / PASTE / SWAP / CLEAR menu of a pad (A11). */
         void showPadMenu (int pad);
+        void chooseLayerFile (int pad, int layer);      // layer -1: the first free one
 
         /** Scenes: which 16 pads the tiles show (0 = A, 1 = B). */
         void setScene (int scene);
@@ -51,5 +52,6 @@ namespace tb::ui
         std::array<uint32_t, kPadsPerScene> shownVersions {};
         std::array<juce::String, kPadsPerScene> shownTags;
         int selectedPad = 0, scene = 0;
+        std::unique_ptr<juce::FileChooser> chooser;
     };
 }

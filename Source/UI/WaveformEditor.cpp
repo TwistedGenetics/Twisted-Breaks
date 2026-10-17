@@ -658,7 +658,7 @@ namespace tb::ui
             g.drawText (padName + "  " + buf.name.toUpperCase(), txt.withTrimmedRight (240.0f),
                         Justification::topLeft, true);
 
-            const String fmt = String (buf.getLengthSeconds(), 3) + " s   "
+            const String fmt = String (AudioEngine::tempoOf (buf), 1) + " BPM   " + String (buf.getLengthSeconds(), 3) + " s   "
                              + String (buf.sourceSampleRate / 1000.0, 1) + " kHz   "
                              + (buf.getNumChannels() > 1 ? "STEREO" : "MONO");
             g.drawText (fmt, txt, Justification::topRight, false);

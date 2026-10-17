@@ -71,6 +71,38 @@ namespace tb::ui
         m.addSubMenu ("Swap with", padList ([&ops, pad] (int t) { ops.swap (pad, t); }));
         m.addSeparator();
         m.addItem ("Clear pad (sample and steps)", [&ops, pad] { ops.clear (pad); });
+        m.addItem ("TWIST", [&ops, pad] { ops.twist (pad); });
+
+        // A11: fit to tempo, layers.
+        auto& apvts = processor.getParameters();
+        auto toggle = [this] (const juce::String& id, float v)
+        {
+            if (auto* r = processor.getParameters().getParameter (id)) { r->beginChangeGesture(); r->setValueNotifyingHost (r->convertTo0to1 (v)); r->endChangeGesture(); }
+        };
+        const auto info = processor.getSamples().getInfo (pad);
+        const double bpm = info.buffer != nullptr ? AudioEngine::tempoOf (*info.buffer) : 0.0;
+        const bool fit = apvts.getRawParameterValue (params::padId (pad, params::padFit))->load() > 0.5f;
+        m.addItem ("Fit to Live's tempo" + (bpm > 0.0 ? " (break: " + juce::String (bpm, 1) + " BPM)" : juce::String()), true, fit,
+                   [toggle, pad, fit] { toggle (params::padId (pad, params::padFit), fit ? 0.0f : 1.0f); });
+        juce::PopupMenu layers;
+        const int lm = juce::roundToInt (apvts.getRawParameterValue (params::padId (pad, params::padLayers))->load());
+        for (int k = 0; k < 4; ++k)
+            layers.addItem (juce::String ("Play: ") + params::kLayerModeNames[k], true, lm == k,
+                            [toggle, pad, k] { toggle (params::padId (pad, params::padLayers), (float) k); });
+        layers.addSeparator();
+        for (int l = 0; l < SampleManager::PadInfo::kLayers; ++l)
+        {
+            const auto& L = info.layers[(size_t) l];
+            if (L.status == SampleManager::Status::empty) continue;
+            juce::PopupMenu one;
+            one.addItem ("Replace...", [this, pad, l] { chooseLayerFile (pad, l); });
+            one.addItem ("Remove", [this, pad, l] { processor.getSamples().clearLayer (pad, l); });
+            layers.addSubMenu ("Layer " + juce::String (l + 1) + ": " + L.name.toUpperCase()
+                               + (L.status == SampleManager::Status::missing ? " (MISSING)" : L.status == SampleManager::Status::loading ? " (LOADING)" : ""), one);
+        }
+        layers.addItem ("Add a layer...", info.layerCount() < SampleManager::PadInfo::kLayers && info.buffer != nullptr, false,
+                        [this, pad] { chooseLayerFile (pad, -1); });
+        m.addSubMenu ("Layers" + (info.layerCount() > 0 ? " (" + juce::String (info.layerCount()) + ")" : juce::String()), layers);
         m.addSeparator();
         m.addItem ("Undo " + ops.undoName(), ops.canUndo(), false, [&ops] { ops.undo(); });
         m.addItem ("Redo " + ops.redoName(), ops.canRedo(), false, [&ops] { ops.redo(); });
@@ -80,6 +112,23 @@ namespace tb::ui
         juce::Component* target = this;
         for (auto& t : pads) if (t->getPadIndex() == pad) target = t.get();
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target));
+    }
+
+    void PadGrid::chooseLayerFile (int pad, int layer)
+    {
+        chooser = std::make_unique<juce::FileChooser> ("A sound for pad " + padLabel (pad) + (layer < 0 ? " (new layer)" : " (layer " + juce::String (layer + 1) + ")"),
+                                                       juce::File::getSpecialLocation (juce::File::userMusicDirectory), "*.wav;*.wave;*.aif;*.aiff;*.aifc;*.flac");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, pad, layer] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (! f.existsAsFile()) return;
+            auto& sm = processor.getSamples();
+            if (layer < 0) sm.addLayer (pad, f); else sm.loadLayer (pad, layer, f);
+            // Adding the first layer: switch the pad to round robin if it was off.
+            if (auto* r = processor.getParameters().getParameter (params::padId (pad, params::padLayers)))
+                if (juce::roundToInt (r->convertFrom0to1 (r->getValue())) == params::layersOff)
+                { r->beginChangeGesture(); r->setValueNotifyingHost (r->convertTo0to1 ((float) params::layersRoundRobin)); r->endChangeGesture(); }
+        });
     }
 
     void PadGrid::resized()
@@ -153,7 +202,12 @@ namespace tb::ui
             const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())
                                              + (swap > 0 ? " SW" + juce::String (swap) : juce::String())
                                              + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String())
-                                             + juce::String (std::array<const char*, 5> { "", " SP12", " MPC", " S950", " LOFI" }[(size_t) juce::jlimit (0, 4, juce::roundToInt (raw (params::padCharacter)))]);
+                                             + juce::String (std::array<const char*, 5> { "", " SP12", " MPC", " S950", " LOFI" }[(size_t) juce::jlimit (0, 4, juce::roundToInt (raw (params::padCharacter)))])
+                                             + (raw (params::padFit) > 0.5f ? juce::String (" FIT") : juce::String())
+                                             + [&] { const int n = samples.getInfo (i).layerCount();
+                                                     const int lm = juce::roundToInt (raw (params::padLayers));
+                                                     return n > 0 && lm != params::layersOff ? (lm == params::layersRoundRobin ? " RR" : lm == params::layersVelocity ? " VL" : " RN") + juce::String (n + 1)
+                                                                                             : juce::String(); }();
 
             const int  note    = engine.getPadNote (i);
             const auto version = samples.getVersion (i);

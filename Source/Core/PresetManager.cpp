@@ -13,7 +13,7 @@ namespace tb
         /** Parameters a kit doesn't keep: momentary keys and macro moves. */
         bool isMomentary (const juce::String& id)
         {
-            return id == params::snapRecall || id == params::seqFill || id == params::mutGo || id == params::rsmpRec
+            return id == params::snapRecall || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::twistGo
                 || id == params::masterPanic
                 || (id.startsWith ("macro_") && id != params::macroAmount && id != params::macroGroup && id != params::macroLatch);
         }
@@ -191,6 +191,7 @@ namespace tb
         {
             const auto info = processor.getSamples().getInfo (p);
             if (info.buffer != nullptr) loaded[info.file.getFullPathName()] = info.buffer;
+            for (const auto& l : info.layers) if (l.buffer != nullptr) loaded[l.file.getFullPathName()] = l.buffer;
         }
         for (int s = 0; s < BreakBank::kSlots; ++s)
         {
@@ -696,7 +697,12 @@ namespace tb
         };
 
         for (int p = 0; p < kNumPads; ++p)
-            if (auto d = collect (sm.getInfo (p).file); d != juce::File()) sm.repointFile (p, d);
+        {
+            const auto info = sm.getInfo (p);
+            if (auto d = collect (info.file); d != juce::File()) sm.repointFile (p, d);
+            for (int l = 0; l < SampleManager::PadInfo::kLayers; ++l)
+                if (auto d = collect (info.layers[(size_t) l].file); d != juce::File()) sm.repointLayer (p, l, d);
+        }
         for (int s = 0; s < BreakBank::kSlots; ++s)
             if (auto d = collect (bank.get (s).file); d != juce::File()) bank.repointFile (s, d);
         // Snapshots: their own paths (files no pad uses now included).

@@ -822,6 +822,10 @@ namespace tb
                 else    { processor.getMutator().mutate(); flash ("MUTATE", "GO", nowMs); }
                 break;
             case tap:       setFill (true); flash ("FILL", "HELD", nowMs); break;
+            case events:                        // A11: TWIST the selected pad (SHIFT: undo it)
+                if (sh) { const auto n = processor.getPadOps().undoName(); flash ("UNDO", processor.getPadOps().undo() ? n : juce::String ("NOTHING"), nowMs); }
+                else    { processor.getPadOps().twist (selectedPad.load()); flash ("TWIST", padLabel (selectedPad.load()), nowMs); }
+                break;
             case sampling:
             {
                 auto& rs = processor.getResampler();

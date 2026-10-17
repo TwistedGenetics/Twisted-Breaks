@@ -49,6 +49,18 @@ namespace tb
             int               sliceCount  = 16;   // AUTO keeps at most this many; EQUAL makes this many
             bool              slicing = false;    // AUTO SLICE running
             uint32_t          version = 0;        // bumps on every change, for UI polling
+
+            // A11: up to 4 extra samples the pad takes turns with (params::padLayers).
+            struct Layer
+            {
+                Status status = Status::empty;
+                juce::File file;
+                juce::String name;
+                SampleBuffer::Ptr buffer;
+            };
+            static constexpr int kLayers = 4;
+            std::array<Layer, kLayers> layers;
+            int layerCount() const noexcept { int n = 0; for (auto& l : layers) n += l.status != Status::empty ? 1 : 0; return n; }
         };
 
         explicit SampleManager (AudioEngine&);
@@ -78,6 +90,15 @@ namespace tb
         void assignPad (int pad, const PadInfo&);
         /** Collect Samples: the pad now points at this copy of its file (same audio). */
         void repointFile (int pad, const juce::File&);
+        void repointLayer (int pad, int layer, const juce::File&);
+
+        // ---- Layers (A11, message thread) -----------------------------------------------
+        /** Loads into the first free layer; returns it, or -1 when all 4 are used. */
+        int  addLayer (int pad, const juce::File&);
+        void loadLayer (int pad, int layer, const juce::File&);
+        void clearLayer (int pad, int layer);
+        /** Snapshots / kits: make each pad's layers what `pads` lists (loads what's new). */
+        void restoreLayers (const juce::ValueTree& pads);
 
         /** Preset browser: play `buffer` once from the top (nullptr stops). */
         void preview (const SampleBuffer::Ptr& buffer);
@@ -148,6 +169,8 @@ namespace tb
         mutable juce::CriticalSection lock;            // guards `pads` (never taken by audio)
         std::array<PadInfo, kNumPads>  pads;
         std::array<uint32_t, kNumPads> generation {};  // discards stale load results
+        std::array<std::array<uint32_t, PadInfo::kLayers>, kNumPads> layerGen {};
+        void sendLayer (int pad, int layer, const SampleBuffer::Ptr&);
         std::array<uint32_t, kNumPads> sliceGeneration {};
 
         // Restore: slices to re-apply once the sample arrives; pads waiting on

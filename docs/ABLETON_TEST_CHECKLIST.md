@@ -102,6 +102,15 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.21: TWIST, layers, fit
+
+- [ ] TWIST (above the pads) a few times on a break: the sound changes each time, around your settings; UNDO walks back.
+- [ ] "..." : lock PITCH and set 25 %: TWIST leaves the pitch, changes are smaller. MIDI-map "Twist" and fire it from a controller.
+- [ ] Mikro EVENTS twists the selected pad, SHIFT + EVENTS undoes it.
+- [ ] Right-click a pad > Layers > Add a layer (two different snares): hits alternate (RR2 on the tile); Velocity: soft vs hard; Random.
+- [ ] Right-click > Fit to Live's tempo on a one-shot break, change Live's tempo: it plays faster / slower; the CRT shows the break's BPM.
+- [ ] Save, reopen and save a kit preset: layers and FIT come back.
+
 ## 0.20: presets
 
 - [ ] PRESETS (top row): three factory kits appear; click one to hear it, double-click to load; the kit name shows in the header.

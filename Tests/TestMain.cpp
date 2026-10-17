@@ -368,7 +368,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1129, "1129 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 27 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 1202, "1202 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3519,7 +3519,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -5140,6 +5140,125 @@ namespace
         srcDir.deleteRecursively();
     }
 
+    void testA11Extras()
+    {
+        std::cout << "\n== A11: TWIST, layers, fit to tempo ==" << std::endl;
+        auto rawOf = [] (TwistedBreaksProcessor& p, const juce::String& id) { auto* r = p.getParameters().getParameter (id); return r->convertFrom0to1 (r->getValue()); };
+
+        // ---- TWIST
+        {
+            Rig r;
+            auto& ops = r.p.getPadOps();
+            ops.stopWatchingForTesting();
+            r.load (0, writeAudio ("twist_src", makeBreak (44100.0), 44100.0, Fmt::wav16));
+            r.p.getSamples().equalSlice (0);
+            setParam (r.p, tb::params::twistAmount, 100.0f);
+            setParam (r.p, tb::params::twistLockId (0), 1.0f);                 // pitch locked
+            setPadParam (r.p, 0, tb::params::padPitch, 2.0f);
+            const float start0 = rawOf (r.p, tb::params::padId (0, tb::params::padStart));
+            const float pan0   = rawOf (r.p, tb::params::padId (0, tb::params::padPan));
+            bool changed = false, pitchKept = true, startOk = true;
+            for (int i = 0; i < 6; ++i)
+            {
+                ops.twist (0);
+                pitchKept = pitchKept && std::abs (rawOf (r.p, tb::params::padId (0, tb::params::padPitch)) - 2.0f) < 0.01f;
+                const float st = rawOf (r.p, tb::params::padId (0, tb::params::padStart));
+                startOk = startOk && st >= start0 - 0.001f && st <= start0 + 0.451f;
+                changed = changed || std::abs (rawOf (r.p, tb::params::padId (0, tb::params::padPan)) - pan0) > 0.01f;
+            }
+            check (changed && pitchKept && startOk && ops.undoName() == "TWIST",
+                   "TWIST shakes the pad's settings around where you left them; a locked setting stays; each is an undo step");
+            for (int i = 0; i < 6; ++i) ops.undo();
+            check (std::abs (rawOf (r.p, tb::params::padId (0, tb::params::padPan)) - pan0) < 0.001f
+                     && std::abs (rawOf (r.p, tb::params::padId (0, tb::params::padStart)) - start0) < 0.001f,
+                   "...undo goes back to the original sound");
+            setParam (r.p, tb::params::twistAmount, 0.0f);
+            const int pos = ops.position();
+            ops.twist (0);
+            check (ops.position() == pos, "TWIST at 0 % changes nothing");
+        }
+        {
+            Rig r;                                                         // the MIDI-mappable "Twist" parameter
+            setParam (r.p, tb::params::twistAmount, 100.0f);
+            r.p.getPadOps().setSelectedPad (3);
+            setParam (r.p, tb::params::twistGo, 1.0f);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (400);
+            setParam (r.p, tb::params::twistGo, 0.0f);
+            check (r.p.getPadOps().undoName() == "TWIST", "the Twist parameter (MIDI-mappable) twists the selected pad");
+        }
+
+        // ---- Layers
+        {
+            Rig r;
+            r.p.getPadOps().stopWatchingForTesting();
+            auto dc = [] (float v) { juce::AudioBuffer<float> b (1, 24000); for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, v); return b; };
+            const auto fMain = writeAudio ("layer_main", dc (0.2f), 48000.0, Fmt::wavFloat);
+            const auto fL1   = writeAudio ("layer_one", dc (0.6f), 48000.0, Fmt::wavFloat);
+            r.load (0, fMain);
+            check (r.p.getSamples().addLayer (0, fL1) == 0, "a pad takes extra samples (layers)");
+            waitForLoads (r.p);
+            r.settle();
+            setPadParam (r.p, 0, tb::params::padLayers, (float) tb::params::layersRoundRobin);
+            setPadParam (r.p, 0, tb::params::padVelSens, 0.0f);
+            const int note = r.p.getEngine().getPadNote (0);
+            auto hit = [&] (int vel) { auto b = renderNote (r.p, r.host, note, vel, 4); r.settle(); return b.getSample (0, 1000); };
+            const float h1 = hit (100), h2 = hit (100), h3 = hit (100);
+            check (h1 > 0.0f && std::abs (h2 / h1 - 3.0f) < 0.05f && std::abs (h3 - h1) < 1.0e-4f,
+                   "ROUND ROBIN: hits take turns between the pad's sample and its layers (" + juce::String (h1, 3) + " / " + juce::String (h2, 3) + " / " + juce::String (h3, 3) + ")");
+            setPadParam (r.p, 0, tb::params::padLayers, (float) tb::params::layersVelocity);
+            const float soft = hit (20), hard = hit (127);
+            check (std::abs (hard / soft - 3.0f) < 0.05f, "VELOCITY: soft hits play the pad's sample, hard ones the layer");
+
+            // Copy / paste and the Live set carry them.
+            r.p.getPadOps().copy (0);
+            r.p.getPadOps().paste (4);
+            check (r.p.getSamples().getInfo (4).layerCount() == 1, "copy / paste takes the layers too");
+            juce::MemoryBlock mb;
+            r.p.getStateInformation (mb);
+            Rig r2;
+            r2.p.setStateInformation (mb.getData(), (int) mb.getSize());
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+            waitForLoads (r2.p);
+            check (r2.p.getSamples().getInfo (0).layerCount() == 1 && r2.p.getSamples().getInfo (0).layers[0].buffer != nullptr,
+                   "layers are saved with the Live set");
+
+            // A kit preset carries them.
+            const auto root = testDir().getChildFile ("layer_presets");
+            root.deleteRecursively();
+            r.p.getPresets().setRootForTesting (root);
+            tb::PresetManager::Meta m; m.name = "Layered";
+            const auto kit = r.p.getPresets().newFileFor (tb::PresetManager::Type::kit, m.name);
+            r.p.getPresets().saveKit (kit, m);
+            fL1.deleteFile();
+            Rig r3;
+            r3.p.getPresets().setRootForTesting (root);
+            r3.p.getPresets().load (kit);
+            pumpPresets (r3);
+            waitForLoads (r3.p);
+            check (r3.p.getSamples().getInfo (0).layerCount() == 1 && r3.p.getSamples().getInfo (0).layers[0].buffer != nullptr,
+                   "a kit preset carries the layers (their audio inside it)");
+            root.deleteRecursively();
+        }
+
+        // ---- Fit to tempo
+        {
+            Rig r;
+            juce::AudioBuffer<float> ramp (1, 96000);                  // 2 s at 48 kHz: 4 beats = 120 BPM
+            for (int i = 0; i < 96000; ++i) ramp.setSample (0, i, (float) i / 96000.0f);
+            r.load (1, writeAudio ("fit_ramp", ramp, 48000.0, Fmt::wavFloat));
+            const auto bpm = tb::AudioEngine::tempoOf (*r.p.getSamples().getInfo (1).buffer);
+            r.host.bpm = 174.0;
+            setPadParam (r.p, 1, tb::params::padVelSens, 0.0f);
+            const int note = r.p.getEngine().getPadNote (1);
+            auto at = [&] { auto b = renderNote (r.p, r.host, note, 127, 12); r.settle(); return b.getSample (0, 4800); };
+            const float plain = at ();
+            setPadParam (r.p, 1, tb::params::padFit, 1.0f);
+            const float fitted = at ();
+            check (std::abs (bpm - 120.0) < 0.01 && std::abs (fitted / plain - 174.0f / 120.0f) < 0.02f,
+                   "FIT: a one-shot break plays at Live's tempo from its own (" + juce::String (bpm, 1) + " BPM -> x" + juce::String (fitted / plain, 3) + ")");
+        }
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -5312,7 +5431,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1129 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1202 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -5487,7 +5606,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -5695,7 +5814,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -5975,7 +6094,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -6643,6 +6762,7 @@ int main (int argc, char* argv[])
         testA11Ops();
         testA11Mikro();
         testA11Presets();
+        testA11Extras();
         testEditorDrivesState();
         testRealtimeSafety();
 

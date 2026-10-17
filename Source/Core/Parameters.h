@@ -44,6 +44,7 @@ namespace tb::params
     inline constexpr int kV16 = 16; // parameters introduced in 0.14.x (sequence pads)
     inline constexpr int kV17 = 17; // parameters introduced in 0.15.x (Push 3 mode)
     inline constexpr int kV18 = 18; // parameters introduced in 0.18.x (whole-pad steps)
+    inline constexpr int kV19 = 19; // parameters introduced in 0.21.x (TWIST, layers, fit to tempo)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -174,6 +175,20 @@ namespace tb::params
     // ---- 0.18: whole-pad steps (A10) ------------------------------------------------
     inline constexpr const char* padStepsWhole = "whole";  // bool: this pad's steps always play the whole pad (never a slice)
     inline const char* const kPressNames[] = { "Filter", "Drive", "Stutter", "Pitch", "Off" };
+
+    // ---- 0.21: layers, fit to tempo, TWIST (A11 part 4) ---------------------------------
+    inline constexpr const char* padFit    = "fit";      // bool: one-shots / slices play at Live's tempo (from the break's own BPM)
+    inline constexpr const char* padLayers = "layers";   // choice: how the pad's extra samples take turns
+    enum LayerMode { layersOff = 0, layersRoundRobin, layersVelocity, layersRandom };   // append only
+    inline const char* const kLayerModeNames[] = { "Off", "Round Robin", "Velocity", "Random" };
+    inline constexpr int kMaxLayers = 4;                 // extra samples per pad
+
+    inline constexpr const char* twistAmount = "twist_amount";   // int 0..100 %
+    inline constexpr const char* twistGo     = "twist_go";       // bool: rising edge = TWIST the selected pad (MIDI-mappable)
+    inline constexpr const char* twistTargetKeys[]  = { "pitch", "start", "pan", "rev", "char", "slice", "gain" };
+    inline constexpr const char* twistTargetNames[] = { "Pitch", "Start", "Pan", "Reverse", "Character", "Slice", "Gain" };
+    inline constexpr int kNumTwistTargets = 7;
+    inline juce::String twistLockId (int t) { return juce::String ("twist_lock_") + twistTargetKeys[t]; }
     enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------

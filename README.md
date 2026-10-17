@@ -52,6 +52,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.18.1 | Mikro steps numbered like the pads: step 1 bottom left, 16 top right | **done** — 616/616 automated checks |
 | 0.19 | Copy / paste / swap / clear between pads (menu, keys, Alt- / Shift-drag, Mikro and Push DUPLICATE) and a 50-step pad undo | **done** — 644/644 automated checks |
 | 0.20 | Preset manager: kit / pad / sequence presets with their samples inside (FLAC), browser (filters, search, tags, favourites, listen), Collect Samples, factory kits, Mikro / Push browsing | **done** — 672/672 automated checks |
+| 0.21 | TWIST (randomise a pad's sound around where you left it, amount + locks), layers (round robin / velocity / random, up to 4 per pad), fit to Live's tempo | **done** — 683/683 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).

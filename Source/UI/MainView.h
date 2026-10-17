@@ -142,6 +142,8 @@ namespace tb::ui
         PanicButton   panicButton;
         PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads, and Push 3 mode (play the plugin from Push in User mode)", juce::Colour (0xff7dff5a) };
         juce::OwnedArray<SelectorKey> navKeys;
+        PushKey       twistKey { "TWIST", "TWIST: shake up the selected pad's sound (pitch, start, pan, reverse, character, slice, gain) around how you left it. One undo step", juce::Colour (0xff7dff5a) };
+        PushKey       twistMenuKey { "...", "TWIST amount and locks" };
         PushKey       undoKey { "UNDO", "Undo the last pad edit: paste, swap, clear, sample, slices or steps (Cmd-Z)", juce::Colour (0xffffa928) };
         PushKey       redoKey { "REDO", "Redo (Cmd-Shift-Z)", juce::Colour (0xffffa928) };
         uint32_t      shownUndoVersion = 0xffffffff;

@@ -503,8 +503,9 @@ are refused with a message and change nothing; missing audio loads as MISSING.
 Three small factory kits from the repo's own test audio.
 
 **4. TWIST, round robin, break tempo (0.21).** TWIST randomises the
-selected pad's sound settings (pitch, filter, start, drive …) within an
-amount, with a lock per setting; one undo step. Round robin / velocity layers:
+selected pad's sound settings (pitch, start, pan, reverse, character, slice,
+gain: the pad has no filter or drive of its own) within an amount, with a
+lock per setting; one undo step. Round robin / velocity layers:
 up to 4 extra samples per pad, played in turn or by velocity. Break tempo:
 the detected BPM of each break shown on the pad page, and a FIT setting that
 plays a one-shot / slice break at Live's tempo.

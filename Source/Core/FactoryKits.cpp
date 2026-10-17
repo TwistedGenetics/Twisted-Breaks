@@ -166,7 +166,7 @@ namespace tb
             juce::ValueTree ps ("PARAMS");
             for (const auto& [id, v] : values)
             {
-                if (id == params::snapRecall || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::masterPanic) continue;
+                if (id == params::snapRecall || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::masterPanic || id == params::twistGo) continue;
                 juce::ValueTree n ("PARAM");
                 n.setProperty ("id", id, nullptr);
                 n.setProperty ("value", v, nullptr);

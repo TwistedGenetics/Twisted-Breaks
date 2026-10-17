@@ -161,6 +161,13 @@ namespace tb::params
             // ---- 0.18: whole-pad steps only (A10) ----
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padStepsWhole), kV18 }, prefix + "Whole Steps", false));
+
+            // ---- 0.21: fit to tempo, layers (A11) ----
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padFit), kV19 }, prefix + "Fit To Tempo", false));
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padLayers), kV19 }, prefix + "Layers",
+                StringArray (kLayerModeNames, 4), layersOff));
         }
     }
 
@@ -316,6 +323,14 @@ namespace tb::params
                 }
             }
         }
+
+        // ---- 0.21: TWIST (A11) ----
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { twistAmount, kV19 }, "Twist Amount", 0, 100, 50,
+                                                         AudioParameterIntAttributes().withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { twistGo, kV19 }, "Twist", false));
+        for (int t = 0; t < kNumTwistTargets; ++t)
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { twistLockId (t), kV19 },
+                                                              String ("Twist Lock ") + twistTargetNames[t], false));
 
         return layout;
     }

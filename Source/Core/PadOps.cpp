@@ -17,6 +17,12 @@ namespace tb
         {
             if (a.status != b.status) return false;
             if (a.status == SampleManager::Status::empty) return true;
+            for (int l = 0; l < SampleManager::PadInfo::kLayers; ++l)
+            {
+                const auto& x = a.layers[(size_t) l];
+                const auto& y = b.layers[(size_t) l];
+                if (x.status != y.status || x.file != y.file || x.buffer.get() != y.buffer.get()) return false;
+            }
             return a.file == b.file && a.buffer.get() == b.buffer.get()
                 && a.slices == b.slices && a.detected == b.detected
                 && a.sensitivity == b.sensitivity && a.sliceCount == b.sliceCount;
@@ -37,6 +43,89 @@ namespace tb
     }
 
     PadOps::~PadOps() { stopTimer(); }
+
+    void PadOps::timerCallback()
+    {
+        poll (juce::Time::getMillisecondCounterHiRes());
+        // The "Twist" parameter (MIDI-mappable): a rising edge twists the selected pad.
+        if (auto* v = processor.getParameters().getRawParameterValue (params::twistGo))
+        {
+            const bool on = v->load() > 0.5f;
+            if (on && ! lastTwistGo) twist (selected);
+            lastTwistGo = on;
+        }
+    }
+
+    void PadOps::twist (int pad)
+    {
+        if (! juce::isPositiveAndBelow (pad, SequencerData::kPads)) return;
+        auto& apvts = processor.getParameters();
+        const float amt = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (params::twistAmount)->load() / 100.0f);
+        auto locked = [&apvts] (int t) { return apvts.getRawParameterValue (params::twistLockId (t))->load() > 0.5f; };
+
+        // Twist around where you left it: a new base unless this is still the last twist's result.
+        auto now = capture (pad, settings);
+        if (twistResult[(size_t) pad].parts == 0 || ! now.sameAs (twistResult[(size_t) pad], settings))
+            twistBase[(size_t) pad] = now;
+        const auto& base = twistBase[(size_t) pad];
+
+        auto prm = [&apvts, pad] (const char* name) { return apvts.getParameter (params::padId (pad, name)); };
+        auto baseOf = [&] (const char* name) -> float
+        {
+            auto* r = prm (name);
+            for (const auto& [k, v] : base.params) if (k == name) return r->convertFrom0to1 (v);
+            return r->convertFrom0to1 (r->getValue());
+        };
+        auto set = [&] (const char* name, float plain)
+        {
+            if (auto* r = prm (name))
+            {
+                const float norm = r->convertTo0to1 (plain);
+                if (std::abs (norm - r->getValue()) < 1.0e-6f) return;
+                r->beginChangeGesture();
+                r->setValueNotifyingHost (norm);
+                r->endChangeGesture();
+            }
+        };
+        auto& rnd = twistRandom;
+        auto bi = [&rnd] { return rnd.nextFloat() * 2.0f - 1.0f; };
+
+        if (! locked (0))
+        {
+            const int range = juce::roundToInt (12.0f * amt);
+            set (params::padPitch, juce::jlimit (-params::padPitchRange, params::padPitchRange,
+                                                 baseOf (params::padPitch) + (float) (rnd.nextInt (2 * range + 1) - range)));
+        }
+        if (! locked (1))
+        {
+            const float end = baseOf (params::padEnd);
+            set (params::padStart, juce::jlimit (0.0f, juce::jmax (0.0f, end - 0.1f), baseOf (params::padStart) + rnd.nextFloat() * 0.45f * amt));
+        }
+        if (! locked (2)) set (params::padPan, juce::jlimit (-1.0f, 1.0f, baseOf (params::padPan) + bi() * amt));
+        if (! locked (3))
+        {
+            const bool rev = baseOf (params::padReverse) > 0.5f;
+            set (params::padReverse, (rnd.nextFloat() < 0.35f * amt ? ! rev : rev) ? 1.0f : 0.0f);
+        }
+        if (! locked (4))
+        {
+            auto* r = prm (params::padCharacter);
+            const int n = r != nullptr ? juce::jmax (1, r->getNumSteps()) : 1;
+            set (params::padCharacter, rnd.nextFloat() < amt ? (float) rnd.nextInt (n) : baseOf (params::padCharacter));
+        }
+        if (! locked (5))
+        {
+            const int count = processor.getSamples().getInfo (pad).slices.count;
+            if (count > 1) set (params::padSlice, rnd.nextFloat() < amt ? (float) (1 + rnd.nextInt (count)) : baseOf (params::padSlice));
+        }
+        if (! locked (6))
+            set (params::padGain, juce::jlimit (params::padGainMinDb, params::padGainMaxDb, baseOf (params::padGain) + bi() * 4.0f * amt));
+
+        auto after = capture (pad, settings);
+        twistResult[(size_t) pad] = after;
+        if (! after.sameAs (now, settings))
+            record ("TWIST", { PadChange { pad, std::move (now), std::move (after) } });
+    }
 
     //==========================================================================
     PadOps::Content PadOps::capture (int pad, uint32_t parts) const
@@ -127,6 +216,14 @@ namespace tb
             s.setProperty ("detected", c.info.detected.toString(), nullptr);
             s.setProperty ("sensitivity", c.info.sensitivity, nullptr);
             s.setProperty ("sliceCount", c.info.sliceCount, nullptr);
+            for (int l = 0; l < SampleManager::PadInfo::kLayers; ++l)
+                if (c.info.layers[(size_t) l].status != SampleManager::Status::empty)
+                {
+                    juce::ValueTree n ("LAYER");
+                    n.setProperty ("index", l, nullptr);
+                    n.setProperty ("path", c.info.layers[(size_t) l].file.getFullPathName(), nullptr);
+                    s.appendChild (n, nullptr);
+                }
             t.appendChild (s, nullptr);
         }
         if ((c.parts & settings) != 0)
@@ -177,6 +274,15 @@ namespace tb
             c.info.detected = SliceTable::fromString (s.getProperty ("detected").toString());
             c.info.sensitivity = (float) s.getProperty ("sensitivity", 0.5f);
             c.info.sliceCount = juce::jlimit (1, SliceTable::kMax, (int) s.getProperty ("sliceCount", 16));
+            for (const auto& n : s)
+            {
+                const int l = (int) n.getProperty ("index", -1);
+                if (! n.hasType ("LAYER") || ! juce::isPositiveAndBelow (l, SampleManager::PadInfo::kLayers)) continue;
+                auto& L = c.info.layers[(size_t) l];
+                L.status = SampleManager::Status::loading;
+                L.file = juce::File (n.getProperty ("path").toString());
+                L.name = L.file.getFileNameWithoutExtension();
+            }
         }
         for (const auto& n : t.getChildWithName ("SETTINGS"))
             c.params.emplace_back (n.getProperty ("id").toString(), juce::jlimit (0.0f, 1.0f, (float) n.getProperty ("value", 0.0f)));

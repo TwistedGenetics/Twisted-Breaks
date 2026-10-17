@@ -71,6 +71,12 @@ namespace tb
         void swap (int a, int b);
         void clear (int pad);
 
+        // ---- TWIST (A11) -----------------------------------------------------------------
+        /** Randomises the pad's sound settings around how you left them (Twist Amount,
+            the Twist Lock switches keep settings as they are). One undo step. */
+        void twist (int pad);
+        void setSelectedPad (int p) noexcept { selected = p; }
+
         // ---- Undo ----------------------------------------------------------------------
         bool canUndo() const noexcept { return index > 0; }
         bool canRedo() const noexcept { return index < (int) history.size(); }
@@ -103,7 +109,11 @@ namespace tb
         uint32_t getVersion() const noexcept { return version; }
 
     private:
-        void timerCallback() override { poll (juce::Time::getMillisecondCounterHiRes()); }
+        void timerCallback() override;
+        int selected = 0;
+        bool lastTwistGo = false;
+        juce::Random twistRandom;
+        std::array<Content, SequencerData::kPads> twistBase, twistResult;
         uint64_t watchStamp() const;
         void rebase (int pad);
         void rebaseAll();
