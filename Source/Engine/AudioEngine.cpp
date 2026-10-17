@@ -953,6 +953,12 @@ namespace tb
         if (held) push ((uint8_t) (0x80 | st), (uint8_t) note, 0);          // the last one ends here
         push ((uint8_t) (0x90 | st), (uint8_t) note, (uint8_t) juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)));
         held = true;
+        {
+            auto& pend = echoPending[(size_t) (channel - 1)][(size_t) note];
+            const bool live = echoDeadline[(size_t) (channel - 1)][(size_t) note] >= engineSamples;
+            pend = (uint8_t) juce::jmin (16, (live ? pend : 0) + 1);
+            echoDeadline[(size_t) (channel - 1)][(size_t) note] = engineSamples + offset + (int64_t) (sampleRate * 0.25);
+        }
         offIn = 0;
         if (autoOffSamples > 0)
         {
@@ -964,6 +970,22 @@ namespace tb
             }
             else offIn = at - outBlockLen + 1;        // samples into a later block (+1: 0 means none)
         }
+    }
+
+    bool AudioEngine::isEcho (int channel, int note, bool on) noexcept
+    {
+        if (channel < 1 || channel > 2 || note < 0 || note > 127) return false;
+        const auto c = (size_t) (channel - 1), n = (size_t) note;
+        if (on)
+        {
+            if (echoPending[c][n] == 0 || engineSamples + currentOffset > echoDeadline[c][n]) { echoPending[c][n] = 0; return false; }
+            --echoPending[c][n];
+            echoSwallowOff[c][n] = (uint8_t) juce::jmin (16, echoSwallowOff[c][n] + 1);
+            return true;
+        }
+        if (echoSwallowOff[c][n] == 0) return false;
+        --echoSwallowOff[c][n];
+        return true;
     }
 
     void AudioEngine::emitPadNote (int pad, float velocity, int offset, int autoOffSamples) noexcept
@@ -1042,6 +1064,8 @@ namespace tb
 
     void AudioEngine::handleMidi (const juce::MidiMessage& m) noexcept
     {
+        // A12: our own notes coming back (the track records the Notes port): already played.
+        if ((m.isNoteOn() || m.isNoteOff()) && isEcho (m.getChannel(), m.getNoteNumber(), m.isNoteOn())) return;
         if (m.isNoteOn())
         {
             bridge.lastMidiNote.store (m.getNoteNumber(), std::memory_order_relaxed);
@@ -1794,6 +1818,8 @@ namespace tb
         buffer.clear();
         outCount = 0;
         outBlockLen = numSamples;
+        engineSamples += lastBlockLen;
+        lastBlockLen = numSamples;
         flushAutoOffs (numSamples);
         padPeak.fill (0.0f);
         padFlash.fill (false);

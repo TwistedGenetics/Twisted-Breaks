@@ -102,6 +102,12 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.25.1: record on the plugin's own track
+
+- [ ] LIGHTS > Notes port on; Live MIDI settings: Track on for Twisted Breaks Notes.
+- [ ] Twisted Breaks track: MIDI From = Twisted Breaks Notes, arm, record a jam on the Mikro: each hit sounds once (not doubled).
+- [ ] Play the clip back: the jam plays. Mikro KEYBOARD slices too.
+
 ## 0.25: AKAIZER
 
 - [ ] FX grid: AKAIZER where STUTTER was (MIDI G#3). On an amen: Classic, 25 ms, +5 st; try 10 / 60 ms; Revised.

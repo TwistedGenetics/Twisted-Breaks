@@ -464,6 +464,13 @@ namespace tb
         std::array<std::array<bool, 128>, 2> outHeld {};          // channel 1 / 2: note sounding (sent on, no off yet)
         std::array<std::array<int, 128>, 2> outOffIn {};          // > 0: send the off this many samples from now
         int outBlockLen = 0;
+        // Echo guard: what we send out comes back in when the track records the
+        // "Twisted Breaks Notes" port (same track): those notes are swallowed once.
+        std::array<std::array<uint8_t, 128>, 2> echoPending {}, echoSwallowOff {};
+        std::array<std::array<int64_t, 128>, 2> echoDeadline {};
+        int64_t engineSamples = 0;
+        int     lastBlockLen = 0;
+        bool isEcho (int channel, int note, bool on) noexcept;
         void emitNote (int channel, int note, float velocity, int offset, int autoOffSamples = 0) noexcept;   // velocity 0 = off
         void emitPadNote (int pad, float velocity, int offset, int autoOffSamples = 0) noexcept;
         void flushAutoOffs (int numSamples) noexcept;

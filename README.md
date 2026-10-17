@@ -58,6 +58,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.23 | STRETCH per pad: Repitch / Beats / Texture / Akai Classic / Akai Revised for one-shots, slices, steps and slice sequences; tempo from the markers, set / double / halve | **done** — 712/712 automated checks |
 | 0.24 | Macro editor: every effect setting of each macro (MILD / HARD or leave), add / remove effects, rename, hold to hear, reset, .tbmacro files | **done** — 720/720 automated checks |
 | 0.25 | AKAIZER: the Akai S-series cyclic pitch shift as a group FX in STUTTER's place (Classic / Revised, pitch, cycle); RENDER AKAI on a pad; reference renders in docs/audio/akaizer | **done** — 724/724 automated checks |
+| 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** — 725/725 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).

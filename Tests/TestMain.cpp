@@ -5471,6 +5471,27 @@ namespace
         check (viaPlugin.empty() && rec.got.size() == 1 && rec.got[0].isNoteOn(), "the Twisted Breaks Notes port carries the same notes (plugin out off here)");
         r.p.triggerPadFromUi (3, 0.0f, false);
         block();
+
+        // Same-track recording: the port's notes come back into the plugin (armed track) and aren't played twice.
+        {
+            const int n3 = r.p.getEngine().getPadNote (3);
+            r.p.triggerPadFromUi (3, 1.0f, true);
+            block();
+            const auto c0 = br.padTriggerCount[3].load();
+            juce::MidiBuffer back;
+            back.addEvent (juce::MidiMessage::noteOn (1, n3, (juce::uint8) 127), 100);
+            back.addEvent (juce::MidiMessage::noteOff (1, n3), 300);
+            block (back);
+            const auto c1 = br.padTriggerCount[3].load();
+            for (int i = 0; i < 30; ++i) block();                      // > 250 ms later: a real note again
+            juce::MidiBuffer later;
+            later.addEvent (juce::MidiMessage::noteOn (1, n3, (juce::uint8) 127), 0);
+            block (later);
+            check (c1 == c0 && br.padTriggerCount[3].load() == c0 + 1,
+                   "recording the Notes port on the plugin's own track: the notes coming back aren't played twice (a clip playing back is)");
+            r.p.triggerPadFromUi (3, 0.0f, false);
+            block();
+        }
         r.p.setMidiOut (true, false, false);
 
         // ---- Stop means stop.

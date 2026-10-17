@@ -724,12 +724,18 @@ a { color: var(--amber-ink); }
   <header><h2 class="label">Controller, MIDI, Push &amp; Mikro</h2><span class="no">§ 15</span></header>
   <div class="note"><p><b>Stop means stop</b> (0.22.1): when Live stops, every break stops with a 5 ms fade, whatever it is (loops, SWAP pads, slice sequences, sequence pads, note repeat); FX tails ring on. While Live is stopped, pads still sound so you can try them, but only while held: nothing latches or keeps running.</p></div>
   <h3>Recording your playing in Live</h3>
-  <p>Everything you play on the pads (mouse, Push, the Mikro, note repeat, Mikro KEYBOARD slices) goes out as MIDI, so a MIDI track in Live can record your jamming into a clip:</p>
+  <p>Everything you play on the pads (mouse, Push, the Mikro, note repeat, Mikro KEYBOARD slices) goes out as MIDI, so Live can record your jamming into a clip.</p>
+  <p><b>On the plugin's own track</b> (the clip plays straight back into it):</p>
+  <ol class="steps">
+    <li>In the plugin: <span class="key plain">Lights</span> &gt; <i>"Twisted Breaks Notes" port</i> on.</li>
+    <li>In Live: Settings &gt; Link, Tempo &amp; MIDI: switch <b>Track</b> on for the <i>Twisted Breaks Notes</i> input (once).</li>
+    <li>On the Twisted Breaks track set <i>MIDI From</i> to <b>Twisted Breaks Notes</b> (or <b>All Ins</b>, to keep other keyboards too), arm it and record.</li>
+  </ol>
+  <p>The notes you play come back in through the track. The plugin knows its own notes, so it doesn't play them twice; when the clip plays back, they play the pads as normal. This works for AU and VST3.</p>
+  <p><b>On a separate MIDI track</b> (VST3 only): set its <i>MIDI From</i> to the Twisted Breaks track and <i>Twisted Breaks</i> below it, arm and record. To play it back, set that track's <i>MIDI To</i> to the Twisted Breaks track.</p>
   <ul>
-    <li><b>VST3</b>: on a new MIDI track set <i>MIDI From</i> to the Twisted Breaks track and <i>Twisted Breaks</i> below it, arm it and record. Set its <i>MIDI To</i> to the Twisted Breaks track to play the clip back.</li>
-    <li><b>AU</b> (or either): turn on <span class="key plain">Lights</span> &gt; <i>"Twisted Breaks Notes" port</i>, then in Live's Settings &gt; Link, Tempo &amp; MIDI switch <b>Track</b> on for the <i>Twisted Breaks Notes</i> input. Any MIDI track with that input records it (Live timestamps it as it arrives, a few ms after the plugin's own MIDI out).</li>
-    <li>Pads go out on channel 1 as their MIDI notes, with velocity and note-off. Slices from the Mikro's KEYBOARD go out on <b>channel 2, notes 36–51</b> (slices 1–16); coming back in, channel 2 notes 36–51 play those slices on the selected pad, so a recorded clip plays back the same.</li>
-    <li>MIDI you send in isn't sent back out (no loops). Sequencer steps stay inside the plugin unless you switch on <i>Include sequencer steps</i>.</li>
+    <li>Pads go out on channel 1 as their MIDI notes, with velocity and note-off. Slices from the Mikro's KEYBOARD go out on <b>channel 2, notes 36–51</b> (slices 1–16); coming back in, channel 2 notes 36–51 play those slices on the selected pad.</li>
+    <li>MIDI you send in from a keyboard isn't sent back out. Sequencer steps stay inside the plugin unless you switch on <i>Include sequencer steps</i>.</li>
   </ul>
   <h3>MIDI map</h3>
   <div class="tablewrap"><table>
