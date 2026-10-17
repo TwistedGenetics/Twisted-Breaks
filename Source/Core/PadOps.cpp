@@ -116,6 +116,94 @@ namespace tb
         processor.markStateChanged();
     }
 
+    juce::ValueTree PadOps::toTree (const Content& c)
+    {
+        juce::ValueTree t ("PAD");
+        if ((c.parts & sample) != 0 && c.info.status != SampleManager::Status::empty)
+        {
+            juce::ValueTree s ("SAMPLE");
+            s.setProperty ("path", c.info.file.getFullPathName(), nullptr);
+            s.setProperty ("slices", c.info.slices.toString(), nullptr);
+            s.setProperty ("detected", c.info.detected.toString(), nullptr);
+            s.setProperty ("sensitivity", c.info.sensitivity, nullptr);
+            s.setProperty ("sliceCount", c.info.sliceCount, nullptr);
+            t.appendChild (s, nullptr);
+        }
+        if ((c.parts & settings) != 0)
+        {
+            juce::ValueTree ps ("SETTINGS");
+            for (const auto& [suffix, v] : c.params)
+            {
+                juce::ValueTree n ("PARAM");
+                n.setProperty ("id", suffix, nullptr);
+                n.setProperty ("value", v, nullptr);
+                ps.appendChild (n, nullptr);
+            }
+            t.appendChild (ps, nullptr);
+        }
+        if ((c.parts & steps) != 0)
+        {
+            juce::ValueTree st ("STEPS");
+            juce::StringArray lane;
+            for (auto v : c.lane) lane.add (juce::String::toHexString ((juce::int64) v));
+            st.setProperty ("lane", lane.joinIntoString (","), nullptr);
+            for (int s = 0; s < SliceSeqData::kSlots; ++s)
+            {
+                juce::ValueTree n ("SLOT");
+                n.setProperty ("index", s, nullptr);
+                n.setProperty ("slot", juce::String::toHexString ((juce::int64) c.slots[(size_t) s]), nullptr);
+                juce::StringArray v;
+                for (auto x : c.sliceSteps[(size_t) s]) v.add (juce::String::toHexString ((juce::int64) x));
+                n.setProperty ("steps", v.joinIntoString (","), nullptr);
+                st.appendChild (n, nullptr);
+            }
+            t.appendChild (st, nullptr);
+        }
+        t.setProperty ("parts", (int) c.parts, nullptr);
+        return t;
+    }
+
+    PadOps::Content PadOps::fromTree (const juce::ValueTree& t)
+    {
+        Content c;
+        c.parts = (uint32_t) (int) t.getProperty ("parts", 0);
+        auto hex = [] (const juce::String& s) { return (uint64_t) s.getHexValue64(); };
+        if (auto s = t.getChildWithName ("SAMPLE"); s.isValid() && s.getProperty ("path").toString().isNotEmpty())
+        {
+            c.info.status = SampleManager::Status::loading;
+            c.info.file = juce::File (s.getProperty ("path").toString());
+            c.info.name = c.info.file.getFileNameWithoutExtension();
+            c.info.slices = SliceTable::fromString (s.getProperty ("slices").toString());
+            c.info.detected = SliceTable::fromString (s.getProperty ("detected").toString());
+            c.info.sensitivity = (float) s.getProperty ("sensitivity", 0.5f);
+            c.info.sliceCount = juce::jlimit (1, SliceTable::kMax, (int) s.getProperty ("sliceCount", 16));
+        }
+        for (const auto& n : t.getChildWithName ("SETTINGS"))
+            c.params.emplace_back (n.getProperty ("id").toString(), juce::jlimit (0.0f, 1.0f, (float) n.getProperty ("value", 0.0f)));
+        if (auto st = t.getChildWithName ("STEPS"); st.isValid())
+        {
+            const auto lane = juce::StringArray::fromTokens (st.getProperty ("lane").toString(), ",", "");
+            for (int k = 0; k < juce::jmin (SequencerData::kSteps, lane.size()); ++k) c.lane[(size_t) k] = hex (lane[k]);
+            for (const auto& n : st)
+            {
+                const int s = (int) n.getProperty ("index", -1);
+                if (! juce::isPositiveAndBelow (s, SliceSeqData::kSlots)) continue;
+                c.slots[(size_t) s] = (uint32_t) hex (n.getProperty ("slot").toString());
+                const auto v = juce::StringArray::fromTokens (n.getProperty ("steps").toString(), ",", "");
+                for (int k = 0; k < juce::jmin (SliceSeqData::kSteps, v.size()); ++k) c.sliceSteps[(size_t) s][(size_t) k] = hex (v[k]);
+            }
+        }
+        return c;
+    }
+
+    void PadOps::load (int pad, const Content& c, const juce::String& name)
+    {
+        if (! juce::isPositiveAndBelow (pad, SequencerData::kPads)) return;
+        PadChange ch { pad, capture (pad, c.parts), c };
+        apply (pad, c, c.parts);
+        record (name, { std::move (ch) });
+    }
+
     //==========================================================================
     void PadOps::copy (int pad)
     {

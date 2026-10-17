@@ -53,6 +53,11 @@ namespace tb
         ~PadOps() override;
 
         Content capture (int pad, uint32_t parts) const;
+        /** Pad presets: a Content as a tree and back (the sample as a path). */
+        static juce::ValueTree toTree (const Content&);
+        static Content fromTree (const juce::ValueTree&);
+        /** Applies `c` to `pad` as one undo step called `name`. */
+        void load (int pad, const Content& c, const juce::String& name);
         void    apply (int pad, const Content&, uint32_t parts);
 
         // ---- Clipboard ---------------------------------------------------------------

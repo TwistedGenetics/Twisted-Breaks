@@ -176,6 +176,9 @@ namespace tb
         float raw (const juce::String& id) const;
         void  setParamPlain (const juce::String& id, float plain);
         void  selectPad (int pad);
+    public:
+        bool  isBrowsing() const noexcept { return browsing.load(); }
+    private:
         void  setMode (Mode);
         void  setPage (Page);
         void  flash (const juce::String& title, const juce::String& value, double nowMs);
@@ -229,6 +232,8 @@ namespace tb
         int stepPage = 0;
         int chosenSlice = 0;
         int dupSource = -1;                            // DUPLICATE held: the pad picked to copy from (A11)
+        std::atomic<bool> browsing { false };          // BROWSE: the preset browser on the screen (A11)
+        int browseAcc = 0;
         int chosenFor = -1;                            // the pad the chosen slice belongs to (another pad: WHOLE again)
         std::atomic<bool> selectedHasSlices { true };  // A10: KEYBOARD stays dark on a pad with no slice markers
         bool wholeOnly (int pad) const;

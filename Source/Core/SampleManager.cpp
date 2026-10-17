@@ -511,6 +511,18 @@ namespace tb
         startLoad (pad, src.file, &restoreSlices[(size_t) pad]);
     }
 
+    void SampleManager::repointFile (int pad, const juce::File& f)
+    {
+        modify (pad, [&f] (PadInfo& p) { if (p.status != Status::empty) p.file = f; }, false);
+    }
+
+    void SampleManager::preview (const SampleBuffer::Ptr& buffer)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        retain (buffer);
+        sendSample (AudioEngine::kPreviewCommand, buffer);
+    }
+
     int SampleManager::spreadToPads (int source)
     {
         const auto src = getInfo (source);

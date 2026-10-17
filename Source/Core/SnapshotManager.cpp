@@ -93,6 +93,37 @@ namespace tb
             }
         }
 
+        startRecall (slot, quant);
+    }
+
+    void SnapshotManager::recallTree (const juce::ValueTree& t, int quant, std::function<void()> landed)
+    {
+        slots[(size_t) kExternal] = t.createCopy();
+        externalLanded = std::move (landed);
+        externalPending = true;
+        startRecall (kExternal, quant);
+    }
+
+    void SnapshotManager::rewritePaths (const std::function<juce::String (const juce::String&)>& fn)
+    {
+        std::function<void (juce::ValueTree)> walk = [&] (juce::ValueTree n)
+        {
+            if (n.hasProperty ("path")) n.setProperty ("path", fn (n.getProperty ("path").toString()), nullptr);
+            for (auto c : n) walk (c);
+        };
+        for (int i = 0; i < kSlots; ++i) if (slots[(size_t) i].isValid()) walk (slots[(size_t) i]);
+        ++version;
+    }
+
+    void SnapshotManager::startRecall (int slot, int quant)
+    {
+        if (slot != kExternal && externalPending)
+        {
+            // A snapshot recall overrides a kit still loading (the kit load is dropped).
+            externalPending = false;
+            externalLanded = nullptr;
+            slots[(size_t) kExternal] = {};
+        }
         // 1. Decode whatever this snapshot plays (shared with anything loaded).
         const auto gen = ++requestGen;
         loadingSlot = slot;
@@ -215,9 +246,19 @@ namespace tb
                     prm->setValueNotifyingHost (norm);
             processor.getSamples().adoptPads (f->pads, f->buffers);
             processor.releaseSnapshotOverride (f);
-            active = f->slot;
+            active = f->slot == kExternal ? -1 : f->slot;
             if (waitingSlot == f->slot) waitingSlot = -1;
             ++version;
+            if (f->slot == kExternal)
+            {
+                slots[(size_t) kExternal] = {};
+                juce::WeakReference<SnapshotManager> weak (this);
+                juce::MessageManager::callAsync ([weak, cb = std::exchange (externalLanded, nullptr)]
+                {
+                    if (cb) cb();
+                    if (auto* self = weak.get()) self->externalPending = false;
+                });
+            }
             processor.markStateChanged();
             f->retireEpoch = processor.getBlockEpoch();
             bool listed = false;
@@ -252,14 +293,14 @@ namespace tb
     {
         juce::ValueTree t (snapshotsId);
         t.setProperty ("active", active, nullptr);
-        for (const auto& s : slots)
-            if (s.isValid()) t.appendChild (s.createCopy(), nullptr);
+        for (int i = 0; i < kSlots; ++i)
+            if (slots[(size_t) i].isValid()) t.appendChild (slots[(size_t) i].createCopy(), nullptr);
         return t;
     }
 
     void SnapshotManager::fromValueTree (const juce::ValueTree& t)
     {
-        for (auto& s : slots) s = {};
+        for (int i = 0; i < kSlots; ++i) slots[(size_t) i] = {};
         for (const auto& c : t)
         {
             const int i = (int) c.getProperty (kSlotId, -1);

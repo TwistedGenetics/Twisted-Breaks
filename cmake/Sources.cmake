@@ -17,6 +17,8 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/MikroTester.cpp
     ${TB_SRC}/Core/MikroController.cpp
     ${TB_SRC}/Core/PadOps.cpp
+    ${TB_SRC}/Core/PresetManager.cpp
+    ${TB_SRC}/Core/FactoryKits.cpp
     ${TB_SRC}/Core/RemotePort.cpp
     ${TB_SRC}/Core/SnapshotManager.cpp
     ${TB_SRC}/Core/BreakBank.cpp
@@ -48,6 +50,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/SequencerPanel.cpp
     ${TB_SRC}/UI/SliceSeqPanel.cpp
     ${TB_SRC}/UI/SnapshotPanel.cpp
+    ${TB_SRC}/UI/PresetPanel.cpp
     ${TB_SRC}/UI/ResamplePanel.cpp
     ${TB_SRC}/UI/SceneStrip.cpp
     ${TB_SRC}/UI/MainView.cpp

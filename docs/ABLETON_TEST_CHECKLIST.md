@@ -102,6 +102,19 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.20: presets
+
+- [ ] PRESETS (top row): three factory kits appear; click one to hear it, double-click to load; the kit name shows in the header.
+- [ ] Save As > Kit with a name, tags and a note; it appears in the list; change a knob: the header shows *; SAVE clears it.
+- [ ] Move or rename the original sample files, open a new Live set, load the kit: every pad plays (samples come from the preset).
+- [ ] Save As > Pad, then load it onto another pad (right-click > Load onto); Save As > Sequences, clear the steps, load it back.
+- [ ] Load a kit while Live plays: it lands on the next bar, no dropout.
+- [ ] UNDO after a kit load puts the old pads back.
+- [ ] Search, KITS / PADS / SEQS / FAV, the star, A-Z / NEW, Rename, Delete (Trash), Finder, Import, drop a preset file on the view.
+- [ ] COLLECT SAMPLES: the pads now point into ~/Music/Twisted Breaks/Library/Audio; save and reopen the set.
+- [ ] Mikro: BROWSE, pads 1-4, encoder, push to load, SHIFT + push to listen, BROWSE to leave.
+- [ ] Push: Browse, encoder 1, Select, Shift + Select.
+
 ## 0.19: copy, paste, swap, undo
 
 - [ ] Right-click a loaded, sliced pad with steps > Copy; right-click an empty pad > Paste: same sample, slices, settings and steps, its own MIDI note.

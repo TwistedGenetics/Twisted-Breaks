@@ -26,6 +26,7 @@ namespace tb::ui
         const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
         const Rectangle<int> undoKey     { 410, 138,   78,  28 };       // A11, on the PAD MATRIX title row
         const Rectangle<int> redoKey     { 496, 138,   78,  28 };
+        const Rectangle<int> kitBar      { 648,  17,  230,  38 };       // A11: the current kit
 
         const Rectangle<int> transPanel  { 612, 132,  572, 150 };
         const Rectangle<int> transport   { 626, 166,  544, 108 };
@@ -256,6 +257,8 @@ namespace tb::ui
           snapshotPanel (p),
           resamplePanel (p),
           sceneStrip (p),
+          presetPanel (p),
+          kitBar (p),
           meter (p.getBridge()),
           fxGrid (p),
           status (p)
@@ -272,6 +275,9 @@ namespace tb::ui
         addChildComponent (sliceSeq);
         addChildComponent (snapshotPanel);
         addChildComponent (resamplePanel);
+        addChildComponent (presetPanel);
+        addAndMakeVisible (kitBar);
+        kitBar.onOpen = [this] { showView (view == View::presets ? View::crt : View::presets); };
         addAndMakeVisible (sceneStrip);
         addAndMakeVisible (meter);
         addAndMakeVisible (fxGrid);
@@ -305,7 +311,7 @@ namespace tb::ui
         struct NavDef { const char* latin; int phase; };
         const NavDef nav[] = {
             { "PADS", 1 }, { "SLICER", 4 }, { "SEQUENCER", 7 },
-            { "FX",   6 }, { "MIXER",  5 }, { "SNAPSHOTS", 8 }, { "RESAMPLE", 12 },
+            { "FX",   6 }, { "MIXER",  5 }, { "SNAPSHOTS", 8 }, { "RESAMPLE", 12 }, { "PRESETS", 19 },
         };
         for (const auto& n : nav)
             addAndMakeVisible (navKeys.add (new SelectorKey (n.latin, n.phase)));
@@ -321,6 +327,7 @@ namespace tb::ui
         sequencer.onSelectPad = [this] (int pad) { padGrid.setSelectedPad (pad); };
         navKeys[4]->onClick = [this] { showView (view == View::mixer ? View::crt : View::mixer); };
         navKeys[6]->onClick = [this] { showView (view == View::resample ? View::crt : View::resample); };
+        navKeys[7]->onClick = [this] { showView (view == View::presets ? View::crt : View::presets); };
         fxGrid.onSelectionChanged = [this] (int g, int f) { fxEditor.setTarget (g, f); };
         fxEditor.setTarget (fxGrid.getGroup(), fxGrid.getSelected());
         padEditor.onPageChanged = [this] (PadEditorPanel::Page page)
@@ -352,6 +359,7 @@ namespace tb::ui
             sliceSeq.setPad (pad);
             snapshotPanel.setSelectedPad (pad);
             resamplePanel.setSelectedPad (pad);
+            presetPanel.setSelectedPad (pad);
             processor.getPush().setSelectedPad (pad);
             processor.getMikroMode().setSelectedPad (pad);
             status.refresh (pad);
@@ -384,6 +392,8 @@ namespace tb::ui
         sliceSeq.setBounds (layout::scope);
         snapshotPanel.setBounds (layout::scope);
         resamplePanel.setBounds (layout::scope);
+        presetPanel.setBounds (layout::seqView);
+        kitBar.setBounds (layout::kitBar);
         sceneStrip.setBounds (layout::sceneStrip);
         padEditor.setBounds (layout::padEditor);
         fxGrid.setBounds (layout::fxGrid);
@@ -444,7 +454,17 @@ namespace tb::ui
             case View::sliceSeq:  sliceSeq.refresh(); break;
             case View::snapshots: snapshotPanel.refresh(); break;
             case View::resample:  resamplePanel.refresh(); break;
+            case View::presets:   presetPanel.refresh(); break;
             case View::crt:   waveform.refresh(); break;
+        }
+        kitBar.refresh();
+        // Browsing on Push / the Mikro shows PRESETS here (and back when they stop).
+        const bool ctlBrowse = processor.getPush().isBrowsing() || processor.getMikroMode().isBrowsing();
+        if (ctlBrowse != shownCtlBrowse)
+        {
+            shownCtlBrowse = ctlBrowse;
+            if (ctlBrowse && view != View::presets) showView (View::presets);
+            else if (! ctlBrowse && view == View::presets) showView (View::crt);
         }
         fxGrid.refresh();
         padEditor.refresh();
@@ -596,7 +616,9 @@ namespace tb::ui
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
-        transportDisplay.setVisible (v != View::sequencer);   // the sequencer shows BPM / position itself
+        transportDisplay.setVisible (v != View::sequencer && v != View::presets);   // the sequencer shows BPM / position itself
+        presetPanel.setVisible (v == View::presets);
+        if (v == View::presets) processor.getPresets().ensureFactoryContent();
         sliceSeq.setVisible (v == View::sliceSeq);
         snapshotPanel.setVisible (v == View::snapshots);
         resamplePanel.setVisible (v == View::resample);
@@ -614,6 +636,7 @@ namespace tb::ui
         navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
         navKeys[5]->setToggleState (view == View::snapshots, dontSendNotification);
         navKeys[6]->setToggleState (view == View::resample, dontSendNotification);
+        navKeys[7]->setToggleState (view == View::presets, dontSendNotification);
     }
 
     void MainView::paint (Graphics& g)
@@ -743,8 +766,6 @@ namespace tb::ui
         paint::labelPlate (g, { 890.0f, 20.0f, 220.0f, 36.0f }, "TWISTED GENETICS",
                            cyr ("ЗАВОД № 4  ·  ЗАВ. № 0001  ·  1979"), paint::PlateStyle::bakelite, rnd);
         trefoilSticker (g, { 1146.0f, 38.0f }, 20.0f, rnd);
-        paint::stencilText (g, cyr ("ОСТОРОЖНО"), { 650.0f, 24.0f, 220.0f, 28.0f }, 24.0f,
-                            Justification::centred, c::hazardYellow.withAlpha (0.55f), rnd);
 
         // 6. Section captions.
         auto caption = [&] (Rectangle<int> panel, const String& text, float width)

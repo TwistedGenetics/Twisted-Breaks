@@ -146,6 +146,8 @@ namespace tb
         bool isUserMode() const noexcept { return userMode.load(); }
         bool isOwner() const;
         bool isActive() const { return enabled && isConnected() && isOwner() && isUserMode(); }
+        /** A11: BROWSE on Push: the plugin window shows PRESETS, encoder 1 moves, Select loads. */
+        bool isBrowsing() const noexcept { return browsing; }
         juce::String getPortName() const;
 
         std::function<void()> onSettingsChanged;
@@ -267,6 +269,8 @@ namespace tb
         Page page = Page::pad;
         int  selectedPad = 0;
         int  dupSource = -1;          // Duplicate held: the pad picked to copy from (A11)
+        bool browsing = false;        // Browse: presets (A11)
+        int  browseAcc = 0;
         uint32_t selectionVersion = 0;
         std::bitset<128> held;                               // buttons held (in inbox order)
         struct HeldStep { int step; bool created; bool edited; };

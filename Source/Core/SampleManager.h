@@ -76,6 +76,11 @@ namespace tb
             shared as is; a missing / loading one reloads its file with these markers;
             empty clears the pad. */
         void assignPad (int pad, const PadInfo&);
+        /** Collect Samples: the pad now points at this copy of its file (same audio). */
+        void repointFile (int pad, const juce::File&);
+
+        /** Preset browser: play `buffer` once from the top (nullptr stops). */
+        void preview (const SampleBuffer::Ptr& buffer);
 
         PadInfo  getInfo (int pad) const;
         uint32_t getVersion (int pad) const;

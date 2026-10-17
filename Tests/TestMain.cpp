@@ -4813,6 +4813,7 @@ namespace
         auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
         auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
         auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+        auto press = [&] (int b) { hold (b, true); hold (b, false); };
         auto tapPad = [&] (int padNo) { const int i = tb::MikroController::hidPadOf (padNo); send (MikroIn::pad (i, 0x10, 3000)); adv(); send (MikroIn::pad (i, 0x30, 0)); adv(); };
         auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) ++n; return n; };
         send (in.report());
@@ -4857,7 +4858,286 @@ namespace
         tapPad (7);
         hold (erase, false); hold (shift, false);
         check (r.p.getSamples().getInfo (7).status == tb::SampleManager::Status::empty && ops.undoName() == "CLEAR PAD", "SHIFT + ERASE + pad clears the whole pad");
+
+        // BROWSE: the preset browser on the Mikro.
+        auto& pm = r.p.getPresets();
+        const auto root = testDir().getChildFile ("mikro_presets");
+        root.deleteRecursively();
+        pm.setRootForTesting (root);
+        tb::PresetManager::Meta meta; meta.name = "Mikro Pad";
+        pm.savePad (5, pm.newFileFor (tb::PresetManager::Type::pad, meta.name), meta);
+        press (browse);
+        const bool on = mm.isBrowsing();
+        tapPad (1);                                  // pad 2 = pad presets
+        const bool padsShown = pm.getFilter() == tb::PresetManager::Filter::pads && pm.getList().size() == 1;
+        mm.setSelectedPad (9); adv();
+        press (encoderPress);                        // load onto the selected pad
+        waitForLoads (r.p);
+        adv();
+        check (on && padsShown && r.p.getSamples().getInfo (9).buffer != nullptr && drain() == 0 && mm.getLights().state[(size_t) (39 + tb::MikroController::hidPadOf (1))] != 0,
+               "BROWSE: pads 1-4 pick kits / pads / sequences / favourites, the encoder walks the list, push loads (no sound from the pads)");
+        press (browse);
+        check (! mm.isBrowsing(), "BROWSE again leaves the browser");
+        root.deleteRecursively();
         hub->setSinkForTesting (nullptr);
+    }
+
+    bool sameAudio (const tb::SampleBuffer* a, const tb::SampleBuffer* b)
+    {
+        if (a == nullptr || b == nullptr || a->getNumSamples() != b->getNumSamples() || a->getNumChannels() != b->getNumChannels()
+             || a->sourceSampleRate != b->sourceSampleRate) return false;
+        for (int ch = 0; ch < a->getNumChannels(); ++ch)
+            for (int i = 0; i < a->getNumSamples(); ++i)
+                if (std::abs (a->audio.getSample (ch, i) - b->audio.getSample (ch, i)) > 1.5f / 8388608.0f) return false;   // 24-bit (1 LSB)
+        return true;
+    }
+
+    /** Runs blocks + the message loop until the preset manager is done (or ~3 s). */
+    void pumpPresets (Rig& r, int maxBlocks = 600)
+    {
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        for (int i = 0; i < maxBlocks; ++i)
+        {
+            runBlock (r.p, r.host, buf, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (2);
+            r.p.getSnapshots().poll();
+            if (! r.p.getPresets().isLoading() && ! r.p.getSamples().isBusy() && i > 4) break;
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+    }
+
+    void testA11Presets()
+    {
+        std::cout << "\n== A11: presets (kits, pads, sequences with their samples) ==" << std::endl;
+        const auto root = testDir().getChildFile ("preset_root");
+        root.deleteRecursively();
+        auto srcDir = testDir().getChildFile ("preset_src");
+        srcDir.deleteRecursively();
+        srcDir.createDirectory();
+        auto writeSrc = [&srcDir] (const juce::String& name, const juce::AudioBuffer<float>& a, double rate)
+        {
+            auto f = writeAudio (name, a, rate, Fmt::aiff24);
+            auto dest = srcDir.getChildFile (f.getFileName());
+            f.moveFileTo (dest);
+            return dest;
+        };
+
+        Rig r;
+        auto& pm = r.p.getPresets();
+        pm.setRootForTesting (root);
+        r.p.getPadOps().stopWatchingForTesting();
+        auto& sm = r.p.getSamples();
+        auto& br = r.p.getBridge();
+
+        const auto fA = writeSrc ("Break A", makeBreak (44100.0), 44100.0);
+        const auto fB = writeSrc ("Stab B", makeTone (24000, 2), 48000.0);
+        r.load (0, fA);
+        sm.equalSlice (0);
+        r.load (3, fB);
+        r.load (5, fA);                                       // the same file twice: stored once
+        setPadParam (r.p, 0, tb::params::padGain, -4.5f);
+        setPadParam (r.p, 3, tb::params::padPitch, 3.0f);
+        setParam (r.p, tb::params::masterGain, -3.0f);
+        tb::SeqStep st; st.on = true; st.velocity = 90; st.slice = 2;
+        br.seq.set (3, 6, st);
+        br.sliceSeq.setStep (0, 1, 3, tb::SliceStep::playing (4));
+        r.p.getSnapshots().store (2);
+        r.p.getBank().copyFromPad (1, 0);
+        r.p.setFxLocked (0, ! r.p.isFxLocked (0));
+        const auto lockedMask = r.p.getEngine().getFxLockedMask();
+        auto expectSlices = sm.getInfo (0).slices;
+        auto bufA = sm.getInfo (0).buffer, bufB = sm.getInfo (3).buffer;
+
+        // ---- Save a kit.
+        tb::PresetManager::Meta meta;
+        meta.name = "Test Kit"; meta.tags = { "Jungle", "Amen" }; meta.note = "round trip";
+        const auto kitFile = pm.newFileFor (tb::PresetManager::Type::kit, meta.name);
+        const auto saved = pm.saveKit (kitFile, meta);
+        int audioEntries = 0;
+        { juce::ZipFile z (kitFile); for (int i = 0; i < z.getNumEntries(); ++i) if (z.getEntry (i)->filename.startsWith ("audio/")) ++audioEntries; }
+        check (saved.wasOk() && kitFile.existsAsFile() && kitFile.getFileName() == "Test Kit.tbkit" && audioEntries == 2,
+               "SAVE KIT writes one file with each sample in it once (" + juce::String (audioEntries) + " audio files) " + saved.getErrorMessage());
+        tb::PresetManager::Meta read;
+        check (tb::PresetManager::readMeta (kitFile, read).wasOk() && read.name == "Test Kit" && read.type == tb::PresetManager::Type::kit
+                 && read.pads == 3 && read.tags.contains ("Amen") && read.note == "round trip",
+               "the browser reads name, type, tags, note and pad count");
+
+        // ---- Pad and sequence presets.
+        const auto padFile = pm.newFileFor (tb::PresetManager::Type::pad, "Stab Pad");
+        tb::PresetManager::Meta pmeta; pmeta.name = "Stab Pad";
+        check (pm.savePad (3, padFile, pmeta).wasOk(), "SAVE PAD");
+        const auto seqFile = pm.newFileFor (tb::PresetManager::Type::sequence, "Groove");
+        tb::PresetManager::Meta smeta; smeta.name = "Groove";
+        check (pm.saveSequence (seqFile, smeta).wasOk(), "SAVE SEQUENCE");
+
+        // ---- Load the kit into a fresh plugin, with the original files gone.
+        fA.deleteFile(); fB.deleteFile();
+        Rig r2;
+        auto& pm2 = r2.p.getPresets();
+        pm2.setRootForTesting (root);
+        r2.p.getPadOps().stopWatchingForTesting();
+        auto& sm2 = r2.p.getSamples();
+        const auto loadRes = pm2.load (kitFile);
+        pumpPresets (r2);
+        const auto i0 = sm2.getInfo (0), i3 = sm2.getInfo (3), i5 = sm2.getInfo (5);
+
+        check (loadRes.wasOk() && ! pm2.isLoading() && sameAudio (i0.buffer.get(), bufA.get()) && sameAudio (i3.buffer.get(), bufB.get())
+                 && i5.buffer != nullptr && i0.file.isAChildOf (root.getChildFile ("Library")),
+               "LOAD KIT on another 'Mac' (originals deleted): the audio comes from the preset (24-bit exact), unpacked into the Library");
+        check (i0.slices == expectSlices && i0.name == "Break A", "...markers and names come back");
+        auto raw2 = [&r2] (const juce::String& id) { auto* p = r2.p.getParameters().getParameter (id); return p->convertFrom0to1 (p->getValue()); };
+        check (std::abs (raw2 (tb::params::padId (0, tb::params::padGain)) + 4.5f) < 0.01f && std::abs (raw2 (tb::params::padId (3, tb::params::padPitch)) - 3.0f) < 0.01f
+                 && std::abs (raw2 (tb::params::masterGain) + 3.0f) < 0.01f,
+               "...every setting, master included");
+        check (r2.p.getBridge().seq.get (3, 6) == st && r2.p.getBridge().sliceSeq.getStep (0, 1, 3) == tb::SliceStep::playing (4),
+               "...both sequencers");
+        check (r2.p.getSnapshots().getState (2) != tb::SnapshotManager::SlotState::empty && r2.p.getBank().get (1).file.existsAsFile()
+                 && r2.p.getEngine().getFxLockedMask() == lockedMask,
+               "...the snapshots, the break bank and the FX locks");
+        check (pm2.getKitName() == "Test Kit" && r2.p.getPadOps().undoName() == "LOAD KIT", "the kit name shows, and the load is one undo step");
+        r2.p.getPadOps().undo();
+        check (sm2.getInfo (0).status == tb::SampleManager::Status::empty && ! r2.p.getBridge().seq.get (3, 6).on, "...undo puts the pads back as they were");
+        r2.p.getPadOps().redo();
+        pumpPresets (r2);
+
+        int libFolders = 0;
+        for (const auto& e : juce::RangedDirectoryIterator (pm2.audioLibrary(), false, "*", juce::File::findDirectories)) { juce::ignoreUnused (e); ++libFolders; }
+        check (libFolders == 2, "the Library keeps each sound once");
+
+        // ---- Pad preset onto another pad, sequence preset.
+        r2.p.getBridge().seq.clearAll();
+        check (pm2.load (padFile, 9).wasOk(), "LOAD PAD onto pad 10");
+        pumpPresets (r2);
+        check (sameAudio (sm2.getInfo (9).buffer.get(), bufB.get()) && std::abs (raw2 (tb::params::padId (9, tb::params::padPitch)) - 3.0f) < 0.01f
+                 && r2.p.getBridge().seq.get (9, 6) == st && r2.p.getPadOps().undoName() == "LOAD PAD",
+               "LOAD PAD puts the pad (sound, settings, steps) onto the chosen pad");
+        r2.p.getBridge().seq.clearAll();
+        check (pm2.load (seqFile).wasOk() && r2.p.getBridge().seq.get (3, 6) == st && r2.p.getPadOps().undoName() == "LOAD SEQUENCE",
+               "LOAD SEQUENCE brings back the patterns only");
+
+        // ---- Damaged and newer files change nothing.
+        const auto before = sm2.getInfo (0).buffer;
+        const auto junk = root.getChildFile ("Presets/Kits/Junk.tbkit");
+        junk.replaceWithText ("this is not a zip");
+        const auto bad = pm2.load (junk);
+        juce::File newer = root.getChildFile ("Presets/Kits/Future.tbkit");
+        {
+            juce::ZipFile::Builder b;
+            const juce::String x = "<TBPRESET format=\"99\" type=\"kit\" name=\"Future\"><CONTENT><KIT/></CONTENT></TBPRESET>";
+            b.addEntry (new juce::MemoryInputStream (x.toRawUTF8(), x.getNumBytesAsUTF8(), true), 9, "preset.xml", juce::Time::getCurrentTime());
+            juce::FileOutputStream out (newer);
+            b.writeToStream (out, nullptr);
+        }
+        const auto future = pm2.load (newer);
+        pumpPresets (r2, 20);
+        check (bad.failed() && future.failed() && future.getErrorMessage().contains ("newer") && sm2.getInfo (0).buffer.get() == before.get(),
+               "a damaged or newer preset is refused with a message, and nothing changes");
+
+        // ---- An audio file missing from the preset: that pad loads as MISSING, name kept.
+        const auto partial = root.getChildFile ("Presets/Kits/Partial.tbkit");
+        {
+            juce::ZipFile z (kitFile);
+            juce::ZipFile::Builder b;
+            bool dropped = false;
+            for (int i = 0; i < z.getNumEntries(); ++i)
+            {
+                const auto name = z.getEntry (i)->filename;
+                if (name.contains ("Stab B") && ! dropped) { dropped = true; continue; }
+                std::unique_ptr<juce::InputStream> in (z.createStreamForEntry (i));
+                juce::MemoryBlock mb; in->readIntoMemoryBlock (mb);
+                b.addEntry (new juce::MemoryInputStream (mb, true), 0, name, juce::Time::getCurrentTime());
+            }
+            juce::FileOutputStream out (partial);
+            b.writeToStream (out, nullptr);
+        }
+        pm2.audioLibrary().deleteRecursively();
+        pm2.load (partial);
+        pumpPresets (r2);
+        check (sm2.getInfo (3).status == tb::SampleManager::Status::missing && sm2.getInfo (3).name == "Stab B" && sm2.getInfo (0).buffer != nullptr,
+               "a sound missing from the file loads as MISSING with its name; the rest load");
+
+        // ---- Browser: list, filter, search, favourites, rename, delete.
+        junk.deleteFile(); newer.deleteFile(); partial.deleteFile();
+        pm2.setFilter (tb::PresetManager::Filter::all);
+        pm2.rescan();
+        const int all = pm2.getList().size();
+        pm2.setFilter (tb::PresetManager::Filter::pads); pm2.rescan();
+        const int pads = pm2.getList().size();
+        pm2.setFilter (tb::PresetManager::Filter::all); pm2.setSearch ("amen"); pm2.rescan();
+        const bool found = pm2.getList().size() == 1 && pm2.getList()[0].name == "Test Kit";
+        pm2.setSearch ({});
+        check (all == 3 && pads == 1 && found, "the browser lists, filters by type and searches name / tags / note");
+        pm2.setFavourite (kitFile, true);
+        pm2.setFilter (tb::PresetManager::Filter::favourites); pm2.rescan();
+        check (pm2.getList().size() == 1 && pm2.getList()[0].favourite, "favourites (★)");
+        juce::File renamed;
+        check (pm2.renamePreset (kitFile, "Renamed Kit", &renamed).wasOk() && renamed.getFileName() == "Renamed Kit.tbkit" && ! kitFile.existsAsFile()
+                 && tb::PresetManager::readMeta (renamed, read).wasOk() && read.name == "Renamed Kit" && pm2.isFavourite (renamed),
+               "RENAME changes the file and the name inside (still a favourite)");
+        check (pm2.removePreset (seqFile).wasOk() && ! seqFile.existsAsFile(), "DELETE moves it to the Trash");
+
+        // ---- Collect Samples.
+        Rig r3;
+        auto& pm3 = r3.p.getPresets();
+        pm3.setRootForTesting (root);
+        const auto loose = writeSrc ("Loose Hit", makeTone (8000, 1), 44100.0);
+        r3.load (2, loose);
+        r3.p.getSnapshots().store (0);
+        const int copied = pm3.collectSamples();
+        const auto snapXml = r3.p.getSnapshots().toValueTree().toXmlString();
+        check (copied == 1 && r3.p.getSamples().getInfo (2).file.isAChildOf (pm3.audioLibrary()) && r3.p.getSamples().getInfo (2).buffer != nullptr
+                 && snapXml.contains (pm3.audioLibrary().getFullPathName()) && ! snapXml.contains (loose.getFullPathName()),
+               "COLLECT SAMPLES copies the set's samples into the Library and repoints pads and snapshots");
+
+        // ---- Factory kits.
+        pm3.ensureFactoryContent();
+        pm3.setFilter (tb::PresetManager::Filter::kits); pm3.rescan();
+        int factory = 0; juce::File jungle;
+        for (const auto& m : pm3.getList()) if (m.factory) { ++factory; if (m.name.contains ("Jungle")) jungle = m.file; }
+        pm3.load (jungle);
+        pumpPresets (r3);
+        check (factory == 3 && r3.p.getSamples().getInfo (0).slices.count == 16 && r3.p.getSamples().getInfo (1).buffer != nullptr
+                 && r3.p.getBridge().seq.get (2, 4).on && pm3.getKitName() == "Factory Jungle 170",
+               "three factory kits; Factory Jungle 170 loads a sliced break, hits and a pattern");
+
+        // ---- While Live plays, a kit lands on the next bar.
+        r3.host.playing = true; r3.host.bpm = 120.0; r3.host.ppq = 0.5;
+        r3.p.getPadOps().reset();
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        runBlock (r3.p, r3.host, buf, midi);           // the plugin sees Live playing
+        pm3.load (renamed);
+        bool earlyLanded = false;
+        for (int i = 0; i < 400 && r3.host.ppq < 3.5; ++i)
+        {
+            runBlock (r3.p, r3.host, buf, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+            r3.p.getSnapshots().poll();
+            earlyLanded = earlyLanded || ! pm3.isLoading();
+        }
+        pumpPresets (r3);
+        check (! earlyLanded && pm3.getKitName() == "Renamed Kit" && r3.p.getSamples().getInfo (0).buffer != nullptr,
+               "while Live plays, the kit waits for the next bar");
+        r3.host.playing = false;
+
+        // ---- The kit name is saved with the Live set.
+        juce::MemoryBlock mb;
+        r3.p.getStateInformation (mb);
+        Rig r4;
+        r4.p.setStateInformation (mb.getData(), (int) mb.getSize());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        check (r4.p.getPresets().getKitName() == "Renamed Kit", "the kit name is saved with the Live set");
+
+        // ---- Modified mark.
+        pm3.markClean();
+        const bool cleanNow = ! pm3.isModified();
+        setPadParam (r3.p, 0, tb::params::padGain, -12.0f);
+        juce::Thread::sleep (1100);
+        check (cleanNow && pm3.isModified(), "editing marks the kit modified (*)");
+
+        root.deleteRecursively();
+        srcDir.deleteRecursively();
     }
 
     void testA10()
@@ -6165,6 +6445,32 @@ namespace
         {
             setParam (p, tb::params::xfade, 0.32f);
         }
+        if (out.getFileName().contains ("presets"))
+        {
+            auto& pm = p.getPresets();
+            const auto root = testDir().getChildFile ("snap_presets");
+            root.deleteRecursively();
+            pm.setRootForTesting (root);
+            tb::PresetManager::Meta m;
+            m.name = "Amen Rinse 172"; m.tags = { "Jungle", "Amen" }; m.note = "Chopped amen, reese on 06, rolling hats.";
+            pm.saveKit (pm.newFileFor (tb::PresetManager::Type::kit, m.name), m);
+            m.name = "Think Halftime"; m.tags = { "Halftime" }; m.note = {};
+            const auto think = pm.newFileFor (tb::PresetManager::Type::kit, m.name);
+            pm.saveKit (think, m);
+            pm.setFavourite (think, true);
+            m.name = "Snare Crack Pad"; m.tags = { "Snare" };
+            pm.savePad (2, pm.newFileFor (tb::PresetManager::Type::pad, m.name), m);
+            pm.ensureFactoryContent();
+            pm.setKitName ("Amen Rinse 172");
+            pm.setFilter (tb::PresetManager::Filter::all);
+            pm.setCursor (0);
+            std::function<void (juce::Component&)> findView = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::presets);
+                for (auto* child : c.getChildren()) findView (*child);
+            };
+            findView (*ed);
+        }
         if (out.getFileName().contains ("resample"))
         {
             setPadParam (p, 0, tb::params::padCharacter, 1.0f);       // pad 1 on SP-1200
@@ -6336,6 +6642,7 @@ int main (int argc, char* argv[])
         testA10();
         testA11Ops();
         testA11Mikro();
+        testA11Presets();
         testEditorDrivesState();
         testRealtimeSafety();
 

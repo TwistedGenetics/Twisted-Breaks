@@ -94,7 +94,17 @@ namespace tb
         PadCommand cmd;
         while (padCommands.pop (cmd))
         {
-            if (juce::isPositiveAndBelow (cmd.pad, kNumPads))
+            if (cmd.pad == kPreviewCommand)
+            {
+                if (cmd.setSample)
+                {
+                    previewSample = cmd.buffer;            // +1 (the old one goes back to the keep-alive list's count)
+                    previewPos = 0.0;
+                    previewFadeIn = 0;
+                    previewActive.store (previewSample != nullptr, std::memory_order_relaxed);
+                }
+            }
+            else if (juce::isPositiveAndBelow (cmd.pad, kNumPads))
             {
                 if (cmd.setSlices) ownSlices[(size_t) cmd.pad] = cmd.slices;     // plain copy, no allocation
                 if (cmd.setSample) ownSample[(size_t) cmd.pad] = cmd.buffer;     // +1
@@ -111,6 +121,34 @@ namespace tb
 
             if (cmd.buffer != nullptr)
                 cmd.buffer->decReferenceCountWithoutDeleting();       // adopt the sender's +1
+        }
+    }
+
+    void AudioEngine::renderPreview (juce::AudioBuffer<float>& out, int numSamples) noexcept
+    {
+        if (previewSample == nullptr) return;
+        const auto& src = previewSample->audio;
+        const int len = src.getNumSamples();
+        const double inc = previewSample->sourceSampleRate / juce::jmax (1.0, sampleRate);
+        const double maxPos = juce::jmin ((double) len, previewSample->sourceSampleRate * 6.0);    // at most 6 s
+        const int fadeLen = juce::jmax (1, (int) (sampleRate * 0.005));
+        const int chans = src.getNumChannels();
+        constexpr float gain = 0.5f;                                                         // -6 dB
+        for (int i = 0; i < numSamples; ++i)
+        {
+            if (previewPos >= maxPos - 1.0) { previewSample = nullptr; previewActive.store (false, std::memory_order_relaxed); return; }
+            const int i0 = (int) previewPos;
+            const float frac = (float) (previewPos - i0);
+            const float remaining = (float) ((maxPos - previewPos) / inc);
+            float env = juce::jmin (1.0f, (float) previewFadeIn / (float) fadeLen, remaining / (float) fadeLen);
+            ++previewFadeIn;
+            for (int ch = 0; ch < out.getNumChannels(); ++ch)
+            {
+                const float* d = src.getReadPointer (juce::jmin (ch, chans - 1));
+                const float v = d[i0] + frac * (d[juce::jmin (i0 + 1, len - 1)] - d[i0]);
+                out.addSample (ch, i, v * env * gain);
+            }
+            previewPos += inc;
         }
     }
 
@@ -1677,6 +1715,7 @@ namespace tb
         // ---- Master
         master.setGainDb (params.masterGainDb);
         master.setLimiterEnabled (params.limiterEnabled);
+        renderPreview (buffer, numSamples);
         const auto result = master.process (buffer, numSamples);
         resampleCapture (buffer, transport, numSamples);
 

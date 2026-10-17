@@ -141,6 +141,7 @@ namespace tb
         static constexpr int kBankSlots = 8;
         /** Pad commands with pad = kNumPads + slot fill break-bank slots. */
         static constexpr int kBankCommandBase = kNumPads;
+        static constexpr int kPreviewCommand  = -100;     // PadCommand.pad: audition a buffer (preset browser)
 
         /** Snapshot switch (audio thread, at the boundary): every pad's own sample + slices. */
         void applySnapshotPads (const std::array<SampleBuffer*, kNumPads>& buffers,
@@ -346,6 +347,15 @@ namespace tb
         std::array<SampleBuffer::Ptr, kNumPads> ownSample;           // the pad's own sample
         std::array<SliceTable, kNumPads>        ownSlices {};
         std::array<SampleBuffer::Ptr, kBankSlots> bankSample;        // break bank
+        // Preset browser audition: plays a buffer from the top, straight to the master (A11).
+        SampleBuffer::Ptr previewSample;
+        double previewPos = 0.0;
+        int    previewFadeIn = 0;
+        void   renderPreview (juce::AudioBuffer<float>&, int numSamples) noexcept;
+    public:
+        bool   isPreviewing() const noexcept { return previewActive.load (std::memory_order_relaxed); }
+    private:
+        std::atomic<bool> previewActive { false };
         std::array<SliceTable, kBankSlots>        bankSlices {};
         std::array<bool, kNumPads> padFollowBank {};
         int bankActive = 0, bankWanted = 0, bankAtNow = 1;

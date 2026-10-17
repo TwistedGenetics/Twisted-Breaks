@@ -33,7 +33,7 @@ namespace tb
         // White-LED keys this mode uses (lit dim = available, full = held / on).
         constexpr int kWhiteKeys[] = { push::left, push::right, push::up, push::down, push::pageLeft, push::pageRight,
                                        push::layout, push::fixedLength, push::duplicate, push::deleteButton, push::accent,
-                                       push::repeat, push::undo, push::octaveUp, push::octaveDown, push::select, push::shift };
+                                       push::repeat, push::undo, push::octaveUp, push::octaveDown, push::select, push::shift, push::browse };
 
         const char* const kStepFieldNames[] = { "VEL", "CHANCE", "RATCHET", "PITCH", "SLICE", "MICRO", "REV", "COND" };
         constexpr int kStepFieldDivisor[]   = { 1, 1, 4, 3, 3, 1, 3, 3 };   // encoder ticks per unit
@@ -650,6 +650,16 @@ namespace tb
         activeEncoderMs = nowMs;
         lastTurnMs[(size_t) i] = nowMs;
 
+        if (browsing && i == 0)
+        {
+            // A11: encoder 1 walks the preset list.
+            browseAcc += ticks;
+            const int units = browseAcc / 3;
+            browseAcc -= units * 3;
+            if (units != 0) processor.getPresets().moveCursor (units);
+            return;
+        }
+
         Target t;
         if (i == 8) t.paramId = params::masterGain;
         else        t = targets()[(size_t) i];
@@ -879,6 +889,20 @@ namespace tb
 
         const bool shift = held[push::shift];
         const int view = juce::roundToInt (sceneViewRaw->load());
+        if (cc == push::browse) { browsing = ! browsing; browseAcc = 0; if (browsing) processor.getPresets().rescan(); return; }
+        if (browsing && cc == push::select)
+        {
+            // A11: Select loads the highlighted preset (pads onto the selected pad); Shift + Select previews it.
+            auto& pm = processor.getPresets();
+            const auto& list = pm.getList();
+            if (juce::isPositiveAndBelow (pm.getCursor(), list.size()))
+            {
+                const auto f = list[pm.getCursor()].file;
+                if (shift) pm.preview (f);
+                else       pm.load (f, selectedPad);
+            }
+            return;
+        }
         auto showScene = [this] (int scene)
         {
             setParamPlain (params::sceneView, (float) scene);
@@ -1174,7 +1198,7 @@ namespace tb
         sendButton (push::mute, idx (padRaw[(size_t) s].mute->load() > 0.5f || held[push::mute] ? red : redDim), false);
         sendButton (push::solo, idx (padRaw[(size_t) s].solo->load() > 0.5f || held[push::solo] ? blue : dark), false);
         for (int cc : kWhiteKeys)
-            sendButton (cc, held[(size_t) cc] || (cc == push::layout && layoutAtomic.load() == 1) ? kWhiteFull : kWhiteHalf, false);
+            sendButton (cc, held[(size_t) cc] || (cc == push::layout && layoutAtomic.load() == 1) || (cc == push::browse && browsing) ? kWhiteFull : kWhiteHalf, false);
         // Play green while Live plays, Record red while it records (A9).
         sendButton (push::play,   idx (bridge.transport.isPlaying.load() ? green : greenDim), false);
         sendButton (push::record, idx (bridge.transport.isRecording.load() || held[push::record] ? red : redDim), false);

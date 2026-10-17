@@ -461,7 +461,7 @@ namespace tb
 
             const auto mode = getMode();
             const float vel = fixedVelOn.load() ? 1.0f : velocityOf (e.value);
-            if (down && (usbMods & noPlay) == 0 && (mode == Mode::pads || (mode == Mode::keyboard && selectedHasSlices.load())))
+            if (down && (usbMods & noPlay) == 0 && ! browsing.load() && (mode == Mode::pads || (mode == Mode::keyboard && selectedHasSlices.load())))
             {
                 releaseHeld (i);                       // (a missed release of this pad: start it clean)
                 int pad, slice = 0;
@@ -689,6 +689,14 @@ namespace tb
     void MikroController::turnEncoder (int ticks, double nowMs)
     {
         lastTurnMs = nowMs;
+        if (browsing.load())
+        {
+            browseAcc += ticks;
+            const int units = browseAcc / 2;
+            browseAcc -= units * 2;
+            if (units != 0) processor.getPresets().moveCursor (units);
+            return;
+        }
         if (getMode() == Mode::steps && ! heldSteps.empty())
         {
             encoderAcc += ticks;
@@ -729,6 +737,19 @@ namespace tb
     {
         endGesture();
         encoderAcc = 0;
+        if (browsing.load())
+        {
+            // A11: push = load (pads onto the selected pad); SHIFT + push = listen.
+            auto& pm = processor.getPresets();
+            const auto& list = pm.getList();
+            if (! juce::isPositiveAndBelow (pm.getCursor(), list.size())) return;
+            const auto f = list[pm.getCursor()].file;
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            if (held[shift]) { pm.preview (f); flash ("PREVIEW", list[pm.getCursor()].name.toUpperCase(), now); return; }
+            const auto r = pm.load (f, selectedPad.load());
+            flash (r.wasOk() ? "LOADING" : "CAN'T LOAD", r.wasOk() ? list[pm.getCursor()].name.toUpperCase() : r.getErrorMessage().toUpperCase(), now);
+            return;
+        }
         if (getMode() == Mode::steps && ! heldSteps.empty()) { stepField = (stepField + 1) % 8; return; }
         const auto v = pageParams();
         if (v.empty()) return;
@@ -813,6 +834,11 @@ namespace tb
                 flash ("NOTE REPEAT", kRollNames[rollRate.load()], nowMs);
                 break;
             case encoderPress: pushEncoder(); break;
+            case browse:
+                browsing = ! browsing.load();
+                browseAcc = 0;
+                if (browsing.load()) { processor.getPresets().rescan(); releaseHeldPlays(); }
+                break;
             default: break;
         }
     }
@@ -825,6 +851,19 @@ namespace tb
         const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
         auto& seq = bridge.seq;
         const int sel = selectedPad.load();
+
+        // A11: BROWSE: pads 1-4 pick what the list shows (kits / pads / sequences / favourites).
+        if (browsing.load())
+        {
+            if (down && num < 4)
+            {
+                using F = PresetManager::Filter;
+                const F f[] = { F::kits, F::pads, F::sequences, F::favourites };
+                processor.getPresets().setFilter (f[num]);
+                processor.getPresets().setCursor (0);
+            }
+            return;
+        }
 
         // A11: SHIFT + pad 1 / 2 = UNDO / REDO, pad 11 / 12 = COPY / PASTE the selected pad
         // (as printed under the pads in Maschine; not in SCENE, where SHIFT stores).
@@ -1020,6 +1059,7 @@ namespace tb
             case Resampler::State::saving:    lights.setButton (sampling, levelBright); break;
             case Resampler::State::idle:      btn (sampling, false); break;
         }
+        btn (browse, browsing.load());
         lights.setButton (play, bridge.transport.isPlaying.load (std::memory_order_relaxed) ? levelBright : levelDim);
         lights.setButton (rec, bridge.transport.isRecording.load (std::memory_order_relaxed) || held[rec] ? levelBright : levelDim);
         btn (stop, held[stop]);
@@ -1030,6 +1070,14 @@ namespace tb
             const int pos = i;                         // FX grid (reading order, as on screen)
             const int num = padNumberOf (i);           // pads, slices, snapshots, steps (0 = pad 1, bottom left)
             int colour = off, level = 0;
+            if (browsing.load())
+            {
+                // Pads 1-4: what the browser shows.
+                const int f = (int) processor.getPresets().getFilter();          // 1 kits, 2 pads, 3 sequences, 4 favourites
+                if (num < 4) { colour = num == 3 ? yellow : white; level = f == num + 1 ? 3 : 1; }
+                lights.setPad (i, colour, level);
+                continue;
+            }
             switch (mode)
             {
                 case Mode::pads:
@@ -1112,6 +1160,32 @@ namespace tb
     void MikroController::buildScreen (double nowMs)
     {
         screen.clear();
+        if (browsing.load())
+        {
+            auto& pm = processor.getPresets();
+            const auto& list = pm.getList();
+            using F = PresetManager::Filter;
+            const auto f = pm.getFilter();
+            juce::String head = f == F::kits ? "KITS" : f == F::pads ? "PAD PRESETS" : f == F::sequences ? "SEQUENCES" : f == F::favourites ? "FAVOURITES" : "PRESETS";
+            const auto count = list.isEmpty() ? juce::String ("0") : juce::String (pm.getCursor() + 1) + "/" + juce::String (list.size());
+            screen.text (0, 0, head.toRawUTF8());
+            screen.text (kScreenW - 6 * count.length(), 0, count.toRawUTF8());
+            for (int x = 0; x < kScreenW; ++x) screen.set (x, 8, true);
+            if (nowMs < flashUntilMs)
+            {
+                screen.text (0, 10, flashTitle.substring (0, 21).toRawUTF8());
+                screen.text (0, 18, flashValue.substring (0, 21).toRawUTF8());
+                return;
+            }
+            if (list.isEmpty()) { screen.text (0, 14, "NOTHING HERE", 1); return; }
+            const auto& m = list[juce::jlimit (0, list.size() - 1, pm.getCursor())];
+            screen.text (0, 11, ((m.favourite ? "*" : "") + m.name.toUpperCase()).substring (0, 21).toRawUTF8());
+            juce::String info = PresetManager::typeName (m.type);
+            if (m.bpm > 0.0) info << " " << juce::String (juce::roundToInt (m.bpm)) << "BPM";
+            if (m.tags.size() > 0) info << " " << m.tags[0].toUpperCase();
+            screen.text (0, 22, info.substring (0, 21).toRawUTF8());
+            return;
+        }
         const auto mode = getMode();
         juce::String head = modeName (mode);
         if (mode == Mode::pads)  head << " " << (juce::roundToInt (sceneViewRaw->load()) == 0 ? "A" : "B");

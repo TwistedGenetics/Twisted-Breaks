@@ -112,6 +112,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     mutator   = std::make_unique<tb::Mutator> (*this);
     resampler = std::make_unique<tb::Resampler> (*this);
     padOps    = std::make_unique<tb::PadOps> (*this);
+    presets   = std::make_unique<tb::PresetManager> (*this);
     push      = std::make_unique<tb::PushController> (*this);
     mikro     = std::make_unique<tb::MikroTester>();
     mikroMode = std::make_unique<tb::MikroController> (*this);
@@ -495,6 +496,11 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
     meta.setProperty ("pluginVersion", JucePlugin_VersionString, nullptr);
+    if (presets != nullptr)
+    {
+        meta.setProperty ("kitName", presets->getKitName(), nullptr);
+        meta.setProperty ("kitFile", presets->getCurrentKitFile().getFullPathName(), nullptr);
+    }
     state.appendChild (meta, nullptr);
 
     juce::ValueTree midiMap (kMidiMapId);
@@ -543,6 +549,15 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     if (padOps != nullptr) padOps->reset();             // a new project: no undo back into the old one
+    if (presets != nullptr)
+    {
+        const auto m = state.getChildWithName (kMetaId);
+        const auto name = m.getProperty ("kitName").toString(), file = m.getProperty ("kitFile").toString();
+        juce::WeakReference<tb::PresetManager> weak (presets.get());
+        auto apply = [weak, name, file] { if (auto* pm = weak.get()) pm->restoreKitName (name, file); };
+        if (juce::MessageManager::getInstanceWithoutCreating() != nullptr && juce::MessageManager::getInstance()->isThisTheMessageThread()) apply();
+        else juce::MessageManager::callAsync (apply);
+    }
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     push->fromValueTree (state.getChildWithName (tb::PushController::pushId));
     mikroMode->fromValueTree (state.getChildWithName (tb::MikroController::mikroId));

@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <functional>
 #include "Core/SnapshotFrame.h"
 
 class TwistedBreaksProcessor;
@@ -41,6 +42,14 @@ namespace tb
         /** quant: params::SwitchAt, or -1 for the "Snapshot Switch" parameter's setting. */
         void recall (int slot, int quant = -1);
 
+        /** A11 kit loads: switch to this snapshot-format tree (not stored in a slot)
+            the same way, then call `landed` on the message thread. */
+        void recallTree (const juce::ValueTree& snapshotTree, int quant, std::function<void()> landed);
+        bool isRecallingTree() const noexcept { return externalPending; }
+
+        /** Collect Samples: rewrite every stored sample path. */
+        void rewritePaths (const std::function<juce::String (const juce::String&)>&);
+
         SlotState getState (int slot) const;
         int  getActive() const noexcept { return active; }
         int  framesInFlight() const noexcept { return (int) retiring.size(); }
@@ -68,7 +77,11 @@ namespace tb
         std::unique_ptr<SnapshotFrame> buildFrame (int slot, int quant, const std::array<SampleBuffer::Ptr, kNumPads>& buffers);
 
         TwistedBreaksProcessor& processor;
-        std::array<juce::ValueTree, kSlots> slots;
+        static constexpr int kExternal = kSlots;               // slots[kExternal]: a kit being loaded
+        std::array<juce::ValueTree, kSlots + 1> slots;
+        std::function<void()> externalLanded;
+        bool externalPending = false;
+        void startRecall (int slot, int quant);
         int active = -1, loadingSlot = -1, waitingSlot = -1;
         uint32_t requestGen = 0, version = 0;
         int lastParamValue = 0;

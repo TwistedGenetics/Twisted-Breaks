@@ -11,6 +11,7 @@
 #include "UI/SequencerPanel.h"
 #include "UI/SliceSeqPanel.h"
 #include "UI/SnapshotPanel.h"
+#include "UI/PresetPanel.h"
 #include "UI/ResamplePanel.h"
 #include "UI/SceneStrip.h"
 #include "UI/Controls.h"
@@ -91,7 +92,7 @@ namespace tb::ui
         void resized() override;
 
         /** What fills the screen area: the CRT, the group MIXER or the FX editor. */
-        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots, resample };
+        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots, resample, presets };
         void showView (View);
         View getView() const noexcept { return view; }
 
@@ -124,6 +125,9 @@ namespace tb::ui
         SnapshotPanel    snapshotPanel;
         ResamplePanel    resamplePanel;
         SceneStrip       sceneStrip;
+        PresetPanel      presetPanel;
+        KitBar           kitBar;
+        bool             shownCtlBrowse = false;
         int              shownScene = 0;
         uint32_t         shownSeqVersion = 0;
         uint32_t         shownPushSelection = 0;

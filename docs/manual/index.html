@@ -280,7 +280,7 @@ a { color: var(--amber-ink); }
     <li><a href="#resample"><span>13</span>Resample &amp; character</a></li>
     <li><a href="#scenes"><span>14</span>Scenes A / B</a></li>
     <li><a href="#midi"><span>15</span>Controller, MIDI, Push &amp; Mikro</a></li>
-    <li><a href="#trouble"><span>16</span>Saving &amp; troubleshooting</a></li>
+    <li><a href="#trouble"><span>16</span>Presets, saving &amp; troubleshooting</a></li>
     <li><a href="#card"><span>17</span>Quick reference</a></li>
   </ol>
 </nav>
@@ -738,6 +738,7 @@ a { color: var(--amber-ink); }
       <tr><td>Up / Down (and Octave)</td><td>Scene A / B</td></tr>
       <tr><td>Fixed Length</td><td>LEN 8 / 16 / 32 (SHIFT: the pad's own LEN)</td></tr>
       <tr><td>Accent / Repeat / Undo</td><td>MUTATE / FILL / undo the last pad edit (Shift + Undo: redo). Undo MUTATE from the plugin's MUTATE view.</td></tr>
+      <tr><td>Browse / Select</td><td>Browse: PRESETS in the plugin window; encoder 1 moves, Select loads, Shift + Select listens (§ 16)</td></tr>
       <tr><td>Play / Record</td><td>Live's play and record, via Twisted Breaks Remote (lit green while Live plays, red while it records)</td></tr>
     </tbody>
   </table></div>
@@ -766,6 +767,7 @@ a { color: var(--amber-ink); }
       <tr><td>Shift + pad 1 / 2 / 11 / 12</td><td>Undo / Redo / Copy the selected pad / Paste onto the selected pad (as printed under Maschine's pads). Not in SCENE or PERFORM.</td></tr>
       <tr><td>Fixed Vel</td><td>Every hit at full velocity</td></tr>
       <tr><td>Variation / Tap / Sampling</td><td>MUTATE (Shift: undo) / FILL while held / RESAMPLE</td></tr>
+      <tr><td>Browse</td><td>The preset browser on the screen: pads 1–4 = kits / pads / sequences / favourites, encoder = move, push = load, Shift + push = listen (§ 16)</td></tr>
       <tr><td>Play / Stop / Rec</td><td>Live's transport, through the <b>Twisted Breaks Remote</b> port (map it once, below). Play lights while Live plays, Rec while it records.</td></tr>
     </tbody>
   </table></div>
@@ -807,9 +809,34 @@ a { color: var(--amber-ink); }
 
 <!-- ===================================================================== 16 TROUBLE -->
 <section class="plate" id="trouble"><span class="rivets"></span>
-  <header><h2 class="label">Saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
+  <header><h2 class="label">Presets, saving &amp; troubleshooting</h2><span class="no">§ 16</span></header>
+  <h3>Presets</h3>
+  <p>The <span class="key plain">Presets</span> view (last key on the top row, or click the kit name in the header) saves and loads three kinds of preset. Every preset carries its own samples, so it opens on any Mac with nothing missing.</p>
+  <figure>
+    <div class="bezel"><img src="img/presets.jpg" alt="The PRESETS view: filter keys, search, the preset list and the save / load keys" width="1200" height="800" loading="lazy"></div>
+    <figcaption><span class="chip">Fig. 14</span>The PRESETS view. The kit name in the header shows * when you've changed something since loading or saving it.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Type</th><th>What it holds</th></tr></thead>
+    <tbody>
+      <tr><td><b>Kit</b> (.tbkit)</td><td>Everything: every pad's sample, slices and settings, both sequencers, the snapshots, the break bank, FX and mixer, the master. Not the MIDI note map or controller settings. While Live plays, a kit loads on the next bar; the old sounds keep playing until the new ones are ready.</td></tr>
+      <tr><td><b>Pad</b> (.tbpad)</td><td>One pad: its sample, slices, settings and steps (what Copy takes). Loads onto the selected pad, or right-click &gt; Load onto.</td></tr>
+      <tr><td><b>Sequence</b> (.tbseq)</td><td>The patterns only: both sequencers and the sequencer settings (LEN, STEP, Rec Q, each pad's own length, WHOLE, slot).</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>Find</b>: <span class="key plain">Kits</span> <span class="key plain">Pads</span> <span class="key plain">Seqs</span> <span class="key plain">All</span> <span class="key plain">Fav</span>, the search box (name, tags and note), and <span class="key plain">A-Z</span> / <span class="key plain">New</span> sorting. Click the star on a row to make it a favourite.</li>
+    <li><b>Listen and load</b>: click a row to hear its first sound (<span class="key plain">Listen</span> on), double-click or <span class="key plain">Load</span> to load it, or use the arrow keys, Space and Return. ‹ › next to the kit name step through your kits.</li>
+    <li><b>Save</b>: <span class="key plain">Save</span> writes over the current kit; <span class="key plain">Save as</span> asks what to save (the kit, the selected pad or the sequences), a name, tags and a note. <span class="key plain">Rename</span>, <span class="key plain">Delete</span> (to the Trash), <span class="key plain">Finder</span>, <span class="key plain">Import</span>, or drop a preset file on the view.</li>
+    <li>Loading a kit, pad or sequence is one undo step (UNDO puts the pads back).</li>
+    <li><b>Where</b>: your presets are in <code>~/Music/Twisted Breaks/Presets</code>. Three factory kits (made from sounds the plugin synthesises, so nothing third-party) appear the first time you open the view. The samples inside presets are unpacked once into <code>~/Music/Twisted Breaks/Library/Audio</code>.</li>
+    <li><span class="key plain">Collect samples</span> copies every sample the set uses into that Library and points the pads, bank and snapshots at the copies, so the set no longer depends on files scattered around your drive.</li>
+    <li><b>Mikro</b>: <span class="key plain">Browse</span> opens the browser on the Mikro's screen. Pads 1–4 pick kits / pads / sequences / favourites, the encoder walks the list, pushing it loads (pad presets onto the selected pad), and Shift + push plays it. Browse again to leave.</li>
+    <li><b>Push 3</b>: <span class="key plain">Browse</span> shows PRESETS in the plugin window. Encoder 1 walks the list, Select loads, Shift + Select plays it.</li>
+    <li>Audio is stored as 24-bit FLAC at its own sample rate, each sound once however many pads use it. A preset made by a newer version, or a damaged file, is refused with a message and nothing changes. A sound missing from a preset loads as MISSING with its name.</li>
+  </ul>
   <h3>What the Live set keeps</h3>
-  <p>All 1097 parameters, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, or use Live's <b>Collect All and Save</b>.</p>
+  <p>All 1129 parameters, the kit name, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>

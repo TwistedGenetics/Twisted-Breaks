@@ -42,6 +42,8 @@ namespace tb
         void loadFile (int slot, const juce::File&, const SliceTable* keepSlices = nullptr);
         void copyFromPad (int slot, int pad);
         void clear (int slot);
+        /** Collect Samples: the slot now points at this copy of its file. */
+        void repointFile (int slot, const juce::File& f) { if (juce::isPositiveAndBelow (slot, kSlots) && slots[(size_t) slot].file != juce::File()) { slots[(size_t) slot].file = f; ++version; } }
 
         Slot get (int slot) const;
         uint32_t getVersion() const noexcept { return version; }
