@@ -416,7 +416,7 @@ namespace tb
                         if (pad < 0) continue;
                         if (e.down && ! heldRoll[(size_t) i])
                         {
-                            const int slice = heldSlice[(size_t) i] ? i + 1 : 0;
+                            const int slice = heldSlice[(size_t) i] ? padNumberOf (i) + 1 : 0;
                             bridge.mikroEvents.push ({ ControllerHit::rollOn, (int8_t) pad, (uint8_t) slice, (uint8_t) rollRate.load(), -heldVel[(size_t) i] });
                             heldRoll[(size_t) i] = true;
                         }
@@ -451,7 +451,7 @@ namespace tb
                 if (mode == Mode::pads)
                 {
                     const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
-                    pad = view * kPadsPerScene + i;          // pad numbers match: 1 bottom left
+                    pad = view * kPadsPerScene + padNumberOf (i);   // pad 1 (bottom left) = 01
                     selectedPad = pad;                 // (the message thread does the rest of selecting)
                     bridge.padPressure[(size_t) pad].store (0.0f);
                     bridge.mikroEvents.push ({ ControllerHit::padOn, (int8_t) pad, 0, 0, vel });
@@ -459,7 +459,7 @@ namespace tb
                 else
                 {
                     pad = selectedPad.load();
-                    slice = i + 1;
+                    slice = padNumberOf (i) + 1;
                     kbdUsed = true;
                     bridge.mikroEvents.push ({ ControllerHit::sliceOn, (int8_t) pad, (uint8_t) slice, 0, vel });
                 }
@@ -800,7 +800,8 @@ namespace tb
 
     void MikroController::handlePad (int i, bool down, double nowMs)
     {
-        const int pos = positionOf (i);           // reading order (steps, FX grid)
+        const int pos = i;                        // reading order (steps, FX grid)
+        const int num = padNumberOf (i);          // pad number, 0 = pad 1 bottom left (pads, slices, snapshots)
         const auto mode = getMode();
         const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
         auto& seq = bridge.seq;
@@ -811,7 +812,7 @@ namespace tb
             case Mode::pads:
             {
                 if (! down) return;
-                const int pad = view * kPadsPerScene + i;
+                const int pad = view * kPadsPerScene + num;
                 auto toggle = [this, pad] (const char* name)
                 {
                     const auto id = params::padId (pad, name);
@@ -892,7 +893,7 @@ namespace tb
             case Mode::keyboard:
                 if (down)
                 {
-                    chosenSlice = i + 1;                 // STEP writes this slice into the steps you tap (A9)
+                    chosenSlice = num + 1;               // STEP writes this slice into the steps you tap (A9)
                     flash ("SLICE " + juce::String (chosenSlice), "CHOSEN", nowMs);
                 }
                 return;
@@ -902,9 +903,9 @@ namespace tb
                 if (down) flash (fx::def (pos).name, raw (fx::paramId (groupOf (sel), pos)) > 0.5f ? "ON" : "OFF", nowMs);
                 return;
             case Mode::scene:
-                if (! down || i >= SnapshotManager::kSlots) return;       // pads 1-8
-                if (held[shift]) { processor.getSnapshots().store (i); flash ("SNAPSHOT", "STORE " + juce::String (i + 1), nowMs); }
-                else             { processor.getSnapshots().recall (i); flash ("SNAPSHOT", juce::String (i + 1), nowMs); }
+                if (! down || num >= SnapshotManager::kSlots) return;     // pads 1-8
+                if (held[shift]) { processor.getSnapshots().store (num); flash ("SNAPSHOT", "STORE " + juce::String (num + 1), nowMs); }
+                else             { processor.getSnapshots().recall (num); flash ("SNAPSHOT", juce::String (num + 1), nowMs); }
                 return;
         }
     }
@@ -977,15 +978,16 @@ namespace tb
         btn (stop, held[stop]);
 
         // ---- Pads.
-        for (int i = 0; i < 16; ++i)               // Mikro pad (0 = bottom left)
+        for (int i = 0; i < 16; ++i)               // Mikro pad index (reading order: 0 = top left)
         {
-            const int pos = positionOf (i);            // reading order
+            const int pos = i;                         // steps, FX grid
+            const int num = padNumberOf (i);           // pads, slices, snapshots (0 = pad 1, bottom left)
             int colour = off, level = 0;
             switch (mode)
             {
                 case Mode::pads:
                 {
-                    const int pad = view * kPadsPerScene + i;
+                    const int pad = view * kPadsPerScene + num;
                     const bool muted   = raw (params::padId (pad, params::padMute)) > 0.5f;
                     const bool queued  = bridge.padQueued[(size_t) pad].load (std::memory_order_relaxed);
                     const bool running = bridge.laneStep[(size_t) pad].load (std::memory_order_relaxed) >= 0
@@ -1023,8 +1025,8 @@ namespace tb
                 {
                     // Each slice in its own colour (as its steps show); the chosen one bright.
                     const bool loaded = bridge.padLoaded[(size_t) sel].load (std::memory_order_relaxed);
-                    colour = loaded ? i + 1 : off;
-                    level = chosenSlice == i + 1 ? 3 : 1;
+                    colour = loaded ? num + 1 : off;
+                    level = chosenSlice == num + 1 ? 3 : 1;
                     if ((heldMask.load() >> i) & 1u) { colour = white; level = 3; }
                     break;
                 }
@@ -1039,9 +1041,9 @@ namespace tb
                 }
                 case Mode::scene:
                 {
-                    if (i >= SnapshotManager::kSlots) break;
+                    if (num >= SnapshotManager::kSlots) break;
                     using S = SnapshotManager::SlotState;
-                    const auto stt = processor.getSnapshots().getState (i);
+                    const auto stt = processor.getSnapshots().getState (num);
                     colour = blue;
                     level = stt == S::empty ? 0 : stt == S::active ? 3 : (stt == S::loading || stt == S::waiting) ? (blinkOn ? 3 : 0) : 1;
                     if (stt == S::empty) colour = off;

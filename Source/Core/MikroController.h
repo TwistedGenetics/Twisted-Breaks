@@ -149,11 +149,12 @@ namespace tb
         void tick (double nowMs);
         const mikro::Lights& getLights() const noexcept { return lights; }
         const mikro::Screen& getScreen() const noexcept { return screen; }
-        /** Reading-order position (0 = top left .. 15 = bottom right) of a Mikro pad (0 = bottom left),
-            and back. Pads, slices and snapshots follow the pad numbers (1 bottom left, like the plugin's
-            matrix); steps and the FX grid read left to right from the top. */
-        static int positionOf (int hidPad) noexcept { return (3 - hidPad / 4) * 4 + hidPad % 4; }
-        static int hidPadOf (int position) noexcept { return positionOf (position); }   // the same swap both ways
+        /** The Mikro reports its pads in reading order (index 0 = top left .. 15 = bottom
+            right; checked on Jamie's Mikro: bottom left = 12). Pad number (0 = pad 1, bottom
+            left, like the plugin's matrix) of an index, and back (the same swap both ways).
+            Pads, slices and snapshots go by pad number; steps and the FX grid by reading order. */
+        static int padNumberOf (int hidPad) noexcept { return (3 - hidPad / 4) * 4 + hidPad % 4; }
+        static int hidPadOf (int padNumber) noexcept { return padNumberOf (padNumber); }
 
     private:
         struct Param { juce::String id; juce::String label; };

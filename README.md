@@ -46,7 +46,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) | **done** — tested on Jamie's Mikro |
 | 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** |
 | 0.16.1 | Pad matrix numbered like hardware: 01 bottom left, 16 top right (Push and Mikro follow) | **done** |
-| 0.17 | Sequencer follows Live only (no RUN key); Mikro / Push Play-Stop-Rec drive Live (Twisted Breaks Remote port); build breaks slice by slice on the Mikro | **done** — 608/608 automated checks |
+| 0.17 | Sequencer follows Live only (no RUN key); Mikro / Push Play-Stop-Rec drive Live (Twisted Breaks Remote port); build breaks slice by slice on the Mikro | **done** |
+| 0.17.1 | Mikro pads fixed: it reports pads top-left first, so pad 1 (bottom left) now plays 01 | **done** — 608/608 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).

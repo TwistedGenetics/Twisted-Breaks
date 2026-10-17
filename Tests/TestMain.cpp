@@ -4254,8 +4254,8 @@ namespace
         uint8_t hit[8] = { 0x02, 4, 0x10 | 0x07, 0xff, 0, 0, 0, 0 };
         t.feedReport (hit, 8);
         t.process (1200.0);
-        check (lit && t.getLights().state[39 + 4] == padByte (white, 3) && t.getLastEvent().startsWith ("PAD 5 DOWN") && ! sent.empty(),
-               "a pad hit lights it white and shows PAD 5 (1 = bottom left) on the screen and in the plugin");
+        check (lit && t.getLights().state[39 + 4] == padByte (white, 3) && t.getLastEvent().startsWith ("PAD 9 DOWN") && ! sent.empty(),
+               "a pad hit lights it white and shows its Maschine number (index 4 = PAD 9; 1 = bottom left)");
         uint8_t b2[16] = { 0x01 };
         b2[1 + shift / 8] |= (uint8_t) (1u << (shift % 8));
         t.feedReport (b2, 16);
@@ -4338,18 +4338,18 @@ namespace
         check (rec.reports.size() == n0, "nothing more is sent while nothing changes");
 
         // Pads: Mikro pad 13 (top left, HID 12) = plugin pad 01; Mikro pad 1 (bottom left) = 13.
-        check (tb::MikroController::positionOf (12) == 0 && tb::MikroController::positionOf (0) == 12 && tb::MikroController::positionOf (3) == 15,
-               "reading order (steps, FX) runs from the top left; pad numbers match the plugin's (1 = bottom left)");
+        check (tb::MikroController::padNumberOf (12) == 0 && tb::MikroController::padNumberOf (0) == 12 && tb::MikroController::padNumberOf (3) == 15,
+               "the Mikro sends its pads in reading order (bottom left = 12): pad 1 (bottom left) plays 01, like the plugin's matrix");
         drain();
-        hit (0, 4095); lift (0);
-        hit (12, 1024);
+        hit (12, 4095); lift (12);
+        hit (0, 1024);
         auto ev = drain();
         check (ev.size() == 3 && ev[0].kind == tb::ControllerHit::padOn && ev[0].pad == 0 && std::abs (ev[0].velocity - 1.0f) < 1e-4f
                  && ev[1].kind == tb::ControllerHit::padOff && ev[2].pad == 12 && std::abs (ev[2].velocity - 32.0f / 127.0f) < 1e-4f,
                "pads play straight from the USB thread, with velocity, and release");
-        send (MikroIn::pad (12, 0x40, 2048));
+        send (MikroIn::pad (0, 0x40, 2048));
         const float pr = br.padPressure[12].load();
-        lift (12);
+        lift (0);
         adv();
         check (std::abs (pr - 2048.0f / 4095.0f) < 1e-3f && br.padPressure[12].load() == 0.0f && mm.getSelectedPad() == 12,
                "pressure goes to the held pad (0 on release); a hit selects the pad");
@@ -4359,20 +4359,20 @@ namespace
         r.load (1, writeAudio ("mikro_blip", [] { juce::AudioBuffer<float> b (1, 4800); b.clear(); for (int i = 0; i < 100; ++i) b.setSample (0, i, 0.5f); return b; }(),
                                48000.0, Fmt::wavFloat));
         adv();
-        check (mm.getLights().state[(size_t) (39 + 1)] == padByte (orange, 1) && mm.getLights().state[(size_t) (39 + 12)] == padByte (orange, 3)
+        check (mm.getLights().state[(size_t) (39 + 13)] == padByte (orange, 1) && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3)
                  && mm.getLights().state[(size_t) padMode] == levelBright && mm.getLights().state[(size_t) step] == levelDim,
                "lights: loaded pad dim orange, selected bright; PAD MODE lit, the other modes dim");
 
         // Modifiers.
         hold (mute, true);
-        hit (1); lift (1);
+        hit (13); lift (13);
         adv();
         hold (mute, false);
         check (drain().empty() && rawP (tb::params::padId (1, tb::params::padMute)) > 0.5f, "MUTE + pad mutes it (and doesn't play it)");
         setPadParam (r.p, 1, tb::params::padMute, 0.0f);
         press (group);
         check (juce::roundToInt (rawP (tb::params::sceneView)) == 1 && mm.getSelectedPad() == 28, "GROUP flips to scene B (same pad position)");
-        hit (0); lift (0);
+        hit (12); lift (12);
         ev = drain();
         check (! ev.empty() && ev[0].pad == 16, "...and the pads play scene B");
         press (group);
@@ -4404,31 +4404,31 @@ namespace
         seq.clearAll();
         press (step);
         const int sp = mm.getSelectedPad();
-        hit (12); lift (12);                       // step 1
+        hit (0); lift (0);                       // step 1
         adv();
         const bool on1 = seq.get (sp, 0).on;
-        hit (13);                                  // hold step 2
+        hit (1);                                  // hold step 2
         adv();
         in.enc = 9; send (in.report()); adv();    // SLICE +1 (3 ticks)
         press (encoderPress);                      // -> VEL
         in.enc = 8; send (in.report()); adv();    // -1
-        lift (13);
+        lift (1);
         adv();
         const auto s2 = seq.get (sp, 1);
         check (mm.getMode() == tb::MikroController::Mode::steps && on1 && s2.on && s2.slice == 1 && s2.velocity == 99 && drain().empty(),
                "STEP: pads = steps (tap = on), hold + encoder edits the SLICE first, push = next field (VEL)");
         press (right);
-        hit (12); lift (12);
+        hit (0); lift (0);
         adv();
         check (seq.get (sp, 16).on && mm.getStepPage() == 1, "> = steps 17-32");
-        const bool pastLenOff = mm.getLights().state[(size_t) (39 + 12)] == 0;      // step 17 > LEN 16
+        const bool pastLenOff = mm.getLights().state[(size_t) (39 + 0)] == 0;      // step 17 > LEN 16
         press (left);
-        check (pastLenOff && mm.getLights().state[(size_t) (39 + 12)] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
+        check (pastLenOff && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
 
         // KEYBOARD = slices.
         press (keyboard);
-        hit (0); lift (0);
         hit (12); lift (12);
+        hit (0); lift (0);
         ev = drain();
         check (ev.size() == 2 && ev[0].kind == tb::ControllerHit::sliceOn && ev[0].slice == 1 && ev[0].pad == sp && ev[1].slice == 13,
                "KEYBOARD: the pads play the selected pad's slices 1-16");
@@ -4436,24 +4436,24 @@ namespace
         // NOTE REPEAT.
         press (padMode);
         hold (noteRepeat, true);
-        hit (12);
+        hit (0);
         ev = drain();
-        lift (12);
+        lift (0);
         auto ev2 = drain();
         hold (noteRepeat, false);
         check (ev.size() == 2 && ev[0].kind == tb::ControllerHit::padOn && ev[1].kind == tb::ControllerHit::rollOn && ev[1].rate == 1
                  && ev2.size() == 2 && ev2[0].kind == tb::ControllerHit::rollOff,
                "NOTE REPEAT held: a pad rolls (1/16) until it's let go");
         hold (shift, true); press (noteRepeat); hold (shift, false);
-        hold (noteRepeat, true); hit (12);
+        hold (noteRepeat, true); hit (0);
         ev = drain();
-        lift (12); hold (noteRepeat, false); drain();
+        lift (0); hold (noteRepeat, false); drain();
         check (ev.size() == 2 && ev[1].rate == 2, "SHIFT + NOTE REPEAT steps the rate (1/32)");
 
         // PERFORM = FX.
         press (perform);
         const auto lpfOn = tb::fx::paramId (0, tb::fx::lpf);
-        hit (13); lift (13);
+        hit (1); lift (1);
         adv();
         check (rawP (lpfOn) > 0.5f && mm.paramLabel().startsWith ("LPF"), "PERFORM: pads are the 16 FX (pad 2 = LPF), the encoder edits that effect");
         setParam (r.p, lpfOn, 0.0f);
@@ -4461,7 +4461,7 @@ namespace
         // SCENE = snapshots.
         press (scene);
         hold (shift, true);
-        hit (0); lift (0);
+        hit (12); lift (12);
         adv();
         hold (shift, false);
         check (r.p.getSnapshots().getState (0) != tb::SnapshotManager::SlotState::empty, "SCENE: SHIFT + pad 1 stores snapshot 1 (pad recalls it)");
@@ -4473,9 +4473,9 @@ namespace
         hold (tap, false);
         check (fillOn && rawP (tb::params::seqFill) < 0.5f, "TAP = FILL while held");
         press (fixedVel);
-        hit (12, 200);
+        hit (0, 200);
         ev = drain();
-        lift (12); drain();
+        lift (0); drain();
         check (! ev.empty() && std::abs (ev[0].velocity - 1.0f) < 1e-4f, "FIXED VEL: every hit at full velocity");
         press (fixedVel);
 
@@ -4484,7 +4484,7 @@ namespace
             Rig r2;
             auto& mm2 = r2.p.getMikroMode();
             mm2.useHubForTesting (hub);
-            hit (12); lift (12);
+            hit (0); lift (0);
             tb::ControllerHit h; int n2 = 0;
             while (r2.p.getBridge().mikroEvents.pop (h)) ++n2;
             check (mm2.isOwner() && ! mm.isOwner() && n2 == 2 && drain().empty(), "two instances: the one you touched last gets the Mikro");
@@ -4584,34 +4584,34 @@ namespace
 
         // Pick slice 7 on KEYBOARD, write it in STEP, pick 3, write that.
         press (keyboard);
-        tapPad (6);                                         // Mikro pad 7
+        tapPad (10);                                         // Mikro pad 7
         check (mm.getChosenSlice() == 7 && drain() == 1, "KEYBOARD: hitting a pad plays its slice and makes it the chosen one");
         press (step);
-        tapPad (12);                                        // step 1 (top left)
+        tapPad (0);                                        // step 1 (top left)
         const auto s1 = seq.get (sel, 0);
         press (keyboard);
-        tapPad (2);                                         // slice 3
+        tapPad (14);                                         // slice 3
         press (step);
-        tapPad (13);                                        // step 2 gets slice 3
-        tapPad (12);                                        // step 1 had slice 7: becomes 3, stays on
+        tapPad (1);                                        // step 2 gets slice 3
+        tapPad (0);                                        // step 1 had slice 7: becomes 3, stays on
         const auto s1b = seq.get (sel, 0), s2 = seq.get (sel, 1);
-        tapPad (12);                                        // same slice again: off
+        tapPad (0);                                        // same slice again: off
         check (s1.on && s1.slice == 7 && s2.on && s2.slice == 3 && s1b.on && s1b.slice == 3 && ! seq.get (sel, 0).on,
                "STEP: an empty step gets the chosen slice; another slice is replaced; the same slice again switches it off");
         adv();
-        check (mm.getLights().state[(size_t) (39 + 13)] == padByte (3, 2) || mm.getLights().state[(size_t) (39 + 13)] == padByte (3, 3),
+        check (mm.getLights().state[(size_t) (39 + 1)] == padByte (3, 2) || mm.getLights().state[(size_t) (39 + 1)] == padByte (3, 3),
                "steps light in their slice's colour (slice 3 = colour 3)");
 
         // Hold KEYBOARD from STEP: choose and come straight back.
         hold (keyboard, true);
         const bool sawSlices = mm.getMode() == tb::MikroController::Mode::keyboard;
-        tapPad (9);                                         // slice 10
+        tapPad (5);                                         // slice 10
         hold (keyboard, false);
         check (sawSlices && mm.getMode() == tb::MikroController::Mode::steps && mm.getChosenSlice() == 10,
                "hold KEYBOARD in STEP: the slices for a moment; hit one, let go, back on the steps");
         drain();
         hold (shift, true); press (keyboard); hold (shift, false);
-        tapPad (14);                                        // step 3: whole pad
+        tapPad (2);                                        // step 3: whole pad
         check (mm.getChosenSlice() == 0 && mm.getMode() == tb::MikroController::Mode::steps && seq.get (sel, 2).on && seq.get (sel, 2).slice == 0,
                "SHIFT + KEYBOARD clears the chosen slice: new steps play the whole pad");
 

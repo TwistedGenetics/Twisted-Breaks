@@ -19,8 +19,8 @@
                      byte 10 = touch strip 0 (not touched) or 1..200
     IN  report 0x02  pads: from byte 1, triplets (pad, event | value >> 8, value & 0xff),
                      value 0..4095; a zero triplet after the first ends the list.
-                     Pad index 0 = bottom left, row by row upwards (Maschine's
-                     pad 1); events 0x00 press on, 0x10 note on, 0x20 press off,
+                     Pad index in reading order: 0 = top left (Maschine's pad 13)
+                     .. 15 = bottom right; bottom left (pad 1) = 12; events 0x00 press on, 0x10 note on, 0x20 press off,
                      0x30 note off, 0x40 pressure.
     OUT report 0x80  lights, 80 bytes after the id: 0..38 buttons (brightness),
                      39..54 pads (colour << 2 | level 0..3), 55..79 touch strip LEDs

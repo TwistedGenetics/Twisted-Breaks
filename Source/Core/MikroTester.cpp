@@ -188,7 +188,7 @@ namespace tb
         {
             case Event::pad:
             {
-                const int padNo = e.index + 1;               // 1 = bottom left (Maschine numbering)
+                const int padNo = (3 - e.index / 4) * 4 + e.index % 4 + 1;   // Maschine's pad number (1 = bottom left; index 0 = top left)
                 if (e.padEvent == 0x40)
                 {
                     line2 = "PRESSURE " + juce::String (e.value);
