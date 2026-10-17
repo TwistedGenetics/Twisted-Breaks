@@ -168,6 +168,20 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padLayers), kV19 }, prefix + "Layers",
                 StringArray (kLayerModeNames, 4), layersOff));
+
+            // ---- 0.23: STRETCH (A12) ----
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padStretch), kV21 }, prefix + "Stretch", StringArray (kStretchNames, 6), stretchOff));
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padOrigBpm), kV21 }, prefix + "Original BPM", NormalisableRange<float> (0.0f, 300.0f, 0.01f), 0.0f,
+                AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return v < 1.0f ? String ("Auto") : String (v, 2) + " BPM"; })));
+            layout.add (std::make_unique<AudioParameterChoice> (
+                ParameterID { padId (pad, padGap), kV21 }, prefix + "Stretch Gaps", StringArray (kGapNames, 3), 1));
+            NormalisableRange<float> grainRange (5.0f, 200.0f, 0.1f);
+            grainRange.setSkewForCentre (30.0f);
+            layout.add (std::make_unique<AudioParameterFloat> (
+                ParameterID { padId (pad, padGrain), kV21 }, prefix + "Grain / Cycle", grainRange, 30.0f,
+                AudioParameterFloatAttributes().withLabel ("ms")));
         }
     }
 

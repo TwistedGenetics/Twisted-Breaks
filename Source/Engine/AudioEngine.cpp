@@ -136,6 +136,51 @@ namespace tb
         return PadVoice::loopBeatsFor (secs) * 60.0 / secs;
     }
 
+    double AudioEngine::detectTempo (const SampleBuffer& b, const SliceTable& markers) noexcept
+    {
+        const double sr = juce::jmax (1.0, b.sourceSampleRate);
+        const double secs = (double) b.getNumSamples() / sr;
+        if (secs <= 0.0) return 0.0;
+        if (markers.count < 4) return tempoOf (b);
+        // The bar counts the length allows; pick the one whose 1/16 grid the markers sit on best.
+        double best = tempoOf (b), bestScore = 1.0e9;
+        for (double beats : { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0 })
+        {
+            const double bpm = beats * 60.0 / secs;
+            if (bpm < 70.0 || bpm > 200.0) continue;
+            const double six = secs / (beats * 4.0);
+            double err = 0.0;
+            for (int i = 0; i < markers.count; ++i)
+            {
+                const double x = (double) markers.starts[(size_t) i] / sr / six;
+                const double f = x - std::floor (x);
+                err += juce::jmin (f, 1.0 - f);
+            }
+            const double score = err / markers.count + 0.03 * std::abs (std::log2 (bpm / 140.0));
+            if (score < bestScore) { bestScore = score; best = bpm; }
+        }
+        return best;
+    }
+
+    void AudioEngine::applyStretch (int pad, const SampleBuffer& buf, double pitchSemis, PadVoice::Settings& s) const noexcept
+    {
+        const double fileRate = buf.sourceSampleRate / sampleRate;
+        const double pitch = std::pow (2.0, pitchSemis / 12.0);
+        const int m = padStretchMode[(size_t) pad];
+        if (m == 0 || s.reverse)
+        {
+            s.stretch = 0;
+            s.increment = fileRate * pitch * (m == 0 ? padFitFactor[(size_t) pad] : padStretchRatio[(size_t) pad]);
+            return;
+        }
+        s.stretch      = m;
+        s.readInc      = fileRate * pitch;
+        s.increment    = fileRate * padStretchRatio[(size_t) pad];
+        s.grainSamples = padGrainSamples[(size_t) pad];
+        s.gapMode      = padGapMode[(size_t) pad];
+        s.beatSlices   = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (buf.getNumSamples(), 16) : padSlices[(size_t) pad];
+    }
+
     void AudioEngine::regionAndRate (int pad, const PadParams& pp, const SampleBuffer& buf, PadVoice::Settings& s) noexcept
     {
         const int len = buf.getNumSamples();
@@ -189,14 +234,37 @@ namespace tb
         }
 
 
-        // FIT (A11): a one-shot / slice break plays at Live's tempo, from its own.
+        // STRETCH (A12; 0.21's FIT is Repitch): a one-shot / slice break plays at Live's tempo, from its own.
         padFitFactor[(size_t) pad] = 1.0;
-        if (pp.fit && ! s.loop)
+        padStretchMode[(size_t) pad] = 0;
+        padStretchRatio[(size_t) pad] = 1.0;
+        s.stretch = 0;
+        if (pp.stretch != params::stretchOff && ! s.loop)
         {
-            const double own = tempoOf (buf);
+            const double own = pp.origBpm >= 1.0f ? (double) pp.origBpm : detectTempo (buf, padSlices[(size_t) pad]);
             const double bpm = transportNow != nullptr ? transportNow->bpm : 120.0;
-            if (own > 1.0 && bpm > 1.0) padFitFactor[(size_t) pad] = juce::jlimit (0.25, 4.0, bpm / own);
-            s.increment *= padFitFactor[(size_t) pad];
+            if (own > 1.0 && bpm > 1.0)
+            {
+                const double ratio = juce::jlimit (0.25, 4.0, bpm / own);
+                padStretchRatio[(size_t) pad] = ratio;
+                if (pp.stretch == params::stretchRepitch || s.reverse)
+                {
+                    padFitFactor[(size_t) pad] = ratio;
+                    s.increment *= ratio;
+                }
+                else
+                {
+                    padStretchMode[(size_t) pad]  = pp.stretch - 1;          // 1 BEATS, 2 TEXTURE, 3 / 4 AKAI
+                    padGrainSamples[(size_t) pad] = juce::jmax (32, (int) (pp.grainMs * 0.001 * sampleRate));
+                    padGapMode[(size_t) pad]      = pp.gap;
+                    s.stretch      = pp.stretch - 1;
+                    s.readInc      = s.increment;                             // the sound keeps its pitch
+                    s.increment    = buf.sourceSampleRate / sampleRate * ratio;   // the play head keeps Live's time
+                    s.grainSamples = padGrainSamples[(size_t) pad];
+                    s.gapMode      = pp.gap;
+                    s.beatSlices   = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (len, 16) : padSlices[(size_t) pad];
+                }
+            }
         }
     }
 
@@ -560,15 +628,22 @@ namespace tb
             s.regionEnd   = juce::jmax (r.getStart() + kMinRegion, r.getEnd());
             s.loop = false;
             s.syncPeriodBeats = 0.0;
-            s.increment = fileRate * std::pow (2.0, (double) padPitchNow[(size_t) pad] / 12.0) * padFitFactor[(size_t) pad];
+            applyStretch (pad, *buf, (double) padPitchNow[(size_t) pad], s);
+            juce::ignoreUnused (fileRate);
         }
         if (st.pitch != 0)
         {
-            // A pitched hit runs free at its own speed (off the loop grid for this hit).
+            // A pitched hit runs free at its own speed (off the loop grid for this hit);
+            // a stretched one changes pitch only (A12).
             s.syncPeriodBeats = 0.0;
-            s.increment *= std::pow (2.0, (double) st.pitch / 12.0);
+            if (s.stretch != 0) s.readInc   *= std::pow (2.0, (double) st.pitch / 12.0);
+            else                s.increment *= std::pow (2.0, (double) st.pitch / 12.0);
         }
-        if (st.rev) s.reverse = ! s.reverse;
+        if (st.rev)
+        {
+            s.reverse = ! s.reverse;
+            if (s.reverse && s.stretch != 0) { s.increment = s.readInc * padStretchRatio[(size_t) pad]; s.stretch = 0; }   // backwards: repitch
+        }
         return s;
     }
 
@@ -1548,7 +1623,7 @@ namespace tb
         s.reverse = st.rev;
         s.regionStart = st.rev ? 0 : r.getStart();
         s.regionEnd   = st.rev ? juce::jmax (32, r.getEnd()) : len;
-        s.increment   = buf->sourceSampleRate / sampleRate * std::pow (2.0, (double) (padPitchNow[(size_t) pad] + (float) st.pitch) / 12.0);
+        applyStretch (pad, *buf, (double) (padPitchNow[(size_t) pad] + (float) st.pitch), s);
 
         sliceRun[(size_t) pad].lastSlice = st.slice;
         padFlash[(size_t) pad] = true;

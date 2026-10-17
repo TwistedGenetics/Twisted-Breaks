@@ -2,6 +2,8 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "Engine/SampleBuffer.h"
+#include "Engine/SliceTable.h"
+#include <array>
 
 namespace tb
 {
@@ -56,6 +58,14 @@ namespace tb
             float  gainLeft    = 1.0f;
             float  gainRight   = 1.0f;
             int    character   = 0;   // params::Character (0 = CLEAN)
+
+            // A12 STRETCH (one-shots, slices): the play head (position) moves at
+            // `increment` (Live's tempo); the sound is read at `readInc` (its pitch).
+            int    stretch      = 0;  // 0 none, 1 BEATS, 2 TEXTURE, 3 AKAI CLASSIC, 4 AKAI REVISED
+            double readInc      = 1.0;
+            int    grainSamples = 1024;   // TEXTURE grain / AKAI cycle, output samples
+            int    gapMode      = 0;      // BEATS: 0 none, 1 loop, 2 back & forth
+            SliceTable beatSlices;        // BEATS: where each beat / slice starts (source)
         };
 
         struct Character
@@ -172,6 +182,28 @@ namespace tb
         double snapOffset = 0.0;
         double stutterAnchor = 0.0;
         int    stutterLen = 0, stutterCount = 0;
+
+        // A12 STRETCH: up to 3 read heads, each with its own fade (or a Hann window).
+        struct Head
+        {
+            bool   on = false;
+            double pos = 0.0, dir = 1.0;
+            float  g = 0.0f, gstep = 0.0f;
+            bool   hann = false;
+            int    age = 0, len = 0;
+        };
+        std::array<Head, 3> heads {};
+        int    stretchMode = 0, grainLen = 1024, gapMode = 0, grainClock = 0;
+        double readInc = 1.0;
+        SliceTable beats;
+        int    beatIdx = 0, beatHead = -1;
+        double sliceEnd = 0.0;
+        bool   gapFading = false, stretchEnding = false;
+        uint32_t jitterSeed = 1;
+        int    spawn (double pos, int fadeIn, bool hann = false, int len = 0, double dir = 1.0) noexcept;
+        void   fadeAll (int samples) noexcept;
+        double bestCycleStart (double around, int fadeLen) const noexcept;
+        void   renderStretched (const float* srcL, const float* srcR, bool stereo, int len, float& l, float& r) noexcept;
 
         int   characterIndex    = 0;
         float lpCoef            = 0.0f;                 // output filter (0 = off)

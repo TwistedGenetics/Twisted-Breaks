@@ -242,6 +242,10 @@ private:
         std::atomic<float>* stepsWhole = nullptr;
         std::atomic<float>* fit = nullptr;
         std::atomic<float>* layers = nullptr;
+        std::atomic<float>* stretch = nullptr;
+        std::atomic<float>* origBpm = nullptr;
+        std::atomic<float>* gap = nullptr;
+        std::atomic<float>* grain = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

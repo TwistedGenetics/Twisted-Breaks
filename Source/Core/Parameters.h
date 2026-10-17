@@ -46,6 +46,7 @@ namespace tb::params
     inline constexpr int kV18 = 18; // parameters introduced in 0.18.x (whole-pad steps)
     inline constexpr int kV19 = 19; // parameters introduced in 0.21.x (TWIST, layers, fit to tempo)
     inline constexpr int kV20 = 20; // parameters introduced in 0.22.x (song mode)
+    inline constexpr int kV21 = 21; // parameters introduced in 0.23.x (stretch modes)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -190,6 +191,15 @@ namespace tb::params
     inline constexpr const char* twistTargetNames[] = { "Pitch", "Start", "Pan", "Reverse", "Character", "Slice", "Gain" };
     inline constexpr int kNumTwistTargets = 7;
     inline juce::String twistLockId (int t) { return juce::String ("twist_lock_") + twistTargetKeys[t]; }
+
+    // ---- 0.23: STRETCH (A12 part 3) -----------------------------------------------------
+    inline constexpr const char* padStretch = "stretch";  // choice: how a one-shot / slice follows Live's tempo
+    enum StretchMode { stretchOff = 0, stretchRepitch, stretchBeats, stretchTexture, stretchAkaiClassic, stretchAkaiRevised };   // append only
+    inline const char* const kStretchNames[] = { "Off", "Repitch", "Beats", "Texture", "Akai Classic", "Akai Revised" };
+    inline constexpr const char* padOrigBpm = "obpm";     // float 0 (detect) or 40..300: the break's own tempo
+    inline constexpr const char* padGap     = "sgap";     // choice: BEATS gap fill
+    inline const char* const kGapNames[] = { "None", "Loop", "Back & Forth" };
+    inline constexpr const char* padGrain   = "grain";    // float ms: TEXTURE grain / AKAI cycle
 
     // ---- 0.22: song mode (A11 part 5) ---------------------------------------------------
     inline constexpr const char* songOn = "song_on";     // bool: the snapshot chain follows Live's bars

@@ -55,6 +55,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.21 | TWIST (randomise a pad's sound around where you left it, amount + locks), layers (round robin / velocity / random, up to 4 per pad), fit to Live's tempo | **done** — 683/683 automated checks |
 | 0.22 | Export: WAV (a pad or the kit, N bars at Live's tempo, rendered offline from a copy) and MIDI clips of the sequencer, drag into Live; song mode (a chain of snapshots × bars, on Live's bar lines) | **done** — 690/690 automated checks |
 | 0.22.1 | MIDI out of what you play (plugin MIDI out + "Twisted Breaks Notes" port) to record jamming in Live; Live stopping stops every break | **done** — 700/700 automated checks |
+| 0.23 | STRETCH per pad: Repitch / Beats / Texture / Akai Classic / Akai Revised for one-shots, slices, steps and slice sequences; tempo from the markers, set / double / halve | **done** — 712/712 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).

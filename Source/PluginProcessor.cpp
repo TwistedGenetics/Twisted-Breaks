@@ -77,7 +77,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.stepsWhole = apvts.getRawParameterValue (padId (pad, padStepsWhole));
         pp.fit        = apvts.getRawParameterValue (padId (pad, padFit));
         pp.layers     = apvts.getRawParameterValue (padId (pad, padLayers));
-        jassert (pp.fit && pp.layers);
+        pp.stretch    = apvts.getRawParameterValue (padId (pad, padStretch));
+        pp.origBpm    = apvts.getRawParameterValue (padId (pad, padOrigBpm));
+        pp.gap        = apvts.getRawParameterValue (padId (pad, padGap));
+        pp.grain      = apvts.getRawParameterValue (padId (pad, padGrain));
+        jassert (pp.fit && pp.layers && pp.stretch && pp.origBpm && pp.gap && pp.grain);
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
                  && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character
@@ -300,6 +304,11 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.stepsWhole = ld (src.stepsWhole) > 0.5f;
         dst.fit        = ld (src.fit) > 0.5f;
         dst.layerMode  = juce::jlimit (0, 3, juce::roundToInt (ld (src.layers)));
+        dst.stretch    = juce::jlimit (0, 5, juce::roundToInt (ld (src.stretch)));
+        if (dst.stretch == tb::params::stretchOff && dst.fit) dst.stretch = tb::params::stretchRepitch;   // 0.21 FIT = Repitch
+        dst.origBpm    = ld (src.origBpm);
+        dst.gap        = juce::jlimit (0, 2, juce::roundToInt (ld (src.gap)));
+        dst.grainMs    = ld (src.grain);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)

@@ -100,6 +100,10 @@ namespace tb
             bool  stepsWhole = false; // A10: steps play the whole pad, never a slice
             bool  fit = false;        // A11: one-shots / slices follow Live's tempo
             int   layerMode = 0;      // A11: params::LayerMode
+            int   stretch = 0;        // A12: params::StretchMode (FIT folded in as Repitch)
+            float origBpm = 0.0f;     // A12: 0 = detect
+            int   gap = 1;            // A12: BEATS gap fill
+            float grainMs = 30.0f;    // A12: TEXTURE grain / AKAI cycle
         };
 
         struct GroupParams
@@ -432,12 +436,20 @@ namespace tb
         std::array<int, kNumPads>   layerNext {};
         std::array<float, kNumPads> lastVelocity {};
         std::array<double, kNumPads> padFitFactor {};
+        // A12 STRETCH, per pad (worked out with the pad's settings each block).
+        std::array<int, kNumPads>    padStretchMode {};    // 0 none, else PadVoice stretch (1..4)
+        std::array<double, kNumPads> padStretchRatio {};   // Live's tempo / the break's
+        std::array<int, kNumPads>    padGrainSamples {};
+        std::array<int, kNumPads>    padGapMode {};
+        void applyStretch (int pad, const SampleBuffer& buf, double pitchSemis, PadVoice::Settings& s) const noexcept;
         juce::Random layerRandom { 0x7b5 };
         /** Region, loop and speed of a pad's voice for this buffer (START / END / SLICE, sync, pitch, FIT). */
         void regionAndRate (int pad, const PadParams&, const SampleBuffer&, PadVoice::Settings&) noexcept;
     public:
         /** The tempo a break plays at, from its length (90-180 BPM, see loopBeatsFor). */
         static double tempoOf (const SampleBuffer&) noexcept;
+        /** A12: the break's tempo from its slice markers when it has them (onsets on a 1/16 grid), else from its length. */
+        static double detectTempo (const SampleBuffer&, const SliceTable& markers) noexcept;
 
         // ---- A12: MIDI out (what you play, for recording into Live) ------------------
         struct OutEvent { int offset; uint8_t bytes[3]; };

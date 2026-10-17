@@ -369,11 +369,18 @@ a { color: var(--amber-ink); }
     <li><span class="key plain">Undo</span> / <span class="key plain">Redo</span> (top right of the pad matrix, or <b>Cmd-Z</b> / <b>Cmd-Shift-Z</b>) step back through the last 50 pad edits: pastes, swaps, clears, loading a sample, slice-marker edits and step edits from the mouse, Push, Mikro or live recording. Each burst of editing is one step. Knob moves are Live's own undo (Cmd-Z in Live's window).</li>
     <li>Opening a Live set starts a fresh history.</li>
   </ul>
-  <h3>TWIST, layers &amp; fit to tempo</h3>
+  <h3>TWIST, layers &amp; stretch</h3>
   <ul>
     <li><span class="key plain">Twist</span> (above the pad matrix, or right-click a pad) shakes up the selected pad's sound around how you left it: pitch, start, pan, reverse, character, slice and gain. Press it again for another take on the same starting point; change something yourself and that becomes the new starting point. <span class="key plain">...</span> next to it sets the amount (10–100 %) and locks the settings you want left alone. Each TWIST is one undo step. It's also a parameter (<code>Twist</code>) you can MIDI-map, and <b>Events</b> on the Mikro (Shift + Events: undo).</li>
     <li><b>Layers</b> (right-click a pad &gt; Layers): up to 4 extra samples per pad. <b>Round robin</b> plays them in turn, <b>Velocity</b> picks by how hard you hit (soft = the pad's own sample, hardest = the last layer), <b>Random</b> picks one. They follow the pad's START / END, pitch, gain and pan; a SLICE pad, SLICE SEQ or a pad following the bank plays only its own sample. The tile shows <code>RR3</code>, <code>VL2</code> and so on. Layers are copied, saved with the set and carried by presets.</li>
-    <li><b>Fit to Live's tempo</b> (right-click a pad): a one-shot or SLICE break plays at Live's tempo instead of its own (it speeds up or slows down, so the pitch follows). The break's own tempo is worked out from its length (90–180 BPM) and shown on the screen next to its length. Loops with SYNC already do this.</li>
+    <li><b>Stretch</b> (right-click a pad &gt; Stretch): play a one-shot or SLICE break in time with Live without LOOP. It works for pad hits, sequencer steps, slice sequences and Mikro KEYBOARD slices.
+      <ul>
+        <li><b>Repitch</b>: speed follows Live's tempo and the pitch moves with it (0.21's FIT).</li>
+        <li><b>Beats</b>: each slice starts on its own spot on Live's grid at its own pitch, like Live's Beats warp. When Live is slower than the break, <i>Fill the gaps</i> chooses <b>None</b> (silence), <b>Loop</b> (the end of the slice repeats) or <b>Back &amp; forth</b>. A pad without markers uses 16 equal slices.</li>
+        <li><b>Texture</b>: overlapping grains, smooth and pitch-true, for pads and atmospheres. <i>Grain / cycle</i> sets the grain size.</li>
+        <li><b>Akai Classic</b> and <b>Akai Revised</b>: the cyclic stretch of the S950 / S1000 samplers, the metallic sound of 90s jungle. <i>Grain / cycle</i> sets the cycle length (try 20–30 ms). Classic splices the cycles nearly hard; Revised joins them in phase, so it's cleaner.</li>
+      </ul>
+      The break's own tempo is worked out from its markers (where they sit on a 1/16 grid), or from its length; the menu and the screen show it. If it guesses wrong, <i>Double it</i>, <i>Halve it</i> or <i>Type it in</i>, and <i>Detect it</i> goes back to automatic. The pad's PITCH changes only the pitch in Beats, Texture and Akai. A reversed hit falls back to Repitch. Loops with SYNC keep their own tempo lock.</li>
   </ul>
 </section>
 
@@ -855,7 +862,7 @@ a { color: var(--amber-ink); }
     <li>Audio is stored as 24-bit FLAC at its own sample rate, each sound once however many pads use it. A preset made by a newer version, or a damaged file, is refused with a message and nothing changes. A sound missing from a preset loads as MISSING with its name.</li>
   </ul>
   <h3>What the Live set keeps</h3>
-  <p>All 1203 parameters, the kit name, the song, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
+  <p>All 1331 parameters, the kit name, the song, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>

@@ -102,6 +102,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.23: stretch
+
+- [ ] A 170 BPM break on a pad (ONE), Live at 174 / 160 / 140: Stretch > Beats keeps it on the grid at its pitch; try the three gap fills at 140.
+- [ ] Texture on a pad or vocal; Akai Classic vs Revised on an amen at 20-30 ms cycle: the 90s metallic stretch.
+- [ ] The menu shows the detected BPM; Double / Halve / Type it in fix a wrong guess; Detect goes back.
+- [ ] Sequencer slice steps and slice sequences stay in time with Stretch on; PITCH changes only pitch.
+- [ ] A 0.21 set with FIT on still plays (as Repitch).
+
 ## 0.22.1: record your jamming, stop means stop
 
 - [ ] VST3: new MIDI track, MIDI From = Twisted Breaks track / Twisted Breaks, arm, record while playing pads (mouse, Mikro, Push): notes land in the clip in time.

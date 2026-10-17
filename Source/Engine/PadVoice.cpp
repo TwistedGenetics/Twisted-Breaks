@@ -209,6 +209,174 @@ namespace tb
         increment.setCurrentAndTargetValue (s.increment);
         gainL.setCurrentAndTargetValue (s.gainLeft);
         gainR.setCurrentAndTargetValue (s.gainRight);
+
+        // A12 STRETCH: heads start at the play head.
+        for (auto& h : heads) h = {};
+        stretchMode = (! looping && ! reverse && ! forced) ? s.stretch : 0;
+        readInc     = s.readInc;
+        grainLen    = juce::jmax (32, s.grainSamples);
+        gapMode     = s.gapMode;
+        beats       = s.beatSlices;
+        grainClock  = 0;
+        gapFading = stretchEnding = false;
+        beatHead = -1;
+        if (stretchMode != 0)
+        {
+            const int fin = needsFade ? 16 : 1;
+            if (stretchMode == 1)
+            {
+                beatIdx = beats.isEmpty() ? 0 : beats.sliceAt ((int) position);
+                const int nxt = beatIdx + 1;
+                sliceEnd = (! beats.isEmpty() && nxt < beats.count) ? (double) beats.starts[(size_t) nxt] : (double) regionEnd;
+                beatHead = spawn (position, fin);
+            }
+            else if (stretchMode == 2) spawn (position, 0, true, grainLen);
+            else                       spawn (position, fin);
+            fadeIn = 1.0f;                        // the heads fade themselves
+        }
+    }
+
+    int PadVoice::spawn (double pos, int fadeInSamples, bool hann, int len, double dir) noexcept
+    {
+        int k = -1;
+        for (int i = 0; i < (int) heads.size(); ++i) if (! heads[(size_t) i].on) { k = i; break; }
+        if (k < 0)
+        {
+            // All busy: take the quietest.
+            k = 0;
+            for (int i = 1; i < (int) heads.size(); ++i) if (heads[(size_t) i].g < heads[(size_t) k].g) k = i;
+        }
+        auto& h = heads[(size_t) k];
+        h.on = true; h.pos = pos; h.dir = dir; h.hann = hann; h.age = 0; h.len = juce::jmax (1, len);
+        h.g = fadeInSamples <= 1 ? 1.0f : 0.0f;
+        h.gstep = fadeInSamples <= 1 ? 0.0f : 1.0f / (float) fadeInSamples;
+        return k;
+    }
+
+    void PadVoice::fadeAll (int samples) noexcept
+    {
+        for (auto& h : heads)
+            if (h.on && ! h.hann) h.gstep = -juce::jmax (h.g, 1.0e-3f) / (float) juce::jmax (1, samples);
+    }
+
+    double PadVoice::bestCycleStart (double around, int fadeLen) const noexcept
+    {
+        // AKAI REVISED: the start near `around` whose audio best matches what the
+        // fading cycle plays next (so the splice joins in phase).
+        int cur = -1;
+        for (int i = 0; i < (int) heads.size(); ++i) if (heads[(size_t) i].on && heads[(size_t) i].gstep >= 0.0f) cur = i;
+        if (cur < 0 || buffer == nullptr) return around;
+        const auto& h = heads[(size_t) cur];
+        const float* d = buffer->audio.getReadPointer (0);
+        const int n = buffer->getNumSamples();
+        const int W = juce::jlimit (16, 256, fadeLen);
+        const int range = juce::jmax (8, grainLen / 4);
+        auto at = [d, n] (double p) { const int i = juce::jlimit (0, n - 1, (int) p); return d[i]; };
+        double best = around, bestScore = -1.0e30;
+        for (int off = -range; off <= range; off += 3)
+        {
+            const double c = around + off * readInc;
+            double score = 0.0;
+            for (int k = 0; k < W; k += 4)
+                score += (double) at (h.pos + k * readInc) * (double) at (c + k * readInc);
+            if (score > bestScore) { bestScore = score; best = c; }
+        }
+        return juce::jlimit (0.0, (double) (n - 1), best);
+    }
+
+    void PadVoice::renderStretched (const float* srcL, const float* srcR, bool stereo, int len, float& l, float& r) noexcept
+    {
+        // Schedule: the play head (position) runs at Live's tempo; heads read at the sound's own pitch.
+        if (! stretchEnding && position >= (double) regionEnd)
+        {
+            stretchEnding = true;
+            fadeAll ((int) edgeFadeSamples);
+            for (auto& h : heads) if (h.hann) { h.len = juce::jmin (h.len, h.age + (int) edgeFadeSamples); }
+        }
+        if (! stretchEnding)
+        {
+            if (stretchMode == 1)
+            {
+                // BEATS: each slice starts on its own spot on Live's grid.
+                if (position >= sliceEnd && ! beats.isEmpty() && beatIdx + 1 < beats.count)
+                {
+                    ++beatIdx;
+                    const double s0 = (double) beats.starts[(size_t) beatIdx];
+                    const int nxt = beatIdx + 1;
+                    sliceEnd = nxt < beats.count ? (double) beats.starts[(size_t) nxt] : (double) regionEnd;
+                    fadeAll (64);
+                    beatHead = spawn (s0 + (position - s0) * 0.0, 16);
+                    gapFading = false;
+                }
+                else if (beatHead >= 0 && heads[(size_t) beatHead].on)
+                {
+                    // The slice ran out before its next grid spot: fill the gap.
+                    auto& h = heads[(size_t) beatHead];
+                    const double segStart = (double) (beatIdx < beats.count && ! beats.isEmpty() ? beats.starts[(size_t) beatIdx] : regionStart);
+                    const double seg = juce::jmin ((sliceEnd - segStart) / 3.0, (buffer != nullptr ? buffer->sourceSampleRate : hostRate) * 0.04);
+                    if (h.pos >= sliceEnd && h.dir > 0.0)
+                    {
+                        if (gapMode == 0 && ! gapFading) { fadeAll (64); gapFading = true; }
+                        else if (gapMode == 1)          { fadeAll (64); beatHead = spawn (sliceEnd - seg, 64); }
+                        else if (gapMode == 2)          h.dir = -1.0;
+                    }
+                    else if (gapMode == 2 && h.dir < 0.0 && h.pos <= sliceEnd - seg) h.dir = 1.0;
+                }
+            }
+            else if (stretchMode == 2)
+            {
+                // TEXTURE: Hann grains every half grain, from the play head (a little scatter).
+                if (++grainClock >= grainLen / 2)
+                {
+                    grainClock = 0;
+                    jitterSeed = jitterSeed * 1664525u + 1013904223u;
+                    const double jitter = ((double) (jitterSeed >> 8) / 16777216.0 - 0.5) * 0.1 * grainLen * readInc;
+                    spawn (juce::jmax ((double) regionStart, position + jitter), 0, true, grainLen);
+                }
+            }
+            else
+            {
+                // AKAI: a new cycle every CYCLE from the play head. CLASSIC splices almost hard
+                // (the buzz at the cycle rate is the sound); REVISED crossfades in phase.
+                if (++grainClock >= grainLen)
+                {
+                    grainClock = 0;
+                    const bool revised = stretchMode == 4;
+                    const int x = revised ? juce::jmax (16, (int) (grainLen * 0.35)) : juce::jmin (24, grainLen / 8);
+                    const double startAt = revised ? bestCycleStart (position, x) : position;
+                    fadeAll (x);
+                    spawn (startAt, x);
+                }
+            }
+        }
+
+        l = r = 0.0f;
+        bool any = false;
+        for (auto& h : heads)
+        {
+            if (! h.on) continue;
+            any = true;
+            float g;
+            if (h.hann)
+            {
+                const float t = (float) h.age / (float) h.len;
+                g = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * t);
+                if (++h.age >= h.len) h.on = false;
+            }
+            else
+            {
+                g = h.g;
+                h.g += h.gstep;
+                if (h.g >= 1.0f) { h.g = 1.0f; h.gstep = 0.0f; }
+                if (h.gstep < 0.0f && h.g <= 0.0f) h.on = false;
+            }
+            const float a = read (srcL, len, h.pos);
+            l += a * g;
+            r += (stereo ? read (srcR, len, h.pos) : a) * g;
+            h.pos += readInc * pitchMul * h.dir;
+            if (h.pos >= (double) len - 1.0) h.on = false;
+        }
+        if (! any && stretchEnding) kill();
     }
 
     void PadVoice::update (const Settings& s) noexcept
@@ -216,6 +384,7 @@ namespace tb
         if (! active) return;
         setCharacter (s.character);
         increment.setTargetValue (s.increment);
+        if (stretchMode != 0 && s.stretch != 0) readInc = s.readInc;
         gainL.setTargetValue (s.gainLeft);
         gainR.setTargetValue (s.gainRight);
 
@@ -389,6 +558,11 @@ namespace tb
                         r = r + (ar - r) * t;
                     }
                 }
+            }
+            else if (stretchMode != 0)
+            {
+                renderStretched (srcL, srcR, stereo, len, l, r);
+                if (! active) break;
             }
             else
             {

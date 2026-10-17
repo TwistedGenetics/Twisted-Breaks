@@ -375,7 +375,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1203, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song)");
+        check (p.getParameters().processor.getParameters().size() == 1331, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3526,7 +3526,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -5525,6 +5525,109 @@ namespace
         tb::NotesPort::setSinkForTesting (nullptr);
     }
 
+    void testA12Stretch()
+    {
+        std::cout << "\n== A12: STRETCH modes ==" << std::endl;
+        const double own = 170.0, live = 174.0;
+        const int barSamples = (int) std::lround (4.0 * 60.0 / own * 48000.0);
+        const int total = barSamples * 2;
+        const int eighth = total / 16;
+        juce::AudioBuffer<float> clicks (1, total);
+        clicks.clear();
+        for (int k = 0; k < 16; ++k)
+            for (int i = 0; i < 240; ++i)
+                clicks.setSample (0, k * eighth + i, 0.8f * std::exp (-(float) i / 40.0f) * (i % 2 == 0 ? 1.0f : -1.0f));
+        Rig r;
+        r.host.bpm = live;
+        r.load (0, writeAudio ("a12_clicks", clicks, 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (0);
+        setPadParam (r.p, 0, tb::params::padVelSens, 0.0f);
+        const double detected = tb::AudioEngine::detectTempo (*r.p.getSamples().getInfo (0).buffer, r.p.getSamples().getInfo (0).slices);
+        check (std::abs (detected - own) < 0.5, "tempo from the markers: " + juce::String (detected, 2) + " BPM");
+        const int note = r.p.getEngine().getPadNote (0);
+        const int expectLen = (int) std::lround (total * own / live);
+        auto render = [&] (int mode) { setPadParam (r.p, 0, tb::params::padStretch, (float) mode); r.settle(); auto b = renderNote (r.p, r.host, note, 127, total / kBlock + 40); r.settle(); return b; };
+        auto onsets = [] (const juce::AudioBuffer<float>& b)
+        {
+            std::vector<int> v; int last = -100000;
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                if (std::abs (b.getSample (0, i)) > 0.3f) { if (i - last > 2000) v.push_back (i); last = i; }
+            return v;
+        };
+        const char* names[] = { "Off", "Repitch", "Beats", "Texture", "Akai Classic", "Akai Revised" };
+        for (int mode = 1; mode <= 5; ++mode)
+        {
+            const auto b = render (mode);
+            const auto on = onsets (b);
+            const double want = 15.0 * eighth * own / live;           // the last 1/8 of bar 2, at Live's tempo
+            const double got = on.empty() ? -1.0 : (double) on.back();
+            const double tol = mode >= 3 ? 48.0 * 35.0 : 48.0 * 2.0;
+            check (on.size() >= (mode == 3 ? 8u : 14u) && std::abs (got - want) < tol,
+                   juce::String ("STRETCH ") + names[mode] + ": the last beat of the 2-bar break lands where Live's tempo puts it ("
+                     + juce::String ((got - want) / 48.0, 2) + " ms off)");
+            juce::ignoreUnused (expectLen);
+            if (mode == 2)
+            {
+                const auto on = onsets (b);
+                const double grid = eighth * own / live;
+                double worst = 0.0;
+                for (size_t k = 0; k < on.size() && k < 16; ++k) worst = juce::jmax (worst, std::abs (on[k] - k * grid));
+                check (on.size() >= 15 && worst < 48.0 * 2, "BEATS: every slice lands on Live's grid (worst " + juce::String (worst / 48.0, 2) + " ms)");
+            }
+        }
+
+        // Pitch: TEXTURE / AKAI keep it, REPITCH moves it.
+        Rig t;
+        t.host.bpm = 90.0;
+        juce::AudioBuffer<float> sine (1, 96000);
+        for (int i = 0; i < 96000; ++i) sine.setSample (0, i, 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / 48000.0));
+        t.load (1, writeAudio ("a12_sine", sine, 48000.0, Fmt::wavFloat));
+        setPadParam (t.p, 1, tb::params::padOrigBpm, 120.0f);
+        setPadParam (t.p, 1, tb::params::padVelSens, 0.0f);
+        const int n2 = t.p.getEngine().getPadNote (1);
+        auto freq = [&] (int mode)
+        {
+            setPadParam (t.p, 1, tb::params::padStretch, (float) mode);
+            t.settle();
+            const auto b = renderNote (t.p, t.host, n2, 127, 60);
+            t.settle();
+            int zc = 0;
+            for (int i = 4800 + 1; i < 4800 + 19200; ++i) if (b.getSample (0, i - 1) < 0.0f && b.getSample (0, i) >= 0.0f) ++zc;
+            return zc / 0.4;
+        };
+        const double fRe = freq (1), fTx = freq (3), fAk = freq (4), fAr = freq (5);
+        check (std::abs (fRe - 750.0) < 15.0 && std::abs (fTx - 1000.0) < 30.0 && std::abs (fAk - 1000.0) < 40.0 && std::abs (fAr - 1000.0) < 30.0,
+               "REPITCH slows the pitch with the tempo; TEXTURE / AKAI keep it (" + juce::String (fRe, 0) + " / " + juce::String (fTx, 0) + " / "
+                 + juce::String (fAk, 0) + " / " + juce::String (fAr, 0) + " Hz)");
+
+        // CPU: all 32 pads stretching at once.
+        {
+            Rig c;
+            c.host.bpm = live;
+            const auto f = writeAudio ("a12_cpu", clicks, 48000.0, Fmt::wavFloat);
+            for (int p = 0; p < tb::kNumPads; ++p) { c.p.getSamples().loadFile (p, f); }
+            waitForLoads (c.p);
+            juce::AudioBuffer<float> b (2, kBlock); juce::MidiBuffer m;
+            for (int mode : { 2, 3, 5 })
+            {
+                for (int p = 0; p < tb::kNumPads; ++p) { setPadParam (c.p, p, tb::params::padStretch, (float) mode); c.p.triggerPadFromUi (p, 1.0f, true); }
+                runBlock (c.p, c.host, b, m);
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                for (int i = 0; i < 188; ++i) runBlock (c.p, c.host, b, m);           // 2 s of audio
+                const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+                std::cout << "    CPU, 32 pads in " << tb::params::kStretchNames[mode] << ": " << juce::String (ms / 20.0, 1) << " % of real time" << std::endl;
+                check (ms < 2000.0 * 0.5, juce::String ("32 pads stretching (") + tb::params::kStretchNames[mode] + ") run well under real time");
+                c.settle();
+            }
+        }
+
+        // 0.21 sets: FIT on = Repitch.
+        setPadParam (t.p, 1, tb::params::padStretch, 0.0f);
+        setPadParam (t.p, 1, tb::params::padFit, 1.0f);
+        const double fFit = freq (0);
+        check (std::abs (fFit - 750.0) < 15.0, "a 0.21 pad with FIT on plays as REPITCH");
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -5697,7 +5800,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1203 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1331 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -5872,7 +5975,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -6080,7 +6183,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -6360,7 +6463,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -7035,6 +7138,7 @@ int main (int argc, char* argv[])
         testA11Extras();
         testA11ExportSong();
         testA12MidiStop();
+        testA12Stretch();
         testEditorDrivesState();
         testRealtimeSafety();
 
