@@ -877,7 +877,9 @@ namespace tb
         if (! seqWasPlaying) seqFirstPass = pass (kNow);       // Live just started: this is the FIRST pass
         seqWasPlaying = true;
 
-        if (! bp.seqRun) { clearStepFx(); return; }
+        // (A9: the sequencer follows Live's transport only. The old RUN key /
+        //  "Sequencer Run" parameter is still loaded with sets but no longer gates it.)
+        juce::ignoreUnused (bp.seqRun);
 
         auto& data = bridge.seq;
         const int64_t kFirst = (int64_t) std::floor (p0 / seqStepPpq) - 1;     // micro-timing can pull a step earlier
@@ -1351,7 +1353,7 @@ namespace tb
         startVoice (pad, levelFor (pad, velocity), sampleOffset, -1.0, &s);
     }
 
-    void AudioEngine::recordHit (int pad, float velocity, int sampleOffset) noexcept
+    void AudioEngine::recordHit (int pad, float velocity, int sampleOffset, int slice) noexcept
     {
         if (! seqRecording || transportNow == nullptr || ! bridge.seq.isArmed (pad)) return;
 
@@ -1372,6 +1374,7 @@ namespace tb
         st.hit = true;
         st.velocity = juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f));
         st.micro = micro;
+        if (slice >= 0) st.slice = juce::jlimit (0, 16, slice);    // A9: a slice played on the Mikro records as that slice
         bridge.seq.set (pad, idx, st);
 
         // That step may still be ahead in this pass (hit a little early):
@@ -1563,7 +1566,10 @@ namespace tb
                 {
                     case ControllerHit::padOn:     pressNow[(size_t) p] = 0.0f; recordHit (p, h.velocity, 0); triggerPad (p, h.velocity, 0); break;
                     case ControllerHit::padOff: releasePad (p); break;
-                    case ControllerHit::sliceOn:   controllerSliceHit (p, h.slice, h.velocity, 0); break;
+                    case ControllerHit::sliceOn:
+                        recordHit (p, h.velocity, 0, h.slice);          // A9: armed lane + Live playing: written with its slice
+                        controllerSliceHit (p, h.slice, h.velocity, 0);
+                        break;
                     case ControllerHit::rollOn:
                         // A press that just played (velocity > 0 = it came with the hit) skips grid points in the next 10 ms.
                         rollRun[(size_t) p] = { true, juce::jlimit (0, 2, (int) h.rate), juce::jmax (0.01f, std::abs (h.velocity)), h.slice,

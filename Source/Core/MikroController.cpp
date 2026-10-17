@@ -27,6 +27,8 @@ namespace tb
 
         const char* const kStepFields[] = { "VEL", "CHANCE", "RATCHET", "PITCH", "SLICE", "MICRO", "REV", "COND" };
         constexpr int kStepDivisor[]    = { 1, 1, 4, 3, 3, 1, 3, 3 };
+        // The order the encoder push walks them on the Mikro: SLICE first (A9: building breaks).
+        constexpr int kFieldOrder[]     = { 4, 0, 1, 2, 3, 5, 6, 7 };
         const char* const kRollNames[]  = { "1/8", "1/16", "1/32" };
 
         float velocityOf (int value) noexcept { return (float) juce::jlimit (1, 127, value >> 5) / 127.0f; }
@@ -215,6 +217,7 @@ namespace tb
 
     void MikroController::attachHub()
     {
+        if (remote == nullptr) remote = RemotePort::shared();
         if (hub == nullptr) hub = MikroHub::shared();
         hub->attach (this);
         hub->claim (this);
@@ -226,6 +229,7 @@ namespace tb
         hub->detach (this);          // the USB thread never calls us after this
         releaseHeldPlays();
         hub.reset();
+        remote.reset();
     }
 
     void MikroController::setEnabled (bool on)
@@ -381,7 +385,13 @@ namespace tb
                     switch (e.index)
                     {
                         case padMode:  modeAtomic = (int) Mode::pads; break;
-                        case keyboard: modeAtomic = (int) Mode::keyboard; break;
+                        case keyboard:
+                            if ((usbMods & 1u) != 0) break;              // SHIFT + KEYBOARD: clear the chosen slice (message thread)
+                            kbdTemp = getMode() == Mode::steps;          // held from STEP: a quick look at the slices
+                            kbdUsed = false;
+                            kbdDownMs = juce::Time::getMillisecondCounterHiRes();
+                            modeAtomic = (int) Mode::keyboard;
+                            break;
                         case step:     modeAtomic = (int) Mode::steps; break;
                         case perform:  modeAtomic = (int) Mode::perform; break;
                         case scene:    modeAtomic = (int) Mode::scene; break;
@@ -389,6 +399,12 @@ namespace tb
                         case noteRepeat: if ((usbMods & 1u) != 0) rollRate = (rollRate.load() + 1) % 3; break;
                         default: break;
                     }
+                }
+                if (e.index == keyboard && ! e.down && kbdTemp)
+                {
+                    // Let go after choosing a slice (or a long hold): back to the steps.
+                    if (kbdUsed || juce::Time::getMillisecondCounterHiRes() - kbdDownMs > 400.0) modeAtomic = (int) Mode::steps;
+                    kbdTemp = false;
                 }
                 if (e.index == noteRepeat && (e.down ? (usbMods & 1u) == 0 : true))
                 {
@@ -444,6 +460,7 @@ namespace tb
                 {
                     pad = selectedPad.load();
                     slice = i + 1;
+                    kbdUsed = true;
                     bridge.mikroEvents.push ({ ControllerHit::sliceOn, (int8_t) pad, (uint8_t) slice, 0, vel });
                 }
                 heldPlay[(size_t) i] = pad;
@@ -575,7 +592,6 @@ namespace tb
                 v.push_back ({ params::padId (pad, params::padLaunch), "LAUNCH" });
                 v.push_back ({ params::mutAmount, "MUTATE" });   v.push_back ({ params::mutAuto, "MUTATE AUTO" });
                 v.push_back ({ params::mutAt, "MUTATE AT" });    v.push_back ({ params::seqQuant, "QUANTISE" });
-                v.push_back ({ params::seqRun, "RUN" });
                 break;
             case Page::mix:
                 for (int g = 0; g < kNumGroups; ++g)
@@ -597,7 +613,7 @@ namespace tb
     juce::String MikroController::paramLabel() const
     {
         if (getMode() == Mode::steps && ! heldSteps.empty())
-            return "STEP " + juce::String (heldSteps.front().step + 1) + " " + kStepFields[stepField];
+            return "STEP " + juce::String (heldSteps.front().step + 1) + " " + kStepFields[kFieldOrder[stepField]];
         const auto v = pageParams();
         if (v.empty()) return juce::String (fx::def (lastFx).label) + ": NO SETTINGS";
         const Page pg = getMode() == Mode::perform ? Page::fx : page;
@@ -609,7 +625,7 @@ namespace tb
         if (getMode() == Mode::steps && ! heldSteps.empty())
         {
             const auto st = bridge.seq.get (selectedPad.load(), heldSteps.front().step);
-            switch (stepField)
+            switch (kFieldOrder[stepField])
             {
                 case 0: return juce::String (st.velocity);
                 case 1: return juce::String (st.probability) + "%";
@@ -635,7 +651,7 @@ namespace tb
         {
             auto st = bridge.seq.get (pad, h.step);
             st.on = true;
-            switch (stepField)
+            switch (kFieldOrder[stepField])
             {
                 case 0: st.velocity    = juce::jlimit (1, 127, st.velocity + units); break;
                 case 1: st.probability = juce::jlimit (0, 100, st.probability + units); break;
@@ -658,7 +674,7 @@ namespace tb
         if (getMode() == Mode::steps && ! heldSteps.empty())
         {
             encoderAcc += ticks;
-            const int div = kStepDivisor[stepField];
+            const int div = kStepDivisor[kFieldOrder[stepField]];
             const int units = encoderAcc / div;
             encoderAcc -= units * div;
             if (units != 0) editStep (units);
@@ -723,6 +739,12 @@ namespace tb
     void MikroController::handleButton (int b, bool down, double nowMs)
     {
         held[(size_t) b] = down;
+        setMode (getMode());                    // (the USB thread already chose it: tidy up after the old one)
+
+        // PLAY / STOP / REC drive Live's transport through the "Twisted Breaks Remote" port (A9).
+        if (remote != nullptr && (b == play || b == stop || b == rec))
+            remote->key (b == play ? RemotePort::play : b == stop ? RemotePort::stop : RemotePort::record, down);
+
         if (! down)
         {
             if (b == tap) setFill (false);
@@ -733,11 +755,9 @@ namespace tb
         const int view = juce::roundToInt (sceneViewRaw->load());
         switch (b)
         {
-            case padMode:   setMode (Mode::pads); break;
-            case keyboard:  setMode (Mode::keyboard); break;
-            case step:      setMode (Mode::steps); break;
-            case perform:   setMode (Mode::perform); break;
-            case scene:     setMode (Mode::scene); break;
+            case keyboard:
+                if (sh) { chosenSlice = 0; flash ("SLICE", "WHOLE PAD", nowMs); }
+                break;
             case plugin:    setPage (Page::pad); break;
             case swing:     setPage (Page::seq); break;
             case volume:    setPage (Page::mix); break;
@@ -831,7 +851,26 @@ namespace tb
                     }
                     auto s = seq.get (sel, st);
                     const bool created = ! s.on;
-                    if (created) { s = SeqStep {}; s.on = true; seq.set (sel, st, s); processor.markStateChanged(); }
+                    if (chosenSlice > 0 && (raw (params::padId (sel, params::padSwap)) > 0.5f || raw (params::padId (sel, params::padSliceSeq)) > 0.5f))
+                        flash ("SLICES IGNORED", raw (params::padId (sel, params::padSwap)) > 0.5f ? "SWAP PAD" : "SLICE SEQ", nowMs);
+                    if (created)
+                    {
+                        s = SeqStep {};
+                        s.on = true;
+                        s.slice = chosenSlice;            // the chosen slice (0: the whole pad)
+                        seq.set (sel, st, s);
+                        processor.markStateChanged();
+                    }
+                    else if (chosenSlice > 0 && s.slice != chosenSlice)
+                    {
+                        // A step with another slice: it takes the chosen one (and stays on).
+                        s.slice = chosenSlice;
+                        seq.set (sel, st, s);
+                        processor.markStateChanged();
+                        heldSteps.push_back ({ st, false, true });
+                        encoderAcc = 0;
+                        return;
+                    }
                     heldSteps.push_back ({ st, created, false });
                     encoderAcc = 0;
                 }
@@ -851,7 +890,11 @@ namespace tb
                 return;
             }
             case Mode::keyboard:
-                if (down) flash ("SLICE", juce::String (i + 1), nowMs);
+                if (down)
+                {
+                    chosenSlice = i + 1;                 // STEP writes this slice into the steps you tap (A9)
+                    flash ("SLICE " + juce::String (chosenSlice), "CHOSEN", nowMs);
+                }
                 return;
             case Mode::perform:
                 if (down) lastFx = pos;
@@ -929,7 +972,9 @@ namespace tb
             case Resampler::State::saving:    lights.setButton (sampling, levelBright); break;
             case Resampler::State::idle:      btn (sampling, false); break;
         }
-        lights.setButton (play, bridge.transport.isPlaying.load (std::memory_order_relaxed) ? levelBright : levelOff);
+        lights.setButton (play, bridge.transport.isPlaying.load (std::memory_order_relaxed) ? levelBright : levelDim);
+        lights.setButton (rec, bridge.transport.isRecording.load (std::memory_order_relaxed) || held[rec] ? levelBright : levelDim);
+        btn (stop, held[stop]);
 
         // ---- Pads.
         for (int i = 0; i < 16; ++i)               // Mikro pad (0 = bottom left)
@@ -965,18 +1010,21 @@ namespace tb
                     const auto s = bridge.seq.get (sel, st);
                     bool isHeld = false;
                     for (auto& h : heldSteps) isHeld = isHeld || h.step == st;
+                    // Steps in their slice's colour (the same as on the KEYBOARD pads); plain steps orange.
+                    const int sc = s.slice > 0 ? s.slice : orange;
                     if (st >= len)         { colour = off; }
-                    else if (isHeld)       { colour = green; level = 3; }
+                    else if (isHeld)       { colour = s.on ? sc : white; level = blinkOn ? 3 : 0; }
                     else if (st == ph)     { colour = white; level = 3; }
-                    else if (s.on)         { colour = orange; level = s.velocity >= 64 ? 3 : 1; }
+                    else if (s.on)         { colour = sc; level = s.velocity >= 64 ? 3 : 2; }
                     else                   { colour = white; level = 1; }
                     break;
                 }
                 case Mode::keyboard:
                 {
+                    // Each slice in its own colour (as its steps show); the chosen one bright.
                     const bool loaded = bridge.padLoaded[(size_t) sel].load (std::memory_order_relaxed);
-                    colour = loaded ? lightOrange : off;
-                    level = 1;
+                    colour = loaded ? i + 1 : off;
+                    level = chosenSlice == i + 1 ? 3 : 1;
                     if ((heldMask.load() >> i) & 1u) { colour = white; level = 3; }
                     break;
                 }
@@ -1019,6 +1067,7 @@ namespace tb
         juce::String head = modeName (mode);
         if (mode == Mode::pads)  head << " " << (juce::roundToInt (sceneViewRaw->load()) == 0 ? "A" : "B");
         if (mode == Mode::steps) head << (stepPage == 0 ? " 1-16" : " 17-32");
+        if ((mode == Mode::steps || mode == Mode::keyboard) && chosenSlice > 0) head << "  S" << juce::String (chosenSlice).paddedLeft ('0', 2);
         screen.text (0, 0, head.toRawUTF8());
         const auto pad = padLabel (selectedPad.load());
         screen.text (kScreenW - 6 * pad.length(), 0, pad.toRawUTF8());

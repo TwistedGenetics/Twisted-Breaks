@@ -60,6 +60,7 @@ namespace tb
             {
                 s.hostProvidesInfo = true;
                 s.isPlaying        = pos->getIsPlaying();
+                s.isRecording      = pos->getIsRecording();
 
                 if (const auto bpm = pos->getBpm())
                     s.bpm = juce::jlimit (20.0, 999.0, *bpm);
@@ -122,6 +123,7 @@ namespace tb
     {
         ui.hostProvidesInfo.store (state.hostProvidesInfo, std::memory_order_relaxed);
         ui.isPlaying       .store (state.isPlaying,        std::memory_order_relaxed);
+        ui.isRecording     .store (state.isRecording,      std::memory_order_relaxed);
         ui.bpm             .store (state.bpm,              std::memory_order_relaxed);
         ui.ppq             .store (state.ppqAtBlockStart,  std::memory_order_relaxed);
         ui.bar             .store (state.barIndex,         std::memory_order_relaxed);

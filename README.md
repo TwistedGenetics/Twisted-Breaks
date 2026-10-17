@@ -45,7 +45,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.15 | Push 3 mode: play and program the plugin from Push 3 in User mode; per-pad pressure | **done** |
 | 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) | **done** — tested on Jamie's Mikro |
 | 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** |
-| 0.16.1 | Pad matrix numbered like hardware: 01 bottom left, 16 top right (Push and Mikro follow) | **done** — 599/599 automated checks |
+| 0.16.1 | Pad matrix numbered like hardware: 01 bottom left, 16 top right (Push and Mikro follow) | **done** |
+| 0.17 | Sequencer follows Live only (no RUN key); Mikro / Push Play-Stop-Rec drive Live (Twisted Breaks Remote port); build breaks slice by slice on the Mikro | **done** — 608/608 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -123,8 +124,9 @@ Sections that aren't built yet are visibly marked offline on the panel
   group; everything is automatable. PANIC stops tails and switches FX off.
 * **SEQUENCER** (top rail): a 32-step lane for every pad. Click a cell for a
   step, drag up / down on it for velocity, click it again to clear it.
-  **LEN** 1-32, **STEP** 1/8 / 1/16 / 1/32, **RUN**: all automatable. It
-  follows Live's transport exactly (sample-accurate, restarts and loop-brace
+  **LEN** 1-32, **STEP** 1/8 / 1/16 / 1/32: automatable. It plays exactly
+  while Live plays (0.17: no RUN key; the old `Sequencer Run` parameter
+  is ignored) and follows Live's transport exactly (sample-accurate, restarts and loop-brace
   jumps land on the right step). **ARM** a pad (click its lane number to
   select it) and hits from the mouse or MIDI are recorded while Live plays,
   quantised to **REC Q** (1/4, 1/8, 1/16, 1/32; finer than the step size
@@ -161,7 +163,12 @@ Sections that aren't built yet are visibly marked offline on the panel
   encoder + screen edit the **PLUG-IN** (pad), **SWING** (sequencer) and
   **VOLUME** (mix) pages; the strip is the crossfader; **NOTE REPEAT**
   rolls held pads (SHIFT: 1/8 / 1/16 / 1/32); **VARIATION** = MUTATE,
-  **TAP** = FILL, **SAMPLING** = RESAMPLE.
+  **TAP** = FILL, **SAMPLING** = RESAMPLE. **Slice by slice** (0.17): hit a
+  slice on KEYBOARD, tap steps in STEP to place it (hold KEYBOARD from STEP
+  for a quick pick); steps light in their slice's colour. **PLAY / STOP /
+  REC** drive Live through the **Twisted Breaks Remote** MIDI port: in
+  Live turn Remote on for it and MIDI-map Play, Stop and Record once
+  (notes 94 / 93 / 95, channel 16; Push 3's Play / Record send the same).
 * **SCENES** (0.13, the strip under the pad matrix): two decks of 16 pads,
   **A** and **B**, each with its own samples, settings and patterns, both
   playing all the time. **VIEW A / B** picks which 16 the matrix, editor,

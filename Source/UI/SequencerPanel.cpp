@@ -120,8 +120,6 @@ namespace tb::ui
     SequencerPanel::SequencerPanel (TwistedBreaksProcessor& p) : processor (p)
     {
         auto& apvts = processor.getParameters();
-        runKey.setClickingTogglesState (true);
-        runAtt = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (apvts, params::seqRun, runKey);
         lenRead.attach (apvts.getParameter (params::seqLength));
         stepRead.attach (apvts.getParameter (params::seqRes));
         quantRead.attach (apvts.getParameter (params::seqQuant));
@@ -152,7 +150,7 @@ namespace tb::ui
             prm->endChangeGesture();
         };
 
-        for (Component* comp : std::initializer_list<Component*> { &runKey, &lenRead, &stepRead, &quantRead, &armKey, &clearKey,
+        for (Component* comp : std::initializer_list<Component*> { &lenRead, &stepRead, &quantRead, &armKey, &clearKey,
                                                                     &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead,
                                                                     &fxRead, &condRead, &revKey, &hitKey, &fillKey })
             addAndMakeVisible (comp);
@@ -233,7 +231,6 @@ namespace tb::ui
 
     SequencerPanel::~SequencerPanel()
     {
-        runAtt.reset();
         driftAtt.reset();
         for (auto& a : targetAtts) a.reset();
         lenRead.attach (nullptr); stepRead.attach (nullptr); quantRead.attach (nullptr);
@@ -374,7 +371,6 @@ namespace tb::ui
     {
         int x = 150;
         const int y = 10, h = 30;
-        runKey.setBounds   (x, y, 52, h);      x += 58;
         lenRead.setBounds  (x, y - 6, 52, h + 6); x += 56;
         stepRead.setBounds (x, y - 6, 52, h + 6); x += 56;
         quantRead.setBounds (x, y - 6, 56, h + 6); x += 62;

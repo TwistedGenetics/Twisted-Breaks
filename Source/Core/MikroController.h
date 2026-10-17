@@ -11,6 +11,7 @@
 #include "Core/EngineBridge.h"
 #include "Core/MikroProtocol.h"
 #include "Core/MikroUsb.h"
+#include "Core/RemotePort.h"
 
 class TwistedBreaksProcessor;
 
@@ -136,6 +137,8 @@ namespace tb
         void setSelectedPad (int pad);
         uint32_t getSelectionVersion() const noexcept { return selectionVersion; }
         int  getStepPage() const noexcept { return stepPage; }
+        /** A9: the slice KEYBOARD chose, written into steps tapped in STEP (0 = none: the whole pad). */
+        int  getChosenSlice() const noexcept { return chosenSlice; }
 
         // ---- USB thread (from the hub) ---------------------------------------------------
         void handleReport (const uint8_t* data, int size);
@@ -213,12 +216,16 @@ namespace tb
         void releaseHeld (int i);
         uint32_t usbMods = 0;                          // modifier keys, as the USB thread sees them
         bool usbRepeatHeld = false;
+        bool kbdTemp = false, kbdUsed = false;         // KEYBOARD held from STEP: back to STEP on release
+        double kbdDownMs = 0.0;
 
         // ---- Message thread -------------------------------------------------------------------
         Page page = Page::pad;
         std::array<int, 4> paramIndex {};
         int lastFx = 1;                                // fx::lpf
         int stepPage = 0;
+        int chosenSlice = 0;
+        std::shared_ptr<RemotePort> remote;
         uint32_t selectionVersion = 0;
         std::bitset<mikro::kNumButtons> held;
         struct HeldStep { int step; bool created; bool edited; };

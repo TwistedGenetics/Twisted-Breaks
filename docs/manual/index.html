@@ -210,6 +210,7 @@ td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); whit
 /* Quick reference card */
 .card { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
 .card div { background: #f4efe0; border: 1px solid var(--edge); border-radius: 5px; padding: 12px 14px; min-width: 0; }
+section h4 { font: 700 13px/1.3 var(--font-body); letter-spacing: .08em; text-transform: uppercase; margin: 20px 0 6px; color: var(--rust); }
 .card h4 { margin: 0 0 6px; font: 700 12px/1.2 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--rust); }
 .card p { margin: 0; font-size: 14.5px; }
 
@@ -485,7 +486,7 @@ a { color: var(--amber-ink); }
   <ul>
     <li><b>Click</b> a cell to place a step (and select it), <b>drag up or down</b> on a step for velocity, click a lit step to clear it. <b>Right-click</b> or <b>shift-click</b> selects a step without switching it off.</li>
     <li>Click a lane number to select that pad; <span class="key">Arm</span> and <span class="key plain">Clear</span> follow it.</li>
-    <li><span class="key">Run</span> plays the pattern with Live; <span class="key">Len</span> 1–32 steps (polymetric against Live's bar is fine); <span class="key">Step</span> 1/8, 1/16 or 1/32.</li>
+    <li>The pattern plays exactly while Live plays: Live's play starts it, Live's stop stops it (there's no separate run key since 0.17). <span class="key">Len</span> 1–32 steps (polymetric against Live's bar is fine); <span class="key">Step</span> 1/8, 1/16 or 1/32.</li>
     <li><b>Live recording:</b> <span class="key red">Arm</span> a pad, press play in Live and hit the pad (mouse or MIDI). Hits are quantised to <span class="key">Rec Q</span> (1/4–1/32); anything finer than the step size is kept as micro-timing.</li>
   </ul>
   <h3>The STEP row</h3>
@@ -690,7 +691,7 @@ a { color: var(--amber-ink); }
   <h3>iRig Pads lights</h3>
   <p>Press <span class="key">Lights</span> in the status strip and pick your <b>iRig Pads</b> as the output. Its pads then show the scene on view: <b>green</b> while a pad plays (brightness follows the sound), <b>dim green</b> for loaded pads, <b>flashing red</b> while a SWAP hand-off is waiting. It works on the iRig's default scene; for any other layout choose <b>Learn pad layout</b> and hit each pad as it lights red. <b>Test lights</b> and <b>Swap red / green</b> are in the same menu. The layout is saved with the set.</p>
   <h3>Push 3 mode</h3>
-  <p>With Push 3 plugged into the Mac, Twisted Breaks can take Push over completely. Press Push's <b>USER</b> key and the grid, encoders, touch strip and keys play and edit the plugin; press USER again and Push controls Live as normal. Live keeps the transport: Play and Record stay Live's.</p>
+  <p>With Push 3 plugged into the Mac, Twisted Breaks can take Push over completely. Press Push's <b>USER</b> key and the grid, encoders, touch strip and keys play and edit the plugin; press USER again and Push controls Live as normal. Play and Record drive Live's transport through the Twisted Breaks Remote port (map them once, as for the Mikro, below).</p>
   <ol class="steps">
     <li><div>In Live's <b>Settings › Link, Tempo &amp; MIDI</b>, turn <b>Track</b> off for the input <b>Ableton Push 3 (User Port)</b>, so Push's User mode notes don't also reach the track and play pads twice.</div></li>
     <li><div>In the plugin, <span class="key">Lights</span> › <b>Push 3 mode</b>. The menu shows whether Push was found.</div></li>
@@ -729,6 +730,7 @@ a { color: var(--amber-ink); }
       <tr><td>Up / Down (and Octave)</td><td>Scene A / B</td></tr>
       <tr><td>Fixed Length</td><td>LEN 8 / 16 / 32 (SHIFT: the pad's own LEN)</td></tr>
       <tr><td>Accent / Repeat / Undo</td><td>MUTATE / FILL / undo the last MUTATE</td></tr>
+      <tr><td>Play / Record</td><td>Live's play and record, via Twisted Breaks Remote (lit green while Live plays, red while it records)</td></tr>
     </tbody>
   </table></div>
   <p><b>Pressure</b> (each pad's <code>Pressure</code> setting, on the PAD page or <span class="key">Lights</span> › <b>Pad … pressure</b>): FILTER closes a low-pass, DRIVE saturates, STUTTER repeats a 1/16 from where you pressed (1/32 and 1/64 harder), PITCH bends down up to an octave, OFF does nothing. A synced loop you stutter or bend snaps back to the bar when you let go.</p>
@@ -745,7 +747,7 @@ a { color: var(--amber-ink); }
       <tr><td>Pad Mode</td><td>The 16 pads of the scene on view, laid out like the matrix: Mikro pad 1 (bottom left) is 01, pad 16 (top right) is 16. Velocity and pressure; lit like the tiles (dim: loaded, bright: selected, white: playing, green: sequence running, red: muted, flashing: waiting).</td></tr>
       <tr><td>Group</td><td>Scene A / B</td></tr>
       <tr><td>Step</td><td>The selected pad's steps 1–16 (‹ › for 17–32). Tap: on / off. Hold a step and turn the encoder; push the encoder for the next field (VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV, COND). Hold one and tap another to copy it across. Erase + step clears it.</td></tr>
-      <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad (slice 1 on pad 1, bottom left)</td></tr>
+      <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad (slice 1 on pad 1, bottom left), each in its own colour. Hitting one plays it and makes it the <b>chosen slice</b> (screen: S07). Shift + Keyboard clears it.</td></tr>
       <tr><td>Perform</td><td>The 16 performance FX of the selected pad's group; the encoder edits the last one you hit</td></tr>
       <tr><td>Scene</td><td>Pads 1–8 recall snapshots 1–8 (Shift + pad stores)</td></tr>
       <tr><td>Plug-In / Swing / Volume</td><td>Encoder page: PAD (gain, pan, pitch, start, end, slice, character, pressure …) · SEQ (step, LEN, launch, mutate …) · MIX (groups, crossfader, curve, macro, master). Turn: value. Push, or Shift + turn: next setting. The screen shows name and value.</td></tr>
@@ -754,9 +756,24 @@ a { color: var(--amber-ink); }
       <tr><td>Mute / Solo / Duplicate / Erase / Select + pad</td><td>Mute, solo, copy its lane to the selected pad, clear its lane, select without playing</td></tr>
       <tr><td>Fixed Vel</td><td>Every hit at full velocity</td></tr>
       <tr><td>Variation / Tap / Sampling</td><td>MUTATE (Shift: undo) / FILL while held / RESAMPLE</td></tr>
-      <tr><td>Play</td><td>Lit while Live plays (Play, Rec and Stop stay Live's)</td></tr>
+      <tr><td>Play / Stop / Rec</td><td>Live's transport, through the <b>Twisted Breaks Remote</b> port (map it once, below). Play lights while Live plays, Rec while it records.</td></tr>
     </tbody>
   </table></div>
+  <h4>Building a break slice by slice</h4>
+  <ol class="steps">
+    <li><div>Load a break on a pad, slice it (§ 04) and select it.</div></li>
+    <li><div><span class="key">Keyboard</span>: hit a slice. It plays and becomes the chosen slice.</div></li>
+    <li><div><span class="key">Step</span>: tap steps. An empty step gets the chosen slice; a step with another slice takes this one; the same slice again switches it off. Steps light in their slice's colour, so you can see the break you're building.</div></li>
+    <li><div>Pick the next slice and place it, and so on. Quicker: in Step, <b>hold</b> Keyboard, hit a slice, let go, and you're back on the steps.</div></li>
+  </ol>
+  <p>Hold a step and the encoder edits its SLICE first (push for VEL, CHANCE …). With the pad's lane armed (§ 09) and Live playing, slices you finger-drum on Keyboard are recorded into the lane with their slice numbers. Slices on steps don't apply to SWAP or SLICE SEQ pads; the screen says so.</p>
+  <h4>Live's transport from the Mikro and Push</h4>
+  <p>A plugin can't press Live's buttons, so Twisted Breaks makes a MIDI port, <b>Twisted Breaks Remote</b>, for Live to listen to. Once, with Mikro or Push 3 mode on:</p>
+  <ol class="steps">
+    <li><div>Live › Settings › Link, Tempo &amp; MIDI: for the input <b>Twisted Breaks Remote</b>, turn <b>Remote</b> on.</div></li>
+    <li><div>Press <b>⌘M</b> (MIDI Map mode), click Live's <b>Play</b> button, press <span class="key">Play</span> on the Mikro; the same for <b>Stop</b> and <b>Record</b> (Arrangement or Session record, as you like). <b>⌘M</b> again.</div></li>
+  </ol>
+  <p>Push 3's Play and Record (in User mode) send the same notes, so one mapping serves both. (The notes: Play 94, Stop 93, Record 95 on channel 16.)</p>
   <div class="note"><p>Unplug it and plug it back in at any time: it reconnects within a couple of seconds, and anything held (rolls, FILL, effects) lets go when the cable comes out. <b>Mikro MK3 test</b> in the same menu shows exactly what the Mikro sends, if something misbehaves.</p></div>
   <h3>Worth mapping in Live</h3>
   <p>Press <b>⌘M</b> in Live, click the control in the plugin's device view (or its parameter in the automation chooser), then move the controller.</p>
@@ -791,7 +808,7 @@ a { color: var(--amber-ink); }
       <tr><td>Sound keeps ringing</td><td>The red <span class="key red">Stop</span> button (or CC 120) stops every voice and tail and switches the effects off.</td></tr>
       <tr><td>Push pads play twice in User mode</td><td>Turn <b>Track</b> off for Push's User Port in Live's MIDI settings (§ 15).</td></tr>
       <tr><td>Push stays dark after USER</td><td><span class="key">Lights</span> › <b>Push 3 mode</b> must be on, and that plugin window was the last one clicked.</td></tr>
-      <tr><td>The sequencer doesn't move</td><td>It follows Live's transport: press play in Live, and check <span class="key">Run</span>.</td></tr>
+      <tr><td>The sequencer doesn't move</td><td>It follows Live's transport only: press play in Live (or PLAY on the Mikro / Push, once mapped, § 15).</td></tr>
     </tbody>
   </table></div>
 </section>

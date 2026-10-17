@@ -22,6 +22,7 @@
 #include "Core/PushController.h"
 #include "Core/MikroTester.h"
 #include "Core/MikroController.h"
+#include "Core/RemotePort.h"
 #include "Engine/PadVoice.h"
 #include <atomic>
 #include <cmath>
@@ -1578,7 +1579,8 @@ namespace
         x.step (0, 0); x.step (0, 4);
         check (onsets (x.run (30000, {}, false)).empty(), "Live stopped: the sequencer is silent");
         setParam (x.r.p, tb::params::seqRun, 0.0f);
-        check (onsets (x.run (30000)).empty(), "RUN off: the pattern doesn't play");
+        check (onsets (x.run (30000)) == std::vector<int> { 0, 24000 },
+               "A9: the sequencer follows Live only - the old Sequencer Run parameter doesn't stop it any more");
         setParam (x.r.p, tb::params::seqRun, 1.0f);
 
         // Relocate / loop-brace jump back to bar 1 mid-pattern: step 1 plays again at the jump.
@@ -4407,14 +4409,14 @@ namespace
         const bool on1 = seq.get (sp, 0).on;
         hit (13);                                  // hold step 2
         adv();
-        in.enc = 9; send (in.report()); adv();    // +3
-        press (encoderPress);                      // -> CHANCE
+        in.enc = 9; send (in.report()); adv();    // SLICE +1 (3 ticks)
+        press (encoderPress);                      // -> VEL
         in.enc = 8; send (in.report()); adv();    // -1
         lift (13);
         adv();
         const auto s2 = seq.get (sp, 1);
-        check (mm.getMode() == tb::MikroController::Mode::steps && on1 && s2.on && s2.velocity == 103 && s2.probability == 99 && drain().empty(),
-               "STEP: pads = steps (tap = on), hold + encoder edits VEL, push = next field (CHANCE)");
+        check (mm.getMode() == tb::MikroController::Mode::steps && on1 && s2.on && s2.slice == 1 && s2.velocity == 99 && drain().empty(),
+               "STEP: pads = steps (tap = on), hold + encoder edits the SLICE first, push = next field (VEL)");
         press (right);
         hit (12); lift (12);
         adv();
@@ -4539,6 +4541,129 @@ namespace
         runBlock (r.p, r.host, buf, midi);
         const float v = buf.getSample (0, 100);
         check (std::abs (v - (0.5f + 100.0f / 32000.0f)) < 0.01f, "KEYBOARD: slice 9 starts half way into the break (" + juce::String (v, 3) + ")");
+    }
+
+
+    //==========================================================================
+    //  A9: slice by slice on the Mikro, Live's transport from controllers
+    //==========================================================================
+    struct RemoteRec final : tb::RemotePort::Sink
+    {
+        std::vector<juce::MidiMessage> msgs;
+        void send (const juce::MidiMessage& m) override { msgs.push_back (m); }
+    };
+
+    void testA9()
+    {
+        using namespace tb::mikro;
+        std::cout << "\n== A9: building a break slice by slice; PLAY / STOP / REC drive Live ==" << std::endl;
+        RemoteRec remote;
+        tb::RemotePort::setSinkForTesting (&remote);
+        Rig r;
+        auto& mm = r.p.getMikroMode();
+        auto& br = r.p.getBridge();
+        auto hub = std::make_shared<tb::MikroHub> (false);
+        MikroRec mrec;
+        hub->setSinkForTesting (&mrec);
+        mm.useHubForTesting (hub);
+        double now = 1000.0;
+        MikroIn in;
+        auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
+        auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
+        auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+        auto press = [&] (int b) { hold (b, true); hold (b, false); };
+        auto tapPad = [&] (int idx) { send (MikroIn::pad (idx, 0x10, 3000)); adv(); send (MikroIn::pad (idx, 0x30, 0)); adv(); };
+        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) ++n; return n; };
+        send (in.report());
+        adv();
+        r.load (0, writeAudio ("a9_break", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        adv();
+        auto& seq = br.seq;
+        seq.clearAll();
+        const int sel = mm.getSelectedPad();
+
+        // Pick slice 7 on KEYBOARD, write it in STEP, pick 3, write that.
+        press (keyboard);
+        tapPad (6);                                         // Mikro pad 7
+        check (mm.getChosenSlice() == 7 && drain() == 1, "KEYBOARD: hitting a pad plays its slice and makes it the chosen one");
+        press (step);
+        tapPad (12);                                        // step 1 (top left)
+        const auto s1 = seq.get (sel, 0);
+        press (keyboard);
+        tapPad (2);                                         // slice 3
+        press (step);
+        tapPad (13);                                        // step 2 gets slice 3
+        tapPad (12);                                        // step 1 had slice 7: becomes 3, stays on
+        const auto s1b = seq.get (sel, 0), s2 = seq.get (sel, 1);
+        tapPad (12);                                        // same slice again: off
+        check (s1.on && s1.slice == 7 && s2.on && s2.slice == 3 && s1b.on && s1b.slice == 3 && ! seq.get (sel, 0).on,
+               "STEP: an empty step gets the chosen slice; another slice is replaced; the same slice again switches it off");
+        adv();
+        check (mm.getLights().state[(size_t) (39 + 13)] == padByte (3, 2) || mm.getLights().state[(size_t) (39 + 13)] == padByte (3, 3),
+               "steps light in their slice's colour (slice 3 = colour 3)");
+
+        // Hold KEYBOARD from STEP: choose and come straight back.
+        hold (keyboard, true);
+        const bool sawSlices = mm.getMode() == tb::MikroController::Mode::keyboard;
+        tapPad (9);                                         // slice 10
+        hold (keyboard, false);
+        check (sawSlices && mm.getMode() == tb::MikroController::Mode::steps && mm.getChosenSlice() == 10,
+               "hold KEYBOARD in STEP: the slices for a moment; hit one, let go, back on the steps");
+        drain();
+        hold (shift, true); press (keyboard); hold (shift, false);
+        tapPad (14);                                        // step 3: whole pad
+        check (mm.getChosenSlice() == 0 && mm.getMode() == tb::MikroController::Mode::steps && seq.get (sel, 2).on && seq.get (sel, 2).slice == 0,
+               "SHIFT + KEYBOARD clears the chosen slice: new steps play the whole pad");
+
+        // The transport keys.
+        remote.msgs.clear();
+        press (play); press (stop); press (rec);
+        bool ok = remote.msgs.size() == 6;
+        const int want[] = { tb::RemotePort::play, tb::RemotePort::stop, tb::RemotePort::record };
+        for (size_t k = 0; ok && k < 3; ++k)
+            ok = remote.msgs[k * 2].isNoteOn() && remote.msgs[k * 2].getNoteNumber() == want[k] && remote.msgs[k * 2].getChannel() == 16
+                 && remote.msgs[k * 2 + 1].isNoteOff();
+        check (ok, "PLAY / STOP / REC send notes 94 / 93 / 95 on channel 16 of \"Twisted Breaks Remote\" (MIDI-map Live's transport to them)");
+        r.host.playing = true;
+        { juce::AudioBuffer<float> b (2, kBlock); juce::MidiBuffer m; runBlock (r.p, r.host, b, m); }
+        adv();
+        const bool playLit = mm.getLights().state[(size_t) play] == levelBright;
+        r.host.playing = false;
+        { juce::AudioBuffer<float> b (2, kBlock); juce::MidiBuffer m; runBlock (r.p, r.host, b, m); }
+        adv();
+        check (playLit && mm.getLights().state[(size_t) play] == levelDim, "the PLAY light follows Live");
+
+        // Push 3's Play / Record too.
+        {
+            auto& push = r.p.getPush();
+            auto phub = std::make_shared<tb::PushHub> (false);
+            PushRec prec;
+            phub->setSinkForTesting (&prec);
+            push.useHubForTesting (phub);
+            remote.msgs.clear();
+            phub->dispatch (juce::MidiMessage::controllerEvent (1, tb::push::play, 127));
+            phub->dispatch (juce::MidiMessage::controllerEvent (1, tb::push::play, 0));
+            phub->dispatch (juce::MidiMessage::controllerEvent (1, tb::push::record, 127));
+            push.processPending (2000.0);
+            check (remote.msgs.size() == 3 && remote.msgs[0].getNoteNumber() == tb::RemotePort::play && remote.msgs[2].getNoteNumber() == tb::RemotePort::record,
+                   "Push 3 (User mode): Play / Record drive Live's transport the same way");
+            phub->setSinkForTesting (nullptr);
+        }
+        mm.setEnabled (false);
+        hub->setSinkForTesting (nullptr);
+        tb::RemotePort::setSinkForTesting (nullptr);
+
+        // Recording slices: an armed lane, Live playing, a slice hit lands on its step with its slice.
+        {
+            SeqRig x;
+            x.seq.clearAll();
+            x.seq.setArmed (0, true);
+            x.r.p.getBridge().mikroEvents.push ({ tb::ControllerHit::sliceOn, 0, 5, 0, 1.0f });
+            x.run (2048);
+            x.seq.setArmed (0, false);
+            const auto st = x.seq.get (0, 0);
+            check (st.on && st.slice == 5, "slices played on KEYBOARD while Live plays record into an armed lane with their slice number");
+        }
     }
 
     void testPressure()
@@ -5906,6 +6031,7 @@ int main (int argc, char* argv[])
         testMikro();
         testMikroMode();
         testMikroEngine();
+        testA9();
         testEditorDrivesState();
         testRealtimeSafety();
 

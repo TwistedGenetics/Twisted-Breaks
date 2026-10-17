@@ -23,6 +23,7 @@ namespace tb
     {
         bool   hostProvidesInfo = false; // false in hosts with no playhead
         bool   isPlaying        = false;
+        bool   isRecording      = false; // Live's record (if the host says)
         bool   justStarted      = false; // stopped -> playing on this block
         bool   justStopped      = false; // playing -> stopped on this block
         bool   jumped           = false; // locate / loop wrap while playing
@@ -73,6 +74,7 @@ namespace tb
     {
         std::atomic<bool>   hostProvidesInfo { false };
         std::atomic<bool>   isPlaying        { false };
+        std::atomic<bool>   isRecording      { false };
         std::atomic<double> bpm              { 120.0 };
         std::atomic<double> ppq              { 0.0 };
         std::atomic<int>    bar              { 0 };

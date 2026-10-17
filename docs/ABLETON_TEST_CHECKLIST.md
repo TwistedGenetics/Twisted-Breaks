@@ -102,6 +102,15 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.17: transport, host-locked sequencer, slice by slice
+- [ ] Sequencer: plays with Live's play, stops with Live's stop; no RUN key in the SEQUENCER view
+- [ ] SEQ pads / SLICE SEQ still play when hit with Live stopped
+- [ ] Mikro mode on: Live › Settings › MIDI: Remote on for "Twisted Breaks Remote"; ⌘M, map Play / Stop / Record to the Mikro's PLAY / STOP / REC
+- [ ] Mikro PLAY / STOP / REC run Live; PLAY lights while Live plays, REC while recording; Push 3 Play / Record (User mode) work too
+- [ ] KEYBOARD: hit a slice (screen S07), STEP: tap steps to place it; pick another, place it; same slice again = off; steps in slice colours
+- [ ] In STEP, hold KEYBOARD, hit a slice, let go: back on STEP with the new slice; SHIFT + KEYBOARD: whole pad again
+- [ ] Arm the pad's lane, Live playing: finger-drum slices on KEYBOARD, they record with their slice numbers
+
 ## Mikro MK3 mode (0.16)
 - [ ] NI's Maschine app closed. LIGHTS > Mikro MK3 mode: the pads light, the screen shows PADS A and the pad
 - [ ] PAD MODE: pads play with velocity (Mikro pad 1, bottom left = plugin 01), pressure works (pad's Pressure setting), GROUP flips to B

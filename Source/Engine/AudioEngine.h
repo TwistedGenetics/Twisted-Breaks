@@ -329,7 +329,7 @@ namespace tb
         /** The slot's pattern (or its default if never written) and its settings. */
         int  slicePattern (int pad, int slot, std::array<SliceStep, SliceSeqData::kSteps>&, SliceSlot&) const noexcept;
         double clockAt (int sampleOffset) const noexcept { return clock0 + sampleOffset * clockDppq; }
-        void recordHit (int pad, float velocity, int sampleOffset) noexcept;
+        void recordHit (int pad, float velocity, int sampleOffset, int slice = -1) noexcept;
         void applyPadCommands() noexcept;
         void refreshPadSource (int pad) noexcept;     // own sample or the active bank break
         void switchBank (int slot) noexcept;

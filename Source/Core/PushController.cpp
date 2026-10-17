@@ -206,6 +206,7 @@ namespace tb
     // ---- Settings ------------------------------------------------------------------
     void PushController::attachHub()
     {
+        if (remote == nullptr) remote = RemotePort::shared();
         if (hub == nullptr) hub = PushHub::shared();
         hub->attach (this);
         hub->claim (this);
@@ -217,6 +218,7 @@ namespace tb
         hub->detach (this);          // after this the MIDI thread never calls us again
         releaseHeldPlays();
         hub.reset();
+        remote.reset();
     }
 
     void PushController::setEnabled (bool on)
@@ -861,6 +863,10 @@ namespace tb
         const bool was = held[(size_t) cc];
         held[(size_t) cc] = pressed;
 
+        // Play / Record drive Live's transport through the "Twisted Breaks Remote" port (A9).
+        if (remote != nullptr && (cc == push::play || cc == push::record))
+            remote->key (cc == push::play ? RemotePort::play : RemotePort::record, pressed);
+
         if (! pressed)
         {
             if (cc == push::repeat || cc == kSceneFill) setFill (held[push::repeat] || held[kSceneFill]);
@@ -1050,6 +1056,8 @@ namespace tb
         for (int cc : kWhiteKeys) sendButton (cc, 0, true);
         sendButton (push::mute, 0, true);
         sendButton (push::solo, 0, true);
+        sendButton (push::play, 0, true);
+        sendButton (push::record, 0, true);
     }
 
     void PushController::requestPalette (double nowMs)
@@ -1164,5 +1172,8 @@ namespace tb
         sendButton (push::solo, idx (padRaw[(size_t) s].solo->load() > 0.5f || held[push::solo] ? blue : dark), false);
         for (int cc : kWhiteKeys)
             sendButton (cc, held[(size_t) cc] || (cc == push::layout && layoutAtomic.load() == 1) ? kWhiteFull : kWhiteHalf, false);
+        // Play green while Live plays, Record red while it records (A9).
+        sendButton (push::play,   idx (bridge.transport.isPlaying.load() ? green : greenDim), false);
+        sendButton (push::record, idx (bridge.transport.isRecording.load() || held[push::record] ? red : redDim), false);
     }
 }

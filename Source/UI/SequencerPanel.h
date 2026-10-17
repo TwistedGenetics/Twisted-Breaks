@@ -125,13 +125,11 @@ namespace tb::ui
         TwistedBreaksProcessor& processor;
         int selectedPad = 0, selectedStep = 0;
 
-        PushKey     runKey   { "RUN", "Sequencer plays with Live's transport (automatable)", juce::Colour (0xff7dff5a) };
         DragReadout lenRead  { "LEN",   "Pattern length in steps (1-32): drag, scroll or double-click for 16" };
         DragReadout stepRead { "STEP",  "Step size: 1/8, 1/16 or 1/32 (click to change)" };
         DragReadout quantRead { "REC Q", "Live-record quantise: 1/4, 1/8, 1/16, 1/32 (click to change)" };
         PushKey     armKey   { "ARM", "Record the selected pad's hits (mouse or MIDI) into its lane while Live plays", juce::Colour (0xffff3a1c) };
         PushKey     clearKey { "CLEAR", "Clear the selected pad's lane" };
-        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> runAtt;
 
         // STEP row (Phase 9)
         DragReadout velRead    { "VEL",    "Velocity of the selected step" };

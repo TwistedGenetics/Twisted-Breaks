@@ -404,3 +404,40 @@ encoder and strip event on the Mikro, in the status strip and in a
 copyable text report. Step 2 (the full Mikro mode, written up as a prompt
 first) waits for that report.
 
+## A9. Sequencer follows Live; Live's transport from controllers; slice by slice on the Mikro
+
+**Status: built in 0.17.0.** Decided with Jamie: only the main sequencer is
+tied to Live (SEQ pads and slice sequences still play with Live stopped);
+transport through a MIDI-mapped virtual port.
+
+Prompt:
+
+> I want the sequencer start stop to only be linked to the host playing,
+> so in sequencer mode play starts when the host starts and stops when the
+> host stops. The play, record and stop should control Ableton. When using
+> the Maschine Mikro in slice mode I want to be able to select a slice from
+> the keyboard menu and input that in the step tab, then go back and choose
+> a new slice and input that into the step so I can build up a new break
+> manually this way.
+
+As built:
+* **Sequencer**: plays exactly while Live plays. The RUN key is gone; the
+  `Sequencer Run` parameter still loads with sets and automation but is
+  ignored. SEQ1 / SEQL pads and SLICE SEQ unchanged (they still run on the
+  free clock with Live stopped).
+* **Transport**: "Twisted Breaks Remote", a virtual MIDI output (macOS /
+  Linux), created while Mikro or Push 3 mode is on. Mikro PLAY / STOP / REC
+  and Push 3 Play / Record (User mode) send notes 94 / 93 / 95 on channel
+  16 (on / off with the key). Live: Remote on for the port, MIDI-map
+  Play / Stop / Record once. PLAY / Play lights while Live plays; REC /
+  Record while Live records (the host's isRecording) or while held.
+* **Slice by slice (Mikro)**: KEYBOARD hit = play + choose that slice
+  (screen S07). STEP tap: empty step -> on with the chosen slice; a step
+  with another slice -> takes the chosen one; the same slice -> off.
+  Steps (and KEYBOARD pads) light in their slice's colour. Hold KEYBOARD
+  from STEP for a quick pick (back to STEP on release after a hit or
+  400 ms). SHIFT + KEYBOARD clears the chosen slice. Holding a step: the
+  encoder edits SLICE first. Slices finger-drummed on KEYBOARD record into
+  an armed lane with their slice numbers while Live plays (rolls don't).
+  SWAP / SLICE SEQ pads: the screen says slices are ignored.
+

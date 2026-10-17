@@ -10,6 +10,7 @@
 #include <vector>
 #include "Core/EngineBridge.h"
 #include "Core/PushProtocol.h"
+#include "Core/RemotePort.h"
 
 class TwistedBreaksProcessor;
 
@@ -242,6 +243,7 @@ namespace tb
         std::atomic<float>* seqLengthRaw = nullptr;
 
         std::shared_ptr<PushHub> hub;
+        std::shared_ptr<RemotePort> remote;
         bool enabled = false;
         bool testing = false;
 
