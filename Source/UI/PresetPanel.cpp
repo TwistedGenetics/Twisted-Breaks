@@ -83,7 +83,9 @@ namespace tb::ui
         listenKey.setToggleState (true, dontSendNotification);
         listenKey.onClick = [this] { if (! listenKey.getToggleState()) pm.stopPreview(); };
 
-        for (auto* k : { &sortKey, &loadKey, &saveKey, &saveAsKey, &renameKey, &deleteKey, &finderKey, &importKey, &collectKey, &listenKey })
+        exportKey.onClick = [this] { showExportMenu(); };
+        dragKey.addMouseListener (this, false);
+        for (auto* k : { &sortKey, &loadKey, &saveKey, &saveAsKey, &renameKey, &deleteKey, &finderKey, &importKey, &collectKey, &listenKey, &exportKey, &dragKey })
             addAndMakeVisible (k);
 
         searchBox.setTextToShowWhenEmpty ("SEARCH NAME, TAG, NOTE", c::vfd.withAlpha (0.35f));
@@ -113,7 +115,7 @@ namespace tb::ui
 
     Rectangle<int> PresetPanel::listArea() const
     {
-        return { 14, 74, getWidth() - 28, getHeight() - 74 - 76 };
+        return { 14, 74, getWidth() - 28, getHeight() - 74 - 76 - 22 };
     }
 
     void PresetPanel::resized()
@@ -130,6 +132,8 @@ namespace tb::ui
         importKey.setBounds (14, y2, w, 26);
         collectKey.setBounds (14 + w + 4, y2, w * 2 + 4, 26);
         listenKey.setBounds (14 + (w + 4) * 3, y2, w, 26);
+        exportKey.setBounds (14 + (w + 4) * 4, y2, w, 26);
+        dragKey.setBounds (14 + (w + 4) * 5, y2, w, 26);
         background = {};
     }
 
@@ -239,8 +243,59 @@ namespace tb::ui
         menu.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
+    void PresetPanel::showExportMenu()
+    {
+        auto& ex = processor.getExporter();
+        if (ex.isBusy()) return;
+        PopupMenu m;
+        auto wav = [this] (int pad, int bars)
+        {
+            auto& exp = processor.getExporter();
+            const bool ok = exp.startWav (pad, bars, [this] (Result r, File f)
+            {
+                message (r.wasOk() ? "EXPORTED " + f.getFileName() + "  (DRAG IT INTO LIVE)" : r.getErrorMessage());
+            });
+            message (ok ? "RENDERING..." : "AN EXPORT IS ALREADY RUNNING");
+        };
+        auto mid = [this] (int pad, int bars)
+        {
+            auto& exp = processor.getExporter();
+            const auto f = exp.midiFileFor (pad, bars);
+            const auto r = exp.writeMidi (pad, bars, f);
+            message (r.wasOk() ? "EXPORTED " + f.getFileName() + "  (DRAG IT INTO LIVE)" : r.getErrorMessage());
+        };
+        const int sel = selectedPad;
+        PopupMenu padWav, kitWav, seqMid, padMid;
+        for (int b : { 1, 2, 4, 8, 16 })
+        {
+            const auto t = String (b) + (b == 1 ? " bar" : " bars");
+            padWav.addItem (t, [wav, sel, b] { wav (sel, b); });
+            kitWav.addItem (t, [wav, b] { wav (-1, b); });
+            seqMid.addItem (t, [mid, b] { mid (-1, b); });
+            padMid.addItem (t, [mid, sel, b] { mid (sel, b); });
+        }
+        m.addSectionHeader ("WAV, AT LIVE'S TEMPO (" + String (roundToInt (processor.getBridge().transport.bpm.load())) + " BPM)");
+        m.addSubMenu ("Pad " + padLabel (sel) + " alone", padWav);
+        m.addSubMenu ("The whole kit", kitWav);
+        m.addSectionHeader ("MIDI CLIP OF THE SEQUENCER");
+        m.addSubMenu ("Every pad", seqMid);
+        m.addSubMenu ("Pad " + padLabel (sel) + "'s lane", padMid);
+        m.addSeparator();
+        m.addItem ("Show exports in the Finder", [this] { auto f = processor.getExporter().getFolder(); f.createDirectory(); f.revealToUser(); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&exportKey));
+    }
+
+    void PresetPanel::mouseDrag (const MouseEvent& e)
+    {
+        if (e.eventComponent != &dragKey || e.getDistanceFromDragStart() < 6) return;
+        const auto f = processor.getExporter().getLastFile();
+        if (f.existsAsFile())
+            DragAndDropContainer::performExternalDragDropOfFiles ({ f.getFullPathName() }, false, &dragKey);
+    }
+
     void PresetPanel::mouseDown (const MouseEvent& e)
     {
+        if (e.eventComponent != this) return;
         grabKeyboardFocus();
         const int row = rowAt (e.position);
         const auto& list = pm.getList();
@@ -312,6 +367,10 @@ namespace tb::ui
         const bool has = isPositiveAndBelow (pm.getCursor(), list.size());
         const bool user = has && ! list[pm.getCursor()].factory;
         loadKey.setEnabled (has);
+        auto& ex = processor.getExporter();
+        exportKey.setButtonText (ex.isBusy() ? "RENDER " + String (roundToInt (ex.getProgress() * 100.0f)) + "%" : String ("EXPORT"));
+        dragKey.setEnabled (ex.getLastFile().existsAsFile());
+        dragKey.setButtonText (ex.getLastFile().existsAsFile() ? (ex.getLastFile().hasFileExtension ("mid") ? "DRAG MIDI" : "DRAG WAV") : String ("DRAG"));
         renameKey.setEnabled (user);
         deleteKey.setEnabled (user);
         listenKey.tick();
@@ -433,8 +492,14 @@ namespace tb::ui
         if (line.isEmpty() && isPositiveAndBelow (pm.getCursor(), list.size())) line = list[pm.getCursor()].note;
         g.setFont (monoFont (11.0f));
         g.setColour (c::vfd.withAlpha (0.85f));
-        g.drawText (line, Rectangle<int> (14 + ((getWidth() - 48) / 6 + 4) * 4, getHeight() - 36, getWidth() - 28 - ((getWidth() - 48) / 6 + 4) * 4, 26),
-                    Justification::centredLeft, true);
+        if (line.isNotEmpty())
+        {
+            const auto strip = Rectangle<int> (a.getX(), a.getBottom() + 3, a.getWidth(), 18);
+            g.setColour (c::plateBlack.withAlpha (0.92f));
+            g.fillRect (strip);
+            g.setColour (c::vfd.withAlpha (0.85f));
+            g.drawText (line, strip.reduced (6, 0), Justification::centredLeft, true);
+        }
     }
 
     //==========================================================================

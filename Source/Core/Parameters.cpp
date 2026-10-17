@@ -332,6 +332,9 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterBool> (ParameterID { twistLockId (t), kV19 },
                                                               String ("Twist Lock ") + twistTargetNames[t], false));
 
+        // ---- 0.22: song mode (A11) ----
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { songOn, kV20 }, "Song", false));
+
         return layout;
     }
 }

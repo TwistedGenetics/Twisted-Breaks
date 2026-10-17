@@ -45,6 +45,7 @@ namespace tb::params
     inline constexpr int kV17 = 17; // parameters introduced in 0.15.x (Push 3 mode)
     inline constexpr int kV18 = 18; // parameters introduced in 0.18.x (whole-pad steps)
     inline constexpr int kV19 = 19; // parameters introduced in 0.21.x (TWIST, layers, fit to tempo)
+    inline constexpr int kV20 = 20; // parameters introduced in 0.22.x (song mode)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -189,6 +190,9 @@ namespace tb::params
     inline constexpr const char* twistTargetNames[] = { "Pitch", "Start", "Pan", "Reverse", "Character", "Slice", "Gain" };
     inline constexpr int kNumTwistTargets = 7;
     inline juce::String twistLockId (int t) { return juce::String ("twist_lock_") + twistTargetKeys[t]; }
+
+    // ---- 0.22: song mode (A11 part 5) ---------------------------------------------------
+    inline constexpr const char* songOn = "song_on";     // bool: the snapshot chain follows Live's bars
     enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------

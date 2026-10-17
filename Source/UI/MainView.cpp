@@ -420,7 +420,7 @@ namespace tb::ui
         fxEditor.setBounds (layout::scope);
         sequencer.setBounds (layout::seqView);
         sliceSeq.setBounds (layout::scope);
-        snapshotPanel.setBounds (layout::scope);
+        snapshotPanel.setBounds (layout::seqView);       // 0.22: taller for the SONG chain
         resamplePanel.setBounds (layout::scope);
         presetPanel.setBounds (layout::seqView);
         kitBar.setBounds (layout::kitBar);
@@ -648,7 +648,7 @@ namespace tb::ui
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
-        transportDisplay.setVisible (v != View::sequencer && v != View::presets);   // the sequencer shows BPM / position itself
+        transportDisplay.setVisible (v != View::sequencer && v != View::presets && v != View::snapshots);   // the sequencer shows BPM / position itself
         presetPanel.setVisible (v == View::presets);
         if (v == View::presets) processor.getPresets().ensureFactoryContent();
         sliceSeq.setVisible (v == View::sliceSeq);

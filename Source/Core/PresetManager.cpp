@@ -153,6 +153,7 @@ namespace tb
         kit.appendChild (self.getBridge().sliceSeq.toValueTree(), nullptr);
         kit.appendChild (self.getSnapshots().toValueTree(), nullptr);
         kit.appendChild (self.getBank().toValueTree(), nullptr);
+        kit.appendChild (self.getSong().toValueTree(), nullptr);
         juce::ValueTree fx ("FX");
         fx.setProperty ("lockedMask", (juce::int64) self.getEngine().getFxLockedMask(), nullptr);
         fx.setProperty ("group", self.getEngine().getFxTargetGroup(), nullptr);
@@ -483,6 +484,7 @@ namespace tb
                 }
             proc.getBank().fromValueTree (rest.content.getChildWithName (BreakBank::bankId));
             proc.getSnapshots().fromValueTree (rest.content.getChildWithName (SnapshotManager::snapshotsId));
+            proc.getSong().fromValueTree (rest.content.getChildWithName (SongMode::songId));
             if (auto fx = rest.content.getChildWithName ("FX"); fx.isValid())
             {
                 proc.getEngine().setFxLockedMask ((uint32_t) (juce::int64) fx.getProperty ("lockedMask", (juce::int64) fx::kDefaultLockedMask));

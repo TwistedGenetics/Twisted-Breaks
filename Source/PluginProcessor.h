@@ -16,6 +16,8 @@
 #include "Core/MikroController.h"
 #include "Core/PadOps.h"
 #include "Core/PresetManager.h"
+#include "Core/Exporter.h"
+#include "Core/SongMode.h"
 
 /*
     TwistedBreaksProcessor
@@ -79,6 +81,8 @@ public:
     tb::MikroController& getMikroMode() noexcept { return *mikroMode; }
     tb::PadOps&          getPadOps() noexcept    { return *padOps; }
     tb::PresetManager&   getPresets() noexcept   { return *presets; }
+    tb::Exporter&        getExporter() noexcept  { return *exporter; }
+    tb::SongMode&        getSong() noexcept      { return *song; }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -159,6 +163,8 @@ private:
     std::unique_ptr<tb::MikroTester>     mikro;      // Mikro MK3 USB test (not saved)
     std::unique_ptr<tb::PadOps>          padOps;     // A11: copy / paste / undo
     std::unique_ptr<tb::PresetManager>   presets;    // A11: kits, pads, sequences
+    std::unique_ptr<tb::SongMode>        song;       // A11: snapshot chain
+    std::unique_ptr<tb::Exporter>        exporter;   // A11: WAV / MIDI export
     std::unique_ptr<tb::MikroController> mikroMode;  // A8: Mikro MK3 mode       // A7: Push 3 mode (after mutator / resampler: destroyed first)
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;

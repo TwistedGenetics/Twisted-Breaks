@@ -57,7 +57,13 @@ namespace tb::ui
                 if (fc.getResult().isDirectory()) processor.getSamples().relocateMissing (fc.getResult());
             });
         };
-        for (auto* k : { &storeKey, &fromPadKey, &followKey, &findKey })
+        songKey.onClick = [this]
+        {
+            if (auto* r = processor.getParameters().getParameter (params::songOn))
+            { r->beginChangeGesture(); r->setValueNotifyingHost (r->getValue() > 0.5f ? 0.0f : 1.0f); r->endChangeGesture(); }
+        };
+        songClear.onClick = [this] { processor.getSong().clear(); };
+        for (auto* k : { &storeKey, &fromPadKey, &followKey, &findKey, &songKey, &songClear })
             addAndMakeVisible (k);
         setSelectedPad (0);
     }
@@ -81,6 +87,33 @@ namespace tb::ui
 
     Rectangle<float> SnapshotPanel::snapBounds (int i) const { return { 14.0f + (float) i * 69.0f, kSnapTop, 66.0f, kTileH }; }
     Rectangle<float> SnapshotPanel::bankBounds (int i) const { return { 14.0f + (float) i * 69.0f, kBankTop, 66.0f, kTileH - 6.0f }; }
+    Rectangle<float> SnapshotPanel::songBounds (int i) const
+    {
+        constexpr float top = 222.0f;
+        return { 14.0f + (float) (i % 8) * 69.0f, top + (float) (i / 8) * 40.0f, 66.0f, 36.0f };
+    }
+
+    void SnapshotPanel::songMenu (int entry)
+    {
+        auto& song = processor.getSong();
+        const auto& es = song.getEntries();
+        if (! isPositiveAndBelow (entry, (int) es.size())) return;
+        const auto e = es[(size_t) entry];
+        PopupMenu m;
+        m.addSectionHeader ("STEP " + String (entry + 1) + " OF THE SONG");
+        for (int s = 0; s < SnapshotManager::kSlots; ++s)
+            m.addItem ("Snapshot " + String (s + 1) + (processor.getSnapshots().getState (s) == SnapshotManager::SlotState::empty ? " (empty)" : ""),
+                       true, e.slot == s, [this, entry, e, s] { processor.getSong().set (entry, { s, e.bars }); });
+        m.addSeparator();
+        for (int b : { 1, 2, 4, 8, 16 })
+            m.addItem ("For " + String (b) + (b == 1 ? " bar" : " bars"), true, e.bars == b, [this, entry, e, b] { processor.getSong().set (entry, { e.slot, b }); });
+        m.addSeparator();
+        m.addItem ("Move earlier", entry > 0, false, [this, entry] { processor.getSong().move (entry, -1); });
+        m.addItem ("Move later", entry < (int) es.size() - 1, false, [this, entry] { processor.getSong().move (entry, 1); });
+        m.addItem ("Duplicate", (int) es.size() < SongMode::kMaxEntries, false, [this, e] { processor.getSong().add (e); });
+        m.addItem ("Remove", [this, entry] { processor.getSong().remove (entry); });
+        m.showMenuAsync ({});
+    }
 
     void SnapshotPanel::resized()
     {
@@ -92,6 +125,8 @@ namespace tb::ui
         storeKey.setBounds (getWidth() - 96, 10, 82, 24);
         fromPadKey.setBounds (386, 100, 100, 24);
         followKey.setBounds (getWidth() - 14 - 176, getHeight() - 36, 176, 26);
+        songKey.setBounds (128, 190, 80, 24);
+        songClear.setBounds (getWidth() - 14 - 96, 190, 96, 24);
         findKey.setBounds (14, getHeight() - 36, 150, 26);
         // Room check: the FROM PAD key sits left of the right edge.
         fromPadKey.setBounds (getWidth() - 14 - 100, 100, 100, 24);
@@ -100,6 +135,23 @@ namespace tb::ui
 
     void SnapshotPanel::mouseDown (const MouseEvent& e)
     {
+        // SONG chain.
+        {
+            auto& song = processor.getSong();
+            const int n = (int) song.getEntries().size();
+            for (int i = 0; i <= n && i < 24; ++i)
+                if (songBounds (i).contains (e.position))
+                {
+                    if (i == n)
+                    {
+                        const int act = processor.getSnapshots().getActive();
+                        song.add ({ act >= 0 ? act : 0, 4 });
+                    }
+                    else songMenu (i);
+                    repaint();
+                    return;
+                }
+        }
         auto& snaps = processor.getSnapshots();
         auto& bank  = processor.getBank();
         for (int i = 0; i < SnapshotManager::kSlots; ++i)
@@ -190,6 +242,9 @@ namespace tb::ui
         storeKey.setBlinking (storeKey.getToggleState()); storeKey.tick();
         fromPadKey.setBlinking (fromPadKey.getToggleState()); fromPadKey.tick();
 
+        songKey.setToggleState (processor.getParameters().getRawParameterValue (params::songOn)->load() > 0.5f, dontSendNotification);
+        songClear.setEnabled (! processor.getSong().getEntries().empty());
+        if (processor.getSong().getVersion() != shownSong) { shownSong = processor.getSong().getVersion(); repaint(); }
         const int missing = processor.getSamples().countMissing();
         findKey.setEnabled (missing > 0);
         findKey.setButtonText (missing > 0 ? "FIND " + String (missing) + " MISSING" : String ("NONE MISSING"));
@@ -225,6 +280,7 @@ namespace tb::ui
                 paint::rivet (bg, pt, 4.2f, r);
             paint::labelPlate (bg, { 18.0f, 10.0f, 124.0f, 22.0f }, "SNAPSHOTS", {}, paint::PlateStyle::bakelite, r);
             paint::labelPlate (bg, { 18.0f, 100.0f, 124.0f, 22.0f }, "BREAK BANK", {}, paint::PlateStyle::bakelite, r);
+            paint::labelPlate (bg, { 18.0f, 190.0f, 100.0f, 22.0f }, "SONG", {}, paint::PlateStyle::bakelite, r);
             bg.setColour (c::bakelite.withAlpha (0.8f));
             bg.setFont (industrialFont (11.0f));
             bg.drawText ("SWITCH", Rectangle<float> (166.0f, 10.0f, 56.0f, 24.0f), Justification::centredRight, false);
@@ -268,6 +324,43 @@ namespace tb::ui
             g.setFont (monoFont (9.0f));
             g.drawFittedText (bankName (s) + (s.slices.isEmpty() ? String() : "\n" + String (s.slices.count) + " SL"),
                               r.reduced (3.0f, 2.0f).withTrimmedTop (14.0f).toNearestInt(), Justification::centred, 2, 0.7f);
+        }
+
+        // SONG chain.
+        {
+            auto& song = processor.getSong();
+            const auto& es = song.getEntries();
+            const bool on = processor.getParameters().getRawParameterValue (params::songOn)->load() > 0.5f;
+            const bool playing = processor.getBridge().transport.isPlaying.load();
+            for (int i = 0; i < (int) es.size() && i < 24; ++i)
+            {
+                const auto r = songBounds (i);
+                const bool cur = on && playing && song.getCurrent() == i;
+                const bool empty = snaps.getState (es[(size_t) i].slot) == SnapshotManager::SlotState::empty;
+                paint::plate (g, r, cur ? Colour (0xff2c3a26) : Colour (0xff1d1e1b), 3.0f);
+                paint::lamp (g, { r.getX() + 8.0f, r.getY() + 8.0f }, 3.2f, c::green, c::greenDim, cur ? 1.0f : 0.12f);
+                g.setColour (empty ? c::red.withAlpha (0.8f) : c::plateText);
+                g.setFont (industrialFont (15.0f));
+                g.drawText (String (es[(size_t) i].slot + 1), r.withTrimmedLeft (14.0f).withWidth (26.0f), Justification::centred, false);
+                g.setFont (monoFont (10.0f));
+                g.setColour (c::vfd.withAlpha (0.9f));
+                g.drawText (String::fromUTF8 ("\xc3\x97") + String (es[(size_t) i].bars), r.withTrimmedLeft (36.0f), Justification::centredLeft, false);
+            }
+            const int n = (int) es.size();
+            if (n < 24)
+            {
+                const auto r = songBounds (n);
+                g.setColour (c::steelEdge.withAlpha (0.6f));
+                g.drawRoundedRectangle (r.reduced (1.0f), 3.0f, 1.0f);
+                g.setFont (industrialFont (18.0f));
+                g.drawText ("+", r, Justification::centred, false);
+            }
+            g.setFont (monoFont (10.0f));
+            g.setColour (c::bakelite.withAlpha (0.7f));
+            const int total = song.totalBars();
+            const String info = n == 0 ? String ("CLICK + TO ADD A SNAPSHOT FOR SOME BARS")
+                              : String (n) + " STEPS, " + String (total) + " BARS" + (on && playing ? "   BAR " + String (song.getBarInSong() + 1) + " / " + String (total) : String());
+            g.drawText (info, Rectangle<float> (216.0f, 190.0f, (float) getWidth() - 340.0f, 24.0f), Justification::centredLeft, false);
         }
 
         g.setColour (c::bakelite.withAlpha (0.65f));

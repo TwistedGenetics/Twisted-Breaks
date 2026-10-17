@@ -26,7 +26,7 @@ namespace tb
     bool SnapshotManager::isExcluded (const juce::String& id)
     {
         return id.startsWith ("master_") || id == params::snapRecall || id == params::snapAt
-            || id == params::bankActive || id == params::bankAt || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::twistGo
+            || id == params::bankActive || id == params::bankAt || id == params::seqFill || id == params::mutGo || id == params::rsmpRec || id == params::twistGo || id == params::songOn
             || id == params::xfade || id == params::sceneView
             || (id.startsWith ("macro_") && id != params::macroAmount && id != params::macroGroup && id != params::macroLatch);   // macros are moves, not state
     }

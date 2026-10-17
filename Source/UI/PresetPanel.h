@@ -36,6 +36,7 @@ namespace tb::ui
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDoubleClick (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
         void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
         bool keyPressed (const juce::KeyPress&) override;
 
@@ -53,6 +54,7 @@ namespace tb::ui
         void renameRow (int row);
         void ensureVisible();
         void message (const juce::String&);
+        void showExportMenu();
 
         TwistedBreaksProcessor& processor;
         PresetManager& pm;
@@ -73,6 +75,8 @@ namespace tb::ui
         PushKey importKey  { "IMPORT", "Copy a preset file into your presets" };
         PushKey collectKey { "COLLECT SAMPLES", "Copy every sample this set uses into the Twisted Breaks Library and point the pads at the copies" };
         PushKey listenKey  { "LISTEN", "Play a preset's first sound when you click it" };
+        PushKey exportKey  { "EXPORT", "Render the selected pad or the whole kit to WAV, or the sequence to MIDI (N bars at Live's tempo)", juce::Colour (0xff7dff5a) };
+        PushKey dragKey    { "DRAG", "Drag the last export (WAV or MIDI) into Live" };
         juce::TextEditor searchBox;
 
         std::unique_ptr<juce::FileChooser> chooser;

@@ -127,6 +127,12 @@ namespace
         param->setValueNotifyingHost (param->convertTo0to1 (plainValue));
     }
 
+    float rawOfPad (TwistedBreaksProcessor& p, int pad, const char* name)
+    {
+        auto* r = p.getParameters().getParameter (tb::params::padId (pad, name));
+        return r->convertFrom0to1 (r->getValue());
+    }
+
     void setPadParam (TwistedBreaksProcessor& p, int pad, const char* name, float v)
     {
         setParam (p, tb::params::padId (pad, name), v);
@@ -368,7 +374,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1202, "1202 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST)");
+        check (p.getParameters().processor.getParameters().size() == 1203, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3519,7 +3525,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -5259,6 +5265,137 @@ namespace
         }
     }
 
+    void testA11ExportSong()
+    {
+        std::cout << "\n== A11: export (WAV / MIDI) and song mode ==" << std::endl;
+        auto dcHit = [] (float v) { juce::AudioBuffer<float> b (1, 4800); for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, v); return b; };
+
+        // ---- MIDI
+        {
+            Rig r;
+            auto& seq = r.p.getBridge().seq;
+            seq.clearAll();
+            setParam (r.p, tb::params::seqLength, 16.0f);
+            setParam (r.p, tb::params::seqRes, 1.0f);                       // 1/16
+            tb::SeqStep a; a.on = true; a.velocity = 100;
+            seq.set (1, 0, a);
+            seq.set (1, 4, a);
+            tb::SeqStep rat = a; rat.ratchet = 2; rat.velocity = 64;
+            seq.set (1, 8, rat);
+            const auto dir = testDir().getChildFile ("exports");
+            dir.deleteRecursively();
+            auto& ex = r.p.getExporter();
+            ex.setFolderForTesting (dir);
+            const auto f = ex.midiFileFor (-1, 2);
+            const auto res = ex.writeMidi (-1, 2, f);
+            juce::MidiFile mf;
+            juce::FileInputStream in (f);
+            const bool read = in.openedOk() && mf.readFrom (in);
+            int ons = 0; double t4 = -1.0; int noteNo = -1; bool tempo = false;
+            if (read)
+                for (int t = 0; t < mf.getNumTracks(); ++t)
+                    for (auto* e : *mf.getTrack (t))
+                    {
+                        if (e->message.isTempoMetaEvent()) tempo = true;
+                        if (! e->message.isNoteOn()) continue;
+                        ++ons; noteNo = e->message.getNoteNumber();
+                        if (ons == 2) t4 = e->message.getTimeStamp();
+                    }
+            check (res.wasOk() && read && ons == 8 && std::abs (t4 - 960.0) < 0.5 && noteNo == r.p.getEngine().getPadNote (1) && tempo,
+                   "MIDI export: every step as a note on the pad's MIDI note, ratchets included, at Live's tempo (" + juce::String (ons) + " notes)");
+            check (ex.writeMidi (5, 2, ex.midiFileFor (5, 2)).failed(), "...an empty lane says there's nothing to export");
+            dir.deleteRecursively();
+        }
+
+        // ---- WAV
+        {
+            Rig r;
+            r.host.bpm = 120.0;
+            juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
+            runBlock (r.p, r.host, buf, midi);                              // the plugin learns Live's tempo
+            r.load (0, writeAudio ("exp_pos", dcHit (0.5f), 48000.0, Fmt::wavFloat));
+            r.load (1, writeAudio ("exp_neg", dcHit (-0.5f), 48000.0, Fmt::wavFloat));
+            auto& seq = r.p.getBridge().seq;
+            seq.clearAll();
+            setParam (r.p, tb::params::seqLength, 16.0f);
+            setParam (r.p, tb::params::seqRes, 1.0f);
+            tb::SeqStep a; a.on = true; a.velocity = 127;
+            seq.set (0, 0, a);
+            seq.set (1, 8, a);                                             // beat 3 = 1 s at 120 BPM
+            const auto dir = testDir().getChildFile ("exports_wav");
+            dir.deleteRecursively();
+            auto& ex = r.p.getExporter();
+            ex.setFolderForTesting (dir);
+            auto run = [&] (int pad)
+            {
+                juce::File out; bool done = false; juce::Result res = juce::Result::ok();
+                const bool started = ex.startWav (pad, 1, [&] (juce::Result rr, juce::File f) { res = rr; out = f; done = true; });
+                const auto until = juce::Time::getMillisecondCounter() + 30000;
+                while (started && ! done && juce::Time::getMillisecondCounter() < until)
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+                std::unique_ptr<juce::AudioFormatReader> rd;
+                juce::AudioBuffer<float> got;
+                if (done && res.wasOk())
+                {
+                    juce::AudioFormatManager fm; fm.registerBasicFormats();
+                    rd.reset (fm.createReaderFor (out));
+                    if (rd != nullptr) { got.setSize ((int) rd->numChannels, (int) rd->lengthInSamples); rd->read (&got, 0, got.getNumSamples(), 0, true, true); }
+                }
+                return got;
+            };
+            const auto kit = run (-1);
+            const auto pad0 = run (0);
+            check (kit.getNumSamples() == 96000 && kit.getSample (0, 100) > 0.05f && kit.getSample (0, 48100) < -0.05f,
+                   "WAV export of the kit: exactly 1 bar at Live's tempo, every pad playing (" + juce::String (kit.getNumSamples()) + " samples)");
+            check (pad0.getNumSamples() == 96000 && pad0.getSample (0, 100) > 0.05f && std::abs (pad0.getSample (0, 48100)) < 1.0e-4f,
+                   "WAV export of one pad: only that pad");
+            check (rawOfPad (r.p, 0, tb::params::padSolo) < 0.5f && ! ex.isBusy() && ex.getLastFile().existsAsFile(),
+                   "...the plugin itself is untouched (the render runs on a copy)");
+            dir.deleteRecursively();
+        }
+
+        // ---- Song mode
+        {
+            Rig r;
+            auto& snaps = r.p.getSnapshots();
+            auto& song = r.p.getSong();
+            setPadParam (r.p, 0, tb::params::padGain, -10.0f);
+            snaps.store (0);
+            setPadParam (r.p, 0, tb::params::padGain, 0.0f);
+            snaps.store (1);
+            song.add ({ 0, 1 });
+            song.add ({ 1, 2 });
+            setParam (r.p, tb::params::songOn, 1.0f);
+            r.host.bpm = 120.0; r.host.ppq = 0.0; r.host.playing = true;
+            juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
+            int activeAt3_9 = -2, activeAt4_1 = -2, activeAt11_9 = -2, activeAt12_1 = -2;
+            for (int i = 0; i < 1400 && r.host.ppq < 12.5; ++i)
+            {
+                runBlock (r.p, r.host, buf, midi);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+                song.poll();
+                snaps.poll();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+                snaps.poll();
+                const double q = r.host.ppq;
+                if (q > 3.85 && q < 3.95) activeAt3_9 = snaps.getActive();
+                if (q > 4.05 && q < 4.2) activeAt4_1 = snaps.getActive();
+                if (q > 11.85 && q < 11.95) activeAt11_9 = snaps.getActive();
+                if (q > 12.05 && q < 12.2) activeAt12_1 = snaps.getActive();
+            }
+            check (activeAt3_9 == 0 && activeAt4_1 == 1 && activeAt11_9 == 1 && activeAt12_1 == 0 && song.totalBars() == 3,
+                   "SONG: snapshot 1 for a bar, snapshot 2 for two, on the bar lines, then round again ("
+                     + juce::String (activeAt3_9) + juce::String (activeAt4_1) + juce::String (activeAt11_9) + juce::String (activeAt12_1) + ")");
+            r.host.playing = false;
+            juce::MemoryBlock mb;
+            r.p.getStateInformation (mb);
+            Rig r2;
+            r2.p.setStateInformation (mb.getData(), (int) mb.getSize());
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+            check (r2.p.getSong().getEntries().size() == 2 && r2.p.getSong().getEntries()[1].bars == 2, "the song is saved with the Live set");
+        }
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -5431,7 +5568,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1202 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1203 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -5606,7 +5743,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -5814,7 +5951,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -6094,7 +6231,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1202, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1203, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -6436,6 +6573,10 @@ namespace
         if (snapView)
         {
             for (int i : { 0, 1, 2, 4 }) p.getSnapshots().store (i);
+            for (auto e : { tb::SongMode::Entry { 0, 4 }, tb::SongMode::Entry { 0, 4 }, tb::SongMode::Entry { 1, 4 }, tb::SongMode::Entry { 2, 2 },
+                            tb::SongMode::Entry { 4, 1 }, tb::SongMode::Entry { 1, 8 } })
+                p.getSong().add (e);
+            setParam (p, tb::params::songOn, 1.0f);
             p.getSnapshots().recall (1, 0);
             p.getBank().copyFromPad (0, 0);
             p.getBank().copyFromPad (1, 2);
@@ -6763,6 +6904,7 @@ int main (int argc, char* argv[])
         testA11Mikro();
         testA11Presets();
         testA11Extras();
+        testA11ExportSong();
         testEditorDrivesState();
         testRealtimeSafety();
 

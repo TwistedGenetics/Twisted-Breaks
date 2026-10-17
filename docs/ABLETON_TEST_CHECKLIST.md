@@ -102,6 +102,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.22: export and song
+
+- [ ] PRESETS > EXPORT > The whole kit > 4 bars: RENDER % then DRAG WAV; drag it onto an audio track: 4 bars, in time, sounds like the kit.
+- [ ] EXPORT > Pad 01 alone: only that pad. Live keeps playing during the render.
+- [ ] EXPORT > MIDI > Every pad > 2 bars; drag onto a MIDI track with Twisted Breaks (or a Drum Rack): the pattern plays.
+- [ ] SNAPSHOTS: store 3 snapshots, + + + in SONG, set lengths, SONG ON, play from bar 1: each switches on its bar line; jump around: the right step comes in.
+- [ ] Automate the Song parameter on/off; save and reopen: the chain is still there.
+
 ## 0.21: TWIST, layers, fit
 
 - [ ] TWIST (above the pads) a few times on a break: the sound changes each time, around your settings; UNDO walks back.

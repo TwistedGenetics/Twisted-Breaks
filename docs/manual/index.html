@@ -635,6 +635,8 @@ a { color: var(--amber-ink); }
     <li>Pads with <span class="key">Follow bank</span> (SWAP page), or every slice pad at once with <span class="key">All slice pads follow</span>, play the active break.</li>
     <li>Switch break by clicking a slot or automating <code>Break Bank</code>: every following pad and slice sequence changes on the next beat or bar and carries on with the same playing.</li>
   </ul>
+  <h3>Song</h3>
+  <p>A chain of snapshots, each for a number of bars, played from Live's bar 1 while <span class="key plain">Song on</span> is lit (or the <code>Song</code> parameter is on). Click <b>+</b> to add the active snapshot for 4 bars; click a step to pick its snapshot (1–8) and length (1–16 bars), move, duplicate or remove it. Each step switches exactly on its bar line (the next one is loaded during the bar before), and the chain goes round again at the end. Start Live in the middle of the song, or jump around, and the step for that bar comes in at once. The playing step is lit green, with the bar in the song next to SONG ON. The song is saved with the set and with kit presets.</p>
   <h3>Find missing</h3>
   <p>If a set opens with samples marked <b>MISSING</b>, press <span class="key plain">Find missing</span> and pick a folder. Every missing file is found by name (sub-folders included) and reloaded with its slices.</p>
 </section>
@@ -840,10 +842,11 @@ a { color: var(--amber-ink); }
     <li><span class="key plain">Collect samples</span> copies every sample the set uses into that Library and points the pads, bank and snapshots at the copies, so the set no longer depends on files scattered around your drive.</li>
     <li><b>Mikro</b>: <span class="key plain">Browse</span> opens the browser on the Mikro's screen. Pads 1–4 pick kits / pads / sequences / favourites, the encoder walks the list, pushing it loads (pad presets onto the selected pad), and Shift + push plays it. Browse again to leave.</li>
     <li><b>Push 3</b>: <span class="key plain">Browse</span> shows PRESETS in the plugin window. Encoder 1 walks the list, Select loads, Shift + Select plays it.</li>
+    <li><span class="key plain">Export</span> renders <b>WAV</b> at Live's tempo, starting from bar 1, for 1–16 bars: the selected pad on its own, or the whole kit (FX and mixer included). It renders in the background from a copy of the plugin, so Live keeps playing. Or it writes a <b>MIDI clip</b> of the sequencer: every pad, or the selected pad's lane, on the pads' MIDI notes with velocity, micro-timing and ratchets (pads in SEQ1 / SEQL mode are left out of "every pad", since you launch those by hand). Then drag <span class="key plain">Drag WAV</span> / <span class="key plain">Drag MIDI</span> onto a Live track. Exports also go to <code>~/Music/Twisted Breaks/Exports</code>.</li>
     <li>Audio is stored as 24-bit FLAC at its own sample rate, each sound once however many pads use it. A preset made by a newer version, or a damaged file, is refused with a message and nothing changes. A sound missing from a preset loads as MISSING with its name.</li>
   </ul>
   <h3>What the Live set keeps</h3>
-  <p>All 1202 parameters, the kit name, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
+  <p>All 1203 parameters, the kit name, the song, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>

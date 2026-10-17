@@ -52,6 +52,8 @@ namespace tb
 
         SlotState getState (int slot) const;
         int  getActive() const noexcept { return active; }
+        /** A recall is loading or waiting for its boundary. */
+        bool isSwitching() const noexcept { return loadingSlot >= 0 || waitingSlot >= 0; }
         int  framesInFlight() const noexcept { return (int) retiring.size(); }
         uint32_t getVersion() const noexcept { return version; }
 

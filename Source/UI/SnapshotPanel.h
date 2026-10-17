@@ -39,6 +39,8 @@ namespace tb::ui
 
         juce::Rectangle<float> snapBounds (int slot) const;
         juce::Rectangle<float> bankBounds (int slot) const;
+        /** SONG chain (A11): entry i's chip; i == entries: the "+" chip. */
+        juce::Rectangle<float> songBounds (int i) const;
 
     private:
         void setChoice (const char* paramId, int index);
@@ -55,6 +57,10 @@ namespace tb::ui
         PushKey fromPadKey { "FROM PAD 01", "Then click a bank slot to copy the selected pad's break (and markers) into it" };
         PushKey followKey  { "ALL SLICE PADS FOLLOW", "Every pad in SLICE mode (or SLICE SEQ) plays the active bank break" };
         PushKey findKey    { "FIND MISSING", "Pick a folder: every missing sample is looked for in it (and below) and reloaded" };
+        PushKey songKey    { "SONG ON", "Play the chain below while Live plays: each snapshot for its bars, from Live's bar 1 (the Song parameter)", juce::Colour (0xff7dff5a) };
+        PushKey songClear  { "CLEAR SONG", "Remove every step of the chain" };
+        void songMenu (int entry);
+        uint32_t shownSong = 0xffffffff;
 
         std::unique_ptr<juce::FileChooser> chooser;
         uint32_t shownSnap = 0xffffffff, shownBank = 0xffffffff;
