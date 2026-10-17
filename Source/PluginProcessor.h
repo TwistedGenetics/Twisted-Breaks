@@ -36,8 +36,14 @@ class TwistedBreaksProcessor final : public juce::AudioProcessor,
                                      private juce::AsyncUpdater
 {
 public:
-    TwistedBreaksProcessor();
+    /** 0.25.2: Push 3 and the Mikro MK3 are found on their own (no mode to switch on).
+        `detectControllers` false: an offline copy (the exporter) that must never grab them. */
+    TwistedBreaksProcessor() : TwistedBreaksProcessor (detectControllersByDefault.load()) {}
+    explicit TwistedBreaksProcessor (bool detectControllers);
     ~TwistedBreaksProcessor() override;
+
+    /** The test runner turns this off so its many processors leave real devices alone. */
+    static inline std::atomic<bool> detectControllersByDefault { true };
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;

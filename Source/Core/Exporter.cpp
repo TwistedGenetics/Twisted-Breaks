@@ -133,7 +133,7 @@ namespace tb
         juce::AudioProcessor::copyXmlToBinary (*xml, clean);
 
         job = std::make_unique<Job>();
-        job->offline = std::make_unique<TwistedBreaksProcessor>();
+        job->offline = std::make_unique<TwistedBreaksProcessor> (false);   // never grabs Push / the Mikro
         job->offline->setStateInformation (clean.getData(), (int) clean.getSize());
         job->pad = pad;
         job->bars = bars;

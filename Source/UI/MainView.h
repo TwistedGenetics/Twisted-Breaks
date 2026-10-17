@@ -102,8 +102,10 @@ namespace tb::ui
         void showMixer (bool show) { showView (show ? View::mixer : View::crt); }
         bool isMixerShown() const noexcept { return view == View::mixer; }
 
-        /** LIGHTS menu: controller LEDs (iRig Pads) and Push 3 mode. */
-        void showLightsMenu();
+        /** CONTROLLERS menu (was LIGHTS): Push 3 / Mikro status, iRig pad lights, MIDI OUT. */
+        void showControllersMenu();
+        juce::String pushStatus() const;
+        juce::String mikroStatus() const;
 
         void mouseDown (const juce::MouseEvent&) override;   // (all children) this instance takes Push
         /** Cmd-C / Cmd-V (selected pad), Cmd-Z / Cmd-Shift-Z (A11). */
@@ -143,7 +145,7 @@ namespace tb::ui
         juce::Slider  masterKnob;
         ToggleSwitch  limiterSwitch { "LIMITER", "Master limiter (zero latency, -0.3 dBFS ceiling)" };
         PanicButton   panicButton;
-        PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads, and Push 3 mode (play the plugin from Push in User mode)", juce::Colour (0xff7dff5a) };
+        PushKey       controllersKey { "CONTROLLERS", "Push 3 and the Mikro MK3 (found on their own), the iRig pad lights and MIDI OUT", juce::Colour (0xff7dff5a) };
         juce::OwnedArray<SelectorKey> navKeys;
         PushKey       twistKey { "TWIST", "TWIST: shake up the selected pad's sound (pitch, start, pan, reverse, character, slice, gain) around how you left it. One undo step", juce::Colour (0xff7dff5a) };
         PushKey       twistMenuKey { "...", "TWIST amount and locks" };

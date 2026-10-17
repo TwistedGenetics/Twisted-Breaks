@@ -14,7 +14,7 @@ namespace tb
     /*
         MikroTester  (step 1 of Mikro MK3 support)
         -----------
-        LIGHTS > "Mikro MK3 test": talks to the Mikro over USB directly and
+        CONTROLLERS > "Mikro MK3 test": talks to the Mikro over USB directly and
         proves each part works on the real hardware before the full mode is
         built on it:
 

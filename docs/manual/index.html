@@ -325,7 +325,7 @@ a { color: var(--amber-ink); }
     <li><b class="n">2</b><div><b>Pad matrix.</b> 16 pads of the scene on view. Click to play (higher on the pad = harder), drop a file to load it.</div></li>
     <li><b class="n">3</b><div><b>Scene strip.</b> <span class="key">A</span> <span class="key">B</span> view, <span class="key red">Cut A</span>, crossfader, <span class="key red">Cut B</span>, curve. See § 14.</div></li>
     <li><b class="n">4</b><div><b>Pad editor.</b> The selected pad's pages: <span class="key">Sound</span> <span class="key">Play</span> <span class="key">Slice</span> <span class="key">Swap</span> <span class="key">Seq</span>, its name, <span class="key plain">Load</span> and <span class="key plain">Clear</span>.</div></li>
-    <li><b class="n">5</b><div><b>Status strip.</b> The last MIDI note received, the selected pad and its note, and <span class="key">Lights</span> for the iRig Pads.</div></li>
+    <li><b class="n">5</b><div><b>Status strip.</b> The last MIDI note received, the selected pad and its note, and <span class="key">Controllers</span> (Push 3, the Mikro MK3, the iRig Pads lights and MIDI OUT).</div></li>
     <li><b class="n">6</b><div><b>Host transport.</b> Live's tempo, bar.beat.16th, run / sync lamps, meter and a 32-step playhead.</div></li>
     <li><b class="n">7</b><div><b>Screen.</b> The waveform and slice editor, or the view picked on the top rail.</div></li>
     <li><b class="n">8</b><div><b>Performance FX.</b> The 16 effect keys for group A, B, C or D, and the <span class="key">Macro</span> tab.</div></li>
@@ -727,7 +727,7 @@ a { color: var(--amber-ink); }
   <p>Everything you play on the pads (mouse, Push, the Mikro, note repeat, Mikro KEYBOARD slices) goes out as MIDI, so Live can record your jamming into a clip.</p>
   <p><b>On the plugin's own track</b> (the clip plays straight back into it):</p>
   <ol class="steps">
-    <li>In the plugin: <span class="key plain">Lights</span> &gt; <i>"Twisted Breaks Notes" port</i> on.</li>
+    <li>In the plugin: <span class="key plain">Controllers</span> &gt; <i>"Twisted Breaks Notes" port</i> on.</li>
     <li>In Live: Settings &gt; Link, Tempo &amp; MIDI: switch <b>Track</b> on for the <i>Twisted Breaks Notes</i> input (once).</li>
     <li>On the Twisted Breaks track set <i>MIDI From</i> to <b>Twisted Breaks Notes</b> (or <b>All Ins</b>, to keep other keyboards too), arm it and record.</li>
   </ol>
@@ -749,12 +749,12 @@ a { color: var(--amber-ink); }
     </tbody>
   </table></div>
   <h3>iRig Pads lights</h3>
-  <p>Press <span class="key">Lights</span> in the status strip and pick your <b>iRig Pads</b> as the output. Its pads then show the scene on view: <b>green</b> while a pad plays (brightness follows the sound), <b>dim green</b> for loaded pads, <b>flashing red</b> while a SWAP hand-off is waiting. It works on the iRig's default scene; for any other layout choose <b>Learn pad layout</b> and hit each pad as it lights red. <b>Test lights</b> and <b>Swap red / green</b> are in the same menu. The layout is saved with the set.</p>
-  <h3>Push 3 mode</h3>
+  <p>Press <span class="key">Controllers</span> in the status strip and pick your <b>iRig Pads</b> as the output. Its pads then show the scene on view: <b>green</b> while a pad plays (brightness follows the sound), <b>dim green</b> for loaded pads, <b>flashing red</b> while a SWAP hand-off is waiting. It works on the iRig's default scene; for any other layout choose <b>Learn pad layout</b> and hit each pad as it lights red. <b>Test lights</b> and <b>Swap red / green</b> are in the same menu. The layout is saved with the set.</p>
+  <h3>Push 3</h3>
   <p>With Push 3 plugged into the Mac, Twisted Breaks can take Push over completely. Press Push's <b>USER</b> key and the grid, encoders, touch strip and keys play and edit the plugin; press USER again and Push controls Live as normal. Play and Record drive Live's transport through the Twisted Breaks Remote port (map them once, as for the Mikro, below).</p>
   <ol class="steps">
     <li><div>In Live's <b>Settings › Link, Tempo &amp; MIDI</b>, turn <b>Track</b> off for the input <b>Ableton Push 3 (User Port)</b>, so Push's User mode notes don't also reach the track and play pads twice.</div></li>
-    <li><div>In the plugin, <span class="key">Lights</span> › <b>Push 3 mode</b>. The menu shows whether Push was found.</div></li>
+    <li><div>Nothing to switch on in the plugin: it finds Push by itself. <span class="key">Controllers</span> shows whether Push was found and who has it.</div></li>
     <li><div>On Push, set <b>Setup › Pads › Expression</b> to <b>Poly Aftertouch</b> for per-pad pressure.</div></li>
     <li><div>Press <b>USER</b>. With several Twisted Breaks in a set, the one whose window you last clicked gets Push.</div></li>
   </ol>
@@ -794,13 +794,13 @@ a { color: var(--amber-ink); }
       <tr><td>Play / Record</td><td>Live's play and record, via Twisted Breaks Remote (lit green while Live plays, red while it records)</td></tr>
     </tbody>
   </table></div>
-  <p><b>Pressure</b> (each pad's <code>Pressure</code> setting, on the PAD page or <span class="key">Lights</span> › <b>Pad … pressure</b>): FILTER closes a low-pass, DRIVE saturates, STUTTER repeats a 1/16 from where you pressed (1/32 and 1/64 harder), PITCH bends down up to an octave, OFF does nothing. A synced loop you stutter or bend snaps back to the bar when you let go.</p>
+  <p><b>Pressure</b> (each pad's <code>Pressure</code> setting, on the PAD page or <span class="key">Controllers</span> › <b>Pad … pressure</b>): FILTER closes a low-pass, DRIVE saturates, STUTTER repeats a 1/16 from where you pressed (1/32 and 1/64 harder), PITCH bends down up to an octave, OFF does nothing. A synced loop you stutter or bend snaps back to the bar when you let go.</p>
   <div class="note"><p>Push's screen stays Live's: the plugin can't draw on it. While Push is in User mode, the plugin's status strip shows the page, the selected pad and the knob you're touching, plus the last message from Push, which is handy if a key does nothing on your unit.</p></div>
-  <h3>Maschine Mikro MK3 mode</h3>
+  <h3>Maschine Mikro MK3</h3>
   <p>Twisted Breaks talks to the Mikro MK3 directly over USB and owns its pads, lights, touch strip and screen. NI's Maschine app takes the Mikro over when it opens, so close it first.</p>
   <ol class="steps">
     <li><div>Plug the Mikro in with a data USB cable (some USB-C cables only charge), straight into the Mac.</div></li>
-    <li><div><span class="key">Lights</span> › <b>Mikro MK3 mode</b>. The pads light and the screen shows the mode and the selected pad. With several Twisted Breaks in a set, the one whose window you last clicked gets the Mikro.</div></li>
+    <li><div>That's it: the plugin finds the Mikro within a couple of seconds, the pads light and the screen shows the mode and the selected pad. <span class="key">Controllers</span> shows whether it was found. With several Twisted Breaks in a set, the one whose window you last clicked gets the Mikro.</div></li>
   </ol>
   <div class="tablewrap"><table>
     <thead><tr><th>Mikro</th><th>Does</th></tr></thead>
@@ -836,7 +836,7 @@ a { color: var(--amber-ink); }
   </ol>
   <p>Hold a step and the encoder edits its SLICE first (push for VEL, CHANCE …). With the pad's lane armed (§ 09) and Live playing, slices you finger-drum on Keyboard are recorded into the lane with their slice numbers. Slices on steps don't apply to SWAP or SLICE SEQ pads; the screen says so.</p>
   <h4>Live's transport from the Mikro and Push</h4>
-  <p>A plugin can't press Live's buttons, so Twisted Breaks makes a MIDI port, <b>Twisted Breaks Remote</b>, for Live to listen to. Once, with Mikro or Push 3 mode on:</p>
+  <p>A plugin can't press Live's buttons, so Twisted Breaks makes a MIDI port, <b>Twisted Breaks Remote</b>, for Live to listen to. Once:</p>
   <ol class="steps">
     <li><div>Live › Settings › Link, Tempo &amp; MIDI: for the input <b>Twisted Breaks Remote</b>, turn <b>Remote</b> on.</div></li>
     <li><div>Press <b>⌘M</b> (MIDI Map mode), click Live's <b>Play</b> button, press <span class="key">Play</span> on the Mikro; the same for <b>Stop</b> and <b>Record</b> (Arrangement or Session record, as you like). <b>⌘M</b> again.</div></li>
@@ -901,7 +901,8 @@ a { color: var(--amber-ink); }
       <tr><td>A synced loop plays at half or double speed</td><td>Its tempo reads outside 90–180 BPM. Trim START / END to whole bars, or switch SYNC off for it.</td></tr>
       <tr><td>Sound keeps ringing</td><td>The red <span class="key red">Stop</span> button (or CC 120) stops every voice and tail and switches the effects off.</td></tr>
       <tr><td>Push pads play twice in User mode</td><td>Turn <b>Track</b> off for Push's User Port in Live's MIDI settings (§ 15).</td></tr>
-      <tr><td>Push stays dark after USER</td><td><span class="key">Lights</span> › <b>Push 3 mode</b> must be on, and that plugin window was the last one clicked.</td></tr>
+      <tr><td>Push stays dark after USER</td><td><span class="key">Controllers</span> shows what the plugin sees: Push must be found, and that plugin window must be the last one clicked.</td></tr>
+      <tr><td>The Mikro stays dark</td><td>Close NI's Maschine app (it holds the Mikro) and use a data USB cable; <span class="key">Controllers</span> says why it isn't found.</td></tr>
       <tr><td>The sequencer doesn't move</td><td>It follows Live's transport only: press play in Live (or PLAY on the Mikro / Push, once mapped, § 15).</td></tr>
     </tbody>
   </table></div>

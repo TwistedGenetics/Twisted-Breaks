@@ -534,3 +534,20 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
 5. **AKAIZER** (replaces STUTTER in the grid): cyclic time-stretch / pitch shift
    after the Akai S-series (Classic / Revised splices, CYCLE, PITCH, STRETCH,
    MIX); per-pad Akai stretch mode and RENDER AKAI.
+
+**0.25.1**: the Notes port can be the plugin track's own MIDI input (echo guard).
+
+## A13. Controllers found on their own (0.25.2)
+
+> Can the plugin detect the Maschine Mikro or Push when plugged in without me
+> having to select it? Then the manual option can go and LIGHTS can get a
+> better name.
+
+* Push 3 and the Mikro MK3 are always looked for: Push via its User MIDI port
+  (taken only when USER is pressed, so Live mode is untouched), the Mikro over
+  USB HID every 2 s (left alone while NI's Maschine app holds it).
+* The Push 3 mode / Mikro MK3 mode switches are gone; old sets' saved "off"
+  is ignored. The last-clicked window still owns each controller.
+* LIGHTS is renamed **CONTROLLERS**: a status line for Push and the Mikro,
+  pad pressure, the Mikro test (pauses the Mikro while it runs), the iRig pad
+  lights and MIDI OUT.

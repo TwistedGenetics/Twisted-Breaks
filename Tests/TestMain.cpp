@@ -4126,10 +4126,32 @@ namespace
             juce::MemoryBlock blob;
             r.p.getStateInformation (blob);
             const auto xml = juce::AudioProcessor::getXmlFromBinary (blob.getData(), (int) blob.getSize());
-            check (xml != nullptr && xml->getChildByName ("PUSH") != nullptr && xml->getChildByName ("PUSH")->getBoolAttribute ("enabled"),
-                   "Push 3 mode is saved with the set");
+            check (xml != nullptr && xml->getChildByName ("PUSH") != nullptr && ! xml->getChildByName ("PUSH")->hasAttribute ("enabled"),
+                   "Push's settings are saved with the set, with no on/off (0.25.2: always detected)");
+            juce::ValueTree old (tb::PushController::pushId);
+            old.setProperty ("enabled", false, nullptr);
+            r.p.getPush().fromValueTree (old);
+            check (r.p.getPush().isEnabled(), "an old set saved with Push 3 mode off still finds Push");
         }
         hub->setSinkForTesting (nullptr);
+    }
+
+    //  0.25.2: Push 3 and the Mikro MK3 are found on their own (no mode to switch on).
+    void testControllersAuto()
+    {
+        std::cout << "\n== 0.25.2: controllers found on their own ==" << std::endl;
+        {
+            TwistedBreaksProcessor live (true);
+            check (live.getPush().isEnabled(), "a new plugin listens for Push 3 straight away (no Push 3 mode to switch on)");
+            check (live.getMikroMode().isEnabled() == tb::MikroUsb::isSupported(),
+                   "... and looks for the Mikro MK3 over USB (where USB HID is supported)");
+            check (! live.getPush().isActive(), "Push isn't taken until it is plugged in and in User mode");
+        }
+        {
+            TwistedBreaksProcessor offline (false);
+            check (! offline.getPush().isEnabled() && ! offline.getMikroMode().isEnabled(),
+                   "the exporter's offline copy never grabs Push or the Mikro");
+        }
     }
 
     void testPushView()
@@ -4506,8 +4528,12 @@ namespace
             juce::MemoryBlock blob;
             r.p.getStateInformation (blob);
             const auto xml = juce::AudioProcessor::getXmlFromBinary (blob.getData(), (int) blob.getSize());
-            check (xml != nullptr && xml->getChildByName ("MIKRO") != nullptr && xml->getChildByName ("MIKRO")->getBoolAttribute ("enabled"),
-                   "Mikro MK3 mode is saved with the set");
+            check (xml != nullptr && xml->getChildByName ("MIKRO") != nullptr && ! xml->getChildByName ("MIKRO")->hasAttribute ("enabled"),
+                   "the Mikro's settings are saved with the set, with no on/off (0.25.2: always detected)");
+            juce::ValueTree old (tb::MikroController::mikroId);
+            old.setProperty ("enabled", false, nullptr);
+            mm.fromValueTree (old);
+            check (mm.isEnabled(), "an old set saved with Mikro MK3 mode off still finds the Mikro");
         }
         rec.reports.clear();
         mm.setEnabled (false);
@@ -7269,6 +7295,7 @@ namespace
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    TwistedBreaksProcessor::detectControllersByDefault = false;   // tests use fake hubs, never real devices
 
     int result = 0;
     if (argc >= 3 && juce::String (argv[1]) == "--akai-refs")
@@ -7338,6 +7365,7 @@ int main (int argc, char* argv[])
         testSeqPads();
         testSeqPadView();
         testPush3();
+        testControllersAuto();
         testPushView();
         testPressure();
         testMikro();

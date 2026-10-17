@@ -16,7 +16,7 @@ namespace
     const juce::Identifier kNoteId     { "note" };
 }
 
-TwistedBreaksProcessor::TwistedBreaksProcessor()
+TwistedBreaksProcessor::TwistedBreaksProcessor (bool detectControllers)
     : AudioProcessor (BusesProperties()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, kRootId, tb::params::createLayout())
@@ -125,6 +125,13 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     push      = std::make_unique<tb::PushController> (*this);
     mikro     = std::make_unique<tb::MikroTester>();
     mikroMode = std::make_unique<tb::MikroController> (*this);
+    if (detectControllers)
+    {
+        // Always listening: Push takes over only in User mode; the Mikro when it's plugged in
+        // and NI's Maschine app isn't holding it.
+        push->setEnabled (true);
+        if (tb::MikroUsb::isSupported()) mikroMode->setEnabled (true);
+    }
     mikroMode->onSettingsChanged = [this] { markStateChanged(); };
     lights.onSettingsChanged = [this] { markStateChanged(); };
     push->onSettingsChanged  = [this] { markStateChanged(); };

@@ -23,7 +23,7 @@ namespace tb::ui
         const Rectangle<int> sceneStrip  {  36, 554,  540,  40 };      // Phase 13: VIEW A / B + crossfader
         const Rectangle<int> padEditor   {  36, 606,  540, 128 };
         const Rectangle<int> statusStrip {  36, 740,  540,  38 };
-        const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
+        const Rectangle<int> controllersKey { 446, 744,  124,  30 };     // was LIGHTS (100 wide)
         const Rectangle<int> twistKey    { 292, 138,   78,  28 };       // A11, on the PAD MATRIX title row
         const Rectangle<int> twistMenu   { 372, 138,   30,  28 };
         const Rectangle<int> undoKey     { 410, 138,   78,  28 };
@@ -210,7 +210,7 @@ namespace tb::ui
         auto b = getLocalBounds().toFloat();
         paint::recess (g, b, 4.0f);
         b.reduce (12.0f, 2.0f);
-        b.removeFromRight (112.0f);     // LIGHTS key sits here
+        b.removeFromRight (136.0f);     // CONTROLLERS key sits here
 
         // MIDI activity lamp.
         paint::lamp (g, { b.getX() + 12.0f, b.getCentreY() }, 9.0f, c::green, c::greenDim, midiLamp);
@@ -301,8 +301,8 @@ namespace tb::ui
         limiterAttachment = std::make_unique<ButtonAttachment> (p.getParameters(), params::masterLimiter, limiterSwitch);
 
         addAndMakeVisible (panicButton);
-        addAndMakeVisible (lightsKey);
-        lightsKey.onClick = [this] { showLightsMenu(); };
+        addAndMakeVisible (controllersKey);
+        controllersKey.onClick = [this] { showControllersMenu(); };
         addAndMakeVisible (undoKey);
         addAndMakeVisible (redoKey);
         undoKey.onClick = [this] { processor.getPadOps().undo(); };
@@ -436,7 +436,7 @@ namespace tb::ui
         masterKnob.setBounds (layout::masterKnob);
         limiterSwitch.setBounds (layout::limiter);
         panicButton.setBounds (layout::panic);
-        lightsKey.setBounds (layout::lightsKey);
+        controllersKey.setBounds (layout::controllersKey);
         undoKey.setBounds (layout::undoKey);
         twistKey.setBounds (layout::twistKey);
         twistMenuKey.setBounds (layout::twistMenu);
@@ -528,10 +528,11 @@ namespace tb::ui
 
         auto& lights = processor.getLights();
         auto& push = processor.getPush();
-        lightsKey.setToggleState (lights.isConnected() || push.isActive() || processor.getMikroMode().isActive(), dontSendNotification);
-        lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected())
-                               || (push.isEnabled() && ! push.isConnected()));
-        lightsKey.tick();
+        // Lit while a controller is playing the plugin; blinks while the iRig lights want attention.
+        controllersKey.setToggleState (lights.isConnected() || push.isActive() || processor.getMikroMode().isActive(), dontSendNotification);
+        controllersKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected()));
+        controllersKey.setTooltip ("CONTROLLERS - Push 3: " + pushStatus() + ".  Mikro MK3: " + mikroStatus() + ".  Plus the iRig pad lights and MIDI OUT.");
+        controllersKey.tick();
 
         auto& ops = processor.getPadOps();
         if (ops.getVersion() != shownUndoVersion)
@@ -564,46 +565,33 @@ namespace tb::ui
         processor.getMikroMode().claim();
     }
 
-    void MainView::showLightsMenu()
+    juce::String MainView::pushStatus() const
     {
-        auto& lights = processor.getLights();
-        const auto current = lights.getDevice();
-        const auto devices = PadLights::availableDevices();
-
-        PopupMenu m;
-        m.addSectionHeader ("PAD LIGHTS - light your controller's pads");
-        m.addItem ("Off", true, current.isEmpty(), [&lights] { lights.setDevice ({}); });
-        for (const auto& d : devices)
-            m.addItem (d, true, d == current, [&lights, d] { lights.setDevice (d); });
-        if (current.isNotEmpty() && ! devices.contains (current))
-            m.addItem (current + "  (not connected)", false, true, nullptr);
-        if (devices.isEmpty())
-            m.addItem ("No MIDI outputs found - plug in the iRig Pads", false, false, nullptr);
-
-        m.addSeparator();
-        const bool on = lights.isConnected();
-        if (lights.isLearning())
-            m.addItem ("Stop learning", [&lights] { lights.stopLearn(); });
-        else
-            m.addItem ("Learn pad layout (for a custom scene)...", on, false, [&lights] { lights.startLearn(); });
-        m.addItem ("Forget learned layout", lights.hasLearnedLayout(), false, [&lights] { lights.forgetLearnedLayout(); });
-        m.addItem ("Test lights", on, false, [&lights] { lights.runTest(); });
-        m.addItem ("Swap red / green", true, lights.getSwapColours(), [&lights] { lights.setSwapColours (! lights.getSwapColours()); });
-
-        // ---- A7: Push 3 mode.
         auto& push = processor.getPush();
-        m.addSeparator();
-        m.addSectionHeader ("PUSH 3 - press USER on Push to play Twisted Breaks from it");
-        m.addItem ("Push 3 mode", true, push.isEnabled(), [&push] { push.setEnabled (! push.isEnabled()); push.claim(); });
-        if (push.isEnabled())
-        {
-            String st;
-            if (! push.isConnected())    st = "Push not found - plug it in (User port)";
-            else if (! push.isOwner())   st = "Another Twisted Breaks has Push - click this window to take it";
-            else if (! push.isUserMode()) st = "Connected (" + push.getPortName() + ") - press USER on Push";
-            else                          st = "In User mode on " + push.getPortName();
-            m.addItem (st, false, false, nullptr);
-        }
+        if (! push.isEnabled())   return "Off";
+        if (! push.isConnected()) return "Not plugged in";
+        if (! push.isOwner())     return "Another Twisted Breaks has Push - click this window to take it";
+        if (! push.isUserMode())  return "Found (" + push.getPortName() + ") - press USER on Push to play from it";
+        return "Playing - in User mode on " + push.getPortName();
+    }
+
+    juce::String MainView::mikroStatus() const
+    {
+        auto& mm = processor.getMikroMode();
+        if (! MikroUsb::isSupported())       return "Mac only";
+        if (processor.getMikro().isRunning()) return "Paused while the test runs";
+        if (! mm.isEnabled())                return "Off";
+        if (! mm.isConnected())              return "Not found - " + mm.getHubStatus();
+        if (! mm.isOwner())                  return "Another Twisted Breaks has the Mikro - click this window to take it";
+        return "Playing - " + mm.getHubStatus();
+    }
+
+    void MainView::showControllersMenu()
+    {
+        // 0.25.2: Push 3 and the Mikro MK3 are found on their own - nothing to switch on.
+        PopupMenu m;
+        m.addSectionHeader ("PUSH 3 - found on its own; press USER on Push to play Twisted Breaks");
+        m.addItem (pushStatus(), false, processor.getPush().isActive(), nullptr);
         {
             const int pad = padGrid.getSelectedPad();
             PopupMenu press;
@@ -622,27 +610,43 @@ namespace tb::ui
             m.addSubMenu ("Pad " + padLabel (pad) + " pressure", press);
         }
 
-        // ---- Maschine Mikro MK3 over USB: step 1, a hardware test.
+        // ---- Maschine Mikro MK3 over USB.
         auto& mk = processor.getMikro();
-        m.addSeparator();
         auto& mm = processor.getMikroMode();
-        m.addSectionHeader ("MASCHINE MIKRO MK3 - over USB (close NI's Maschine app first)");
-        m.addItem ("Mikro MK3 mode", MikroUsb::isSupported(), mm.isEnabled(), [&mm, &mk]
+        m.addSeparator();
+        m.addSectionHeader ("MASCHINE MIKRO MK3 - found on its own over USB (close NI's Maschine app)");
+        m.addItem (mikroStatus(), false, mm.isActive(), nullptr);
+        // The test talks to the Mikro directly, so the Mikro pauses while it runs.
+        m.addItem ("Mikro MK3 test (diagnostics)", MikroUsb::isSupported(), mk.isRunning(), [&mk, &mm]
         {
-            if (mk.isRunning()) mk.stop();
-            mm.setEnabled (! mm.isEnabled());
-            mm.claim();
+            if (mk.isRunning()) { mk.stop(); mm.setEnabled (true); }
+            else                { mm.setEnabled (false); mk.start(); }
         });
-        if (mm.isEnabled())
-            m.addItem (mm.isConnected() ? (mm.isOwner() ? String ("Connected: ") + mm.getHubStatus()
-                                                        : String ("Another Twisted Breaks has the Mikro - click this window to take it"))
-                                        : "Not connected: " + mm.getHubStatus(), false, false, nullptr);
-        m.addItem ("Mikro MK3 test (diagnostics)", MikroUsb::isSupported() && ! mm.isEnabled(), mk.isRunning(),
-                   [&mk] { if (mk.isRunning()) mk.stop(); else mk.start(); });
         if (mk.isRunning()) m.addItem (mk.getStatus(), false, false, nullptr);
-        if (! MikroUsb::isSupported()) m.addItem ("(Mac only)", false, false, nullptr);
         m.addItem ("Copy Mikro test report", mk.isRunning() || mk.getStatus().isNotEmpty(), false,
                    [&mk] { SystemClipboard::copyTextToClipboard (mk.getReport()); });
+
+        // ---- iRig Pads (or any MIDI pads) lights.
+        auto& lights = processor.getLights();
+        const auto current = lights.getDevice();
+        const auto devices = PadLights::availableDevices();
+        m.addSeparator();
+        m.addSectionHeader ("PAD LIGHTS - light your iRig Pads' pads");
+        m.addItem ("Off", true, current.isEmpty(), [&lights] { lights.setDevice ({}); });
+        for (const auto& d : devices)
+            m.addItem (d, true, d == current, [&lights, d] { lights.setDevice (d); });
+        if (current.isNotEmpty() && ! devices.contains (current))
+            m.addItem (current + "  (not connected)", false, true, nullptr);
+        if (devices.isEmpty())
+            m.addItem ("No MIDI outputs found - plug in the iRig Pads", false, false, nullptr);
+        const bool on = lights.isConnected();
+        if (lights.isLearning())
+            m.addItem ("Stop learning", [&lights] { lights.stopLearn(); });
+        else
+            m.addItem ("Learn pad layout (for a custom scene)...", on, false, [&lights] { lights.startLearn(); });
+        m.addItem ("Forget learned layout", lights.hasLearnedLayout(), false, [&lights] { lights.forgetLearnedLayout(); });
+        m.addItem ("Test lights", on, false, [&lights] { lights.runTest(); });
+        m.addItem ("Swap red / green", true, lights.getSwapColours(), [&lights] { lights.setSwapColours (! lights.getSwapColours()); });
 
         // A12: what you play goes out as MIDI, so Live can record your jamming.
         {
@@ -657,7 +661,7 @@ namespace tb::ui
             const bool sl = sc.load();
             m.addItem ("Channel 2 notes 36-51 play slices of the selected pad", true, sl, [&sc, sl] { sc.store (! sl); });
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&controllersKey));
     }
 
     void MainView::showView (View v)

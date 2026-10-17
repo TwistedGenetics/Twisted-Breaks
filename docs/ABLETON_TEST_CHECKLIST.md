@@ -102,9 +102,19 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.25.2: controllers found on their own
+- [ ] Open a set that had Push 3 / Mikro mode off: the key at the bottom left now says CONTROLLERS; its menu has no Push 3 mode / Mikro MK3 mode items, just a status line for each
+- [ ] Mikro plugged in, Maschine app closed: within ~2 s the pads light and the screen shows PADS A (no menu needed); CONTROLLERS says Playing
+- [ ] Unplug the Mikro: status says not found; plug back in: it comes back by itself
+- [ ] Open NI's Maschine app: it takes the Mikro, the plugin lets go (status says why); close the app: the plugin picks it up again
+- [ ] Push 3 in Live mode: Push behaves as normal, CONTROLLERS says Found - press USER; press USER: the grid lights and plays the plugin; USER again: Push is Live's again
+- [ ] Two Twisted Breaks: click each window in turn; Push / Mikro follow the last one clicked
+- [ ] CONTROLLERS > Mikro MK3 test still runs (the Mikro pauses meanwhile) and the Mikro comes back when you stop it
+- [ ] Export a WAV while Push is in User mode: Push keeps playing this plugin (the export copy doesn't grab it)
+
 ## 0.25.1: record on the plugin's own track
 
-- [ ] LIGHTS > Notes port on; Live MIDI settings: Track on for Twisted Breaks Notes.
+- [ ] CONTROLLERS > Notes port on; Live MIDI settings: Track on for Twisted Breaks Notes.
 - [ ] Twisted Breaks track: MIDI From = Twisted Breaks Notes, arm, record a jam on the Mikro: each hit sounds once (not doubled).
 - [ ] Play the clip back: the jam plays. Mikro KEYBOARD slices too.
 
@@ -136,7 +146,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 
 - [ ] VST3: new MIDI track, MIDI From = Twisted Breaks track / Twisted Breaks, arm, record while playing pads (mouse, Mikro, Push): notes land in the clip in time.
 - [ ] Route that track's MIDI To the Twisted Breaks track (disarm the recorder) and play the clip: the jam plays back. Mikro KEYBOARD slices too (channel 2).
-- [ ] AU: LIGHTS > "Twisted Breaks Notes" port on; Live Settings > MIDI: Track on for Twisted Breaks Notes; record on a MIDI track with that input.
+- [ ] AU: CONTROLLERS > "Twisted Breaks Notes" port on; Live Settings > MIDI: Track on for Twisted Breaks Notes; record on a MIDI track with that input.
 - [ ] Start Live, latch a SWAP loop, start a slice sequence and a SEQ pad, stop Live: all stop at once.
 - [ ] With Live stopped, hold a loop pad: plays while held, stops on release; nothing keeps running.
 

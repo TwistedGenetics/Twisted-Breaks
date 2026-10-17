@@ -58,7 +58,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.23 | STRETCH per pad: Repitch / Beats / Texture / Akai Classic / Akai Revised for one-shots, slices, steps and slice sequences; tempo from the markers, set / double / halve | **done** — 712/712 automated checks |
 | 0.24 | Macro editor: every effect setting of each macro (MILD / HARD or leave), add / remove effects, rename, hold to hear, reset, .tbmacro files | **done** — 720/720 automated checks |
 | 0.25 | AKAIZER: the Akai S-series cyclic pitch shift as a group FX in STUTTER's place (Classic / Revised, pitch, cycle); RENDER AKAI on a pad; reference renders in docs/audio/akaizer | **done** — 724/724 automated checks |
-| 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** — 725/725 automated checks |
+| 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** |
+| 0.25.2 | Push 3 and the Mikro MK3 are found on their own when plugged in (no mode to switch on); LIGHTS is now **CONTROLLERS**, with each one's status | **done** — 731/731 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -118,7 +119,8 @@ Sections that aren't built yet are visibly marked offline on the panel
   four channel strips: **fader**, LED meter, **PAN**, **M**ute, **S**olo and
   FX **BYPASS** (FX arrive in Phase 6). Click a strip's name plate to send
   the selected pad there. All automatable (`grp_a_level` ... `grp_d_bypass`).
-* **LIGHTS** (bottom-left, next to SELECTED PAD): pick your **iRig Pads** and
+* **CONTROLLERS** (bottom-left, next to SELECTED PAD; was LIGHTS): shows
+  whether Push 3 and the Mikro MK3 were found, and holds MIDI OUT. Pick your **iRig Pads** and
   its pads light up: green while a pad plays (brightness follows the sound),
   dim green for loaded pads, flashing red while a SWAP is queued. Works out
   of the box on the iRig's default scene; **Learn pad layout** handles any
@@ -159,15 +161,15 @@ Sections that aren't built yet are visibly marked offline on the panel
   it on the next boundary. Put SEQ pads in a **SWAP** group and they cut
   each other's sequences on the next STEP, 1/16, beat or bar, carrying on
   from the same step (or from step 1 with **FROM STEP 1**).
-* **PUSH 3 MODE** (0.15): **LIGHTS › Push 3 mode**, then press **USER** on
+* **PUSH 3** (0.15): found on its own (0.25.2); press **USER** on
   Push. The top 4 rows are the 32 pads (A left, B right), the bottom 4 the
   selected pad's 32 steps (tap, hold + encoders to edit, hold + tap for a
   range); encoders on PAD / FX / SEQ / MIX pages; the touch strip is the
   crossfader; per-pad pressure goes to each pad's **Pressure** setting
   (filter, drive, stutter, pitch). Press USER again to give Push back to
   Live. In Live's MIDI settings turn **Track** off for Push's User Port.
-* **MIKRO MK3 MODE** (0.16): close NI's Maschine app, then **LIGHTS ›
-  Mikro MK3 mode**. The plugin talks to the Mikro over USB and owns its
+* **MIKRO MK3** (0.16): close NI's Maschine app and plug it in; it is
+  found on its own (0.25.2). The plugin talks to the Mikro over USB and owns its
   pads, lights, touch strip and screen. **PAD MODE**: the 16 pads of the
   scene on view (**GROUP** flips A / B); **STEP**: the selected pad's steps
   (‹ › for 17-32, hold + encoder to edit); **KEYBOARD**: its 16 slices;

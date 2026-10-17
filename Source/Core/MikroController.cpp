@@ -276,7 +276,6 @@ namespace tb
     juce::ValueTree MikroController::toValueTree() const
     {
         juce::ValueTree t (mikroId);
-        t.setProperty ("enabled", enabled, nullptr);
         t.setProperty ("mode", modeAtomic.load(), nullptr);
         return t;
     }
@@ -286,7 +285,7 @@ namespace tb
         if (! t.isValid()) return;
         modeAtomic = juce::jlimit (0, 4, (int) t.getProperty ("mode", 0));
         shownMode = (Mode) modeAtomic.load();
-        setEnabled ((bool) t.getProperty ("enabled", false));
+        // 0.25.2: no "enabled" any more - the controller is found on its own (old sets' flag ignored).
     }
 
     void MikroController::useHubForTesting (std::shared_ptr<MikroHub> h)

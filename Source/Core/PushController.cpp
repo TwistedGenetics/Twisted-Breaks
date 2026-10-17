@@ -259,7 +259,6 @@ namespace tb
     juce::ValueTree PushController::toValueTree() const
     {
         juce::ValueTree t (pushId);
-        t.setProperty ("enabled", enabled, nullptr);
         t.setProperty ("layout", layoutAtomic.load(), nullptr);
         return t;
     }
@@ -268,7 +267,7 @@ namespace tb
     {
         if (! t.isValid()) return;
         layoutAtomic = juce::jlimit (0, 1, (int) t.getProperty ("layout", 0));
-        setEnabled ((bool) t.getProperty ("enabled", false));
+        // 0.25.2: no "enabled" any more - the controller is found on its own (old sets' flag ignored).
     }
 
     void PushController::useHubForTesting (std::shared_ptr<PushHub> h)
