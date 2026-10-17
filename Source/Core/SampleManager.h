@@ -72,6 +72,10 @@ namespace tb
         /** Copies the source pad's sample + markers onto the following pads
             (shared, not re-decoded). Returns how many pads were filled. */
         int  spreadToPads (int sourcePad);
+        /** Gives `pad` exactly this content (copy / paste / undo): a ready buffer is
+            shared as is; a missing / loading one reloads its file with these markers;
+            empty clears the pad. */
+        void assignPad (int pad, const PadInfo&);
 
         PadInfo  getInfo (int pad) const;
         uint32_t getVersion (int pad) const;

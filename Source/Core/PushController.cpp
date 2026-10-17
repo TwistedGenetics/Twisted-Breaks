@@ -782,14 +782,16 @@ namespace tb
             else if (held[push::solo])         toggle (params::padSolo);
             else if (held[push::duplicate])
             {
-                if (pad != selectedPad)
+                // A11: hold Duplicate, hit the pad to copy, then the pad to copy onto (Shift: swap).
+                if (dupSource < 0) dupSource = pad;
+                else if (pad != dupSource)
                 {
-                    for (int s = 0; s < SequencerData::kSteps; ++s)
-                        bridge.seq.setPacked (selectedPad, s, bridge.seq.getPacked (pad, s));
-                    bridge.seq.bumpVersion();
-                    processor.markStateChanged();
+                    if (held[push::shift]) processor.getPadOps().swap (dupSource, pad);
+                    else                   processor.getPadOps().copyPad (dupSource, pad);
+                    dupSource = -1;
                 }
             }
+            else if (held[push::deleteButton] && held[push::shift]) processor.getPadOps().clear (pad);
             else if (held[push::deleteButton])
             {
                 bridge.seq.clearLane (pad);
@@ -871,6 +873,7 @@ namespace tb
         {
             if (cc == push::repeat || cc == kSceneFill) setFill (held[push::repeat] || held[kSceneFill]);
             if (push::isLowerRow (cc) && was) toggleFx (cc - push::lowerRow1, false);
+            if (cc == push::duplicate) dupSource = -1;
             return;
         }
 
@@ -920,7 +923,7 @@ namespace tb
                 else                                         rs.cancel();
                 break;
             }
-            case push::undo:        if (processor.getMutator().canUndo()) processor.getMutator().undo(); break;
+            case push::undo:        if (shift) processor.getPadOps().redo(); else processor.getPadOps().undo(); break;   // A11
             default: break;
         }
     }

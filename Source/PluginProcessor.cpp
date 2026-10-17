@@ -111,6 +111,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
     snapshots = std::make_unique<tb::SnapshotManager> (*this);
     mutator   = std::make_unique<tb::Mutator> (*this);
     resampler = std::make_unique<tb::Resampler> (*this);
+    padOps    = std::make_unique<tb::PadOps> (*this);
     push      = std::make_unique<tb::PushController> (*this);
     mikro     = std::make_unique<tb::MikroTester>();
     mikroMode = std::make_unique<tb::MikroController> (*this);
@@ -541,6 +542,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
                                (int) pad.getProperty (kNoteId, -1));
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
+    if (padOps != nullptr) padOps->reset();             // a new project: no undo back into the old one
     lights.fromValueTree (state.getChildWithName (tb::PadLights::lightsId));
     push->fromValueTree (state.getChildWithName (tb::PushController::pushId));
     mikroMode->fromValueTree (state.getChildWithName (tb::MikroController::mikroId));

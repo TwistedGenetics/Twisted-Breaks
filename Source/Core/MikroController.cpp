@@ -766,6 +766,7 @@ namespace tb
         if (! down)
         {
             if (b == tap) setFill (false);
+            if (b == duplicate) dupSource = -1;
             if (b == encoderTouch && nowMs - lastTurnMs > 0.0) endGesture();
             return;
         }
@@ -825,6 +826,21 @@ namespace tb
         auto& seq = bridge.seq;
         const int sel = selectedPad.load();
 
+        // A11: SHIFT + pad 1 / 2 = UNDO / REDO, pad 11 / 12 = COPY / PASTE the selected pad
+        // (as printed under the pads in Maschine; not in SCENE, where SHIFT stores).
+        if (down && held[shift] && ! held[duplicate] && ! held[erase] && mode != Mode::scene && mode != Mode::perform)
+        {
+            auto& ops = processor.getPadOps();
+            switch (num)
+            {
+                case 0:  { const auto n = ops.undoName(); flash ("UNDO", ops.undo() ? n : juce::String ("NOTHING"), nowMs); return; }
+                case 1:  { const auto n = ops.redoName(); flash ("REDO", ops.redo() ? n : juce::String ("NOTHING"), nowMs); return; }
+                case 10: ops.copy (sel); flash ("COPY", padLabel (sel), nowMs); return;
+                case 11: flash ("PASTE", ops.paste (sel) ? padLabel (ops.clipSource()) + " > " + padLabel (sel) : juce::String ("EMPTY"), nowMs); return;
+                default: break;
+            }
+        }
+
         switch (mode)
         {
             case Mode::pads:
@@ -840,14 +856,18 @@ namespace tb
                 else if (held[solo])      { toggle (params::padSolo); flash ("SOLO", padLabel (pad), nowMs); }
                 else if (held[duplicate])
                 {
-                    if (pad != sel)
+                    // A11: hold DUPLICATE, hit the pad to copy, then the pad to copy onto
+                    // (SHIFT + DUPLICATE: swap them).
+                    if (dupSource < 0) { dupSource = pad; flash (held[shift] ? "SWAP" : "COPY", padLabel (pad) + " >", nowMs); }
+                    else if (pad != dupSource)
                     {
-                        for (int s = 0; s < SequencerData::kSteps; ++s) seq.setPacked (sel, s, seq.getPacked (pad, s));
-                        seq.bumpVersion();
-                        processor.markStateChanged();
-                        flash ("COPY LANE", padLabel (pad) + ">" + padLabel (sel), nowMs);
+                        auto& ops = processor.getPadOps();
+                        if (held[shift]) { ops.swap (dupSource, pad); flash ("SWAP", padLabel (dupSource) + " < > " + padLabel (pad), nowMs); }
+                        else             { ops.copyPad (dupSource, pad); flash ("COPY", padLabel (dupSource) + " > " + padLabel (pad), nowMs); }
+                        dupSource = -1;
                     }
                 }
+                else if (held[erase] && held[shift]) { processor.getPadOps().clear (pad); flash ("CLEAR PAD", padLabel (pad), nowMs); }
                 else if (held[erase]) { seq.clearLane (pad); processor.markStateChanged(); flash ("CLEAR LANE", padLabel (pad), nowMs); }
                 else
                 {

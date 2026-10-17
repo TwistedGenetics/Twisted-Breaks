@@ -16,6 +16,18 @@ namespace tb::ui
             pad->onRelease     = [this] (int idx)            { processor.triggerPadFromUi (idx, 0.0f, false); };
             pad->onSelect      = [this] (int idx)            { setSelectedPad (idx); };
             pad->onFileDropped = [this] (int idx, const juce::File& f) { processor.getSamples().loadFile (idx, f); };
+            pad->onMenu        = [this] (int idx)            { showPadMenu (idx); };
+            pad->onDragOnto    = [this] (int idx, juce::Point<int> at, bool swap)
+            {
+                for (auto& t : pads)
+                    if (t->getPadIndex() != idx && t->getScreenBounds().contains (at))
+                    {
+                        if (swap) processor.getPadOps().swap (idx, t->getPadIndex());
+                        else      processor.getPadOps().copyPad (idx, t->getPadIndex());
+                        setSelectedPad (t->getPadIndex());
+                        return;
+                    }
+            };
 
             addAndMakeVisible (*pad);
             pads[(size_t) i] = std::move (pad);
@@ -23,6 +35,51 @@ namespace tb::ui
 
         setSelectedPad (0);
         refresh();
+    }
+
+    void PadGrid::showPadMenu (int pad)
+    {
+        auto& ops = processor.getPadOps();
+        juce::PopupMenu m;
+        const auto name = "PAD " + padLabel (pad);
+        m.addSectionHeader (name);
+        m.addItem ("Copy", [&ops, pad] { ops.copy (pad); });
+        const bool clip = ops.hasClip();
+        const auto from = clip ? " (from " + padLabel (ops.clipSource()) + ")" : juce::String();
+        m.addItem ("Paste" + from, clip, false, [&ops, pad] { ops.paste (pad); });
+        juce::PopupMenu special;
+        special.addItem ("Sound only (sample, slices, settings)", clip, false, [&ops, pad] { ops.paste (pad, PadOps::sound); });
+        special.addItem ("Steps only (sequencer lane, slice sequence)", clip, false, [&ops, pad] { ops.paste (pad, PadOps::steps); });
+        special.addItem ("Settings only", clip, false, [&ops, pad] { ops.paste (pad, PadOps::settings); });
+        m.addSubMenu ("Paste special", special, clip);
+
+        auto padList = [pad] (std::function<void (int)> fn)
+        {
+            juce::PopupMenu sub;
+            for (int sc = 0; sc < kNumScenes; ++sc)
+            {
+                if (sc > 0) sub.addSeparator();
+                for (int i = 0; i < kPadsPerScene; ++i)
+                {
+                    const int t = sc * kPadsPerScene + i;
+                    sub.addItem ("Pad " + padLabel (t), t != pad, false, [fn, t] { fn (t); });
+                }
+            }
+            return sub;
+        };
+        m.addSubMenu ("Copy to", padList ([&ops, pad] (int t) { ops.copyPad (pad, t); }));
+        m.addSubMenu ("Swap with", padList ([&ops, pad] (int t) { ops.swap (pad, t); }));
+        m.addSeparator();
+        m.addItem ("Clear pad (sample and steps)", [&ops, pad] { ops.clear (pad); });
+        m.addSeparator();
+        m.addItem ("Undo " + ops.undoName(), ops.canUndo(), false, [&ops] { ops.undo(); });
+        m.addItem ("Redo " + ops.redoName(), ops.canRedo(), false, [&ops] { ops.redo(); });
+        m.addSeparator();
+        m.addItem ("Tip: Alt-drag a pad to copy it, Shift-drag to swap", false, false, [] {});
+
+        juce::Component* target = this;
+        for (auto& t : pads) if (t->getPadIndex() == pad) target = t.get();
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target));
     }
 
     void PadGrid::resized()

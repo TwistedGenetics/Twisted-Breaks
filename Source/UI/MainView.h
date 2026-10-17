@@ -103,6 +103,8 @@ namespace tb::ui
         void showLightsMenu();
 
         void mouseDown (const juce::MouseEvent&) override;   // (all children) this instance takes Push
+        /** Cmd-C / Cmd-V (selected pad), Cmd-Z / Cmd-Shift-Z (A11). */
+        bool keyPressed (const juce::KeyPress&) override;
 
     private:
         void updateNavLamps();
@@ -136,6 +138,9 @@ namespace tb::ui
         PanicButton   panicButton;
         PushKey       lightsKey { "LIGHTS", "Light the pads of your iRig Pads, and Push 3 mode (play the plugin from Push in User mode)", juce::Colour (0xff7dff5a) };
         juce::OwnedArray<SelectorKey> navKeys;
+        PushKey       undoKey { "UNDO", "Undo the last pad edit: paste, swap, clear, sample, slices or steps (Cmd-Z)", juce::Colour (0xffffa928) };
+        PushKey       redoKey { "REDO", "Redo (Cmd-Shift-Z)", juce::Colour (0xffffa928) };
+        uint32_t      shownUndoVersion = 0xffffffff;
 
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

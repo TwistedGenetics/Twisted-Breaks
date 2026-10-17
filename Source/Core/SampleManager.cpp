@@ -478,6 +478,39 @@ namespace tb
         modify (pad, [n] (PadInfo& i) { i.sliceCount = juce::jlimit (1, SliceTable::kMax, n); }, false);
     }
 
+    void SampleManager::assignPad (int pad, const PadInfo& src)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+        if (src.status == Status::empty || (src.buffer == nullptr && src.file == juce::File()))
+        {
+            if (getInfo (pad).status != Status::empty) clearPad (pad);
+            return;
+        }
+        ++generation[(size_t) pad];              // cancel anything loading there
+        ++sliceGeneration[(size_t) pad];
+        followLeader[(size_t) pad] = -1;
+        hasRestoreSlices[(size_t) pad] = false;
+
+        if (src.buffer != nullptr)
+        {
+            installBuffer (pad, src.buffer, &src.slices);
+            modify (pad, [&] (PadInfo& p)
+            {
+                p.detected    = src.detected;
+                p.sensitivity = src.sensitivity;
+                p.sliceCount  = src.sliceCount;
+            }, false);
+            return;
+        }
+
+        modify (pad, [&] (PadInfo& p) { p.sensitivity = src.sensitivity; p.sliceCount = src.sliceCount; }, false);
+        restoreSlices[(size_t) pad]    = src.slices;
+        restoreDetected[(size_t) pad]  = src.detected;
+        hasRestoreSlices[(size_t) pad] = true;
+        startLoad (pad, src.file, &restoreSlices[(size_t) pad]);
+    }
+
     int SampleManager::spreadToPads (int source)
     {
         const auto src = getInfo (source);

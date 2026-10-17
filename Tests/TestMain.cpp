@@ -4067,9 +4067,12 @@ namespace
         in (juce::MidiMessage::noteOn (1, padNote (5, 1), (juce::uint8) 100));     // pad 06
         step();
         in (juce::MidiMessage::noteOff (1, padNote (5, 1)));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 1), (juce::uint8) 100));     // then pad 02
+        step();
+        in (juce::MidiMessage::noteOff (1, padNote (4, 1)));
         in (juce::MidiMessage::controllerEvent (1, duplicate, 0));
         step();
-        check (seq.get (1, 3).on && drainPads().empty(), "DUPLICATE + pad copies that pad's lane onto the selected pad");
+        check (seq.get (1, 3).on && drainPads().empty(), "hold DUPLICATE, hit pad 06 then pad 02: 02 becomes a copy of 06 (A11)");
 
         // Leaving User mode lets go of everything.
         in (juce::MidiMessage::controllerEvent (1, sceneTop - 1, 127));             // FILL held
@@ -4678,6 +4681,185 @@ namespace
     //==========================================================================
     //  A10: whole-pad steps and slice steps
     //==========================================================================
+    void testA11Ops()
+    {
+        std::cout << "\n== A11: copy / paste / swap / clear between pads, undo ==" << std::endl;
+        Rig r;
+        auto& ops = r.p.getPadOps();
+        ops.stopWatchingForTesting();
+        auto& sm = r.p.getSamples();
+        auto& seq = r.p.getBridge().seq;
+        auto& ss = r.p.getBridge().sliceSeq;
+        auto rawP = [&r] (const juce::String& id) { return r.p.getParameters().getParameter (id)->getValue(); };
+        double t = 10000.0;
+        auto settle = [&] { ops.poll (t); t += 1000.0; ops.poll (t); t += 1000.0; ops.poll (t); };
+
+        r.load (0, writeAudio ("a11_src", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        sm.equalSlice (0);
+        setPadParam (r.p, 0, tb::params::padGain, -6.0f);
+        setPadParam (r.p, 0, tb::params::padMute, 1.0f);
+        tb::SeqStep st; st.on = true; st.velocity = 77; st.slice = 3;
+        seq.set (0, 4, st);
+        tb::SliceStep sst = tb::SliceStep::playing (5);
+        ss.setStep (0, 2, 7, sst);
+        const int note5 = r.p.getEngine().getPadNote (5);
+        ops.reset();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+        settle();
+        check (! ops.canUndo(), "a fresh start has nothing to undo");
+
+        // Copy + paste: shared audio, markers, settings, both sequencers; not the note or mute.
+        ops.copy (0);
+        ops.paste (5);
+        const auto a = sm.getInfo (0), b = sm.getInfo (5);
+        check (b.buffer != nullptr && b.buffer.get() == a.buffer.get() && b.slices == a.slices && b.sliceCount == a.sliceCount,
+               "PASTE: the pad gets the same audio (shared, not reloaded) and the same markers");
+        check (std::abs (rawP (tb::params::padId (5, tb::params::padGain)) - rawP (tb::params::padId (0, tb::params::padGain))) < 1.0e-6f
+                 && rawP (tb::params::padId (5, tb::params::padMute)) < 0.5f && r.p.getEngine().getPadNote (5) == note5,
+               "...its settings too, but not mute or its MIDI note");
+        check (seq.get (5, 4) == st && ss.getStep (5, 2, 7) == sst, "...and its sequencer lane and slice sequence");
+        check (ops.canUndo() && ops.undoName() == "PASTE", "one undo step: PASTE");
+
+        ops.undo();
+        check (sm.getInfo (5).status == tb::SampleManager::Status::empty && ! seq.get (5, 4).on && ! (ss.getStep (5, 2, 7) == sst)
+                 && std::abs (rawP (tb::params::padId (5, tb::params::padGain)) - rawP (tb::params::padId (0, tb::params::padGain))) > 0.01f,
+               "UNDO puts the pad back as it was (empty, no steps, its own settings)");
+        ops.redo();
+        check (sm.getInfo (5).buffer.get() == a.buffer.get() && seq.get (5, 4) == st, "REDO pastes it again");
+
+        // Paste special.
+        ops.paste (6, tb::PadOps::steps);
+        check (sm.getInfo (6).status == tb::SampleManager::Status::empty && seq.get (6, 4) == st, "PASTE STEPS: only the patterns");
+        ops.paste (7, tb::PadOps::settings);
+        check (sm.getInfo (7).status == tb::SampleManager::Status::empty && ! seq.get (7, 4).on
+                 && std::abs (rawP (tb::params::padId (7, tb::params::padGain)) - rawP (tb::params::padId (0, tb::params::padGain))) < 1.0e-6f,
+               "PASTE SETTINGS: only the settings");
+        ops.undo(); ops.undo();
+
+        // Swap.
+        ops.swap (0, 9);
+        check (sm.getInfo (9).buffer.get() == a.buffer.get() && sm.getInfo (0).status == tb::SampleManager::Status::empty
+                 && seq.get (9, 4) == st && ! seq.get (0, 4).on, "SWAP exchanges two pads");
+        ops.undo();
+        check (sm.getInfo (0).buffer.get() == a.buffer.get() && sm.getInfo (9).status == tb::SampleManager::Status::empty && seq.get (0, 4) == st,
+               "...and undo swaps them back");
+
+        // Clear.
+        ops.clear (5);
+        check (sm.getInfo (5).status == tb::SampleManager::Status::empty && ! seq.get (5, 4).on, "CLEAR empties the pad's sample and steps");
+        ops.undo();
+        check (sm.getInfo (5).buffer.get() == a.buffer.get() && seq.get (5, 4) == st, "...undo brings them back");
+
+        // The watcher: edits from anywhere become undo steps once things are quiet.
+        settle();
+        const int before = ops.position();
+        tb::SeqStep st2; st2.on = true;
+        seq.set (3, 0, st2);
+        ops.poll (t); t += 100.0; ops.poll (t);
+        const bool tooSoon = ops.position() == before;
+        t += 1000.0; ops.poll (t);
+        check (tooSoon && ops.position() == before + 1 && ops.undoName() == "STEP EDIT", "a step edit becomes one undo step after a quiet moment");
+        ops.undo();
+        settle();
+        check (! seq.get (3, 0).on && ops.position() == before && ops.historySize() == before + 1 && ops.canRedo(), "...undo removes it (and isn't recorded again)");
+        ops.redo();
+        check (seq.get (3, 0).on, "...redo puts it back");
+
+        const auto slicesBefore = sm.getInfo (0).slices;
+        sm.deleteMarker (0, 3);
+        settle();
+        check (ops.undoName() == "SLICE EDIT", "a marker edit is an undo step (SLICE EDIT)");
+        ops.undo();
+        check (sm.getInfo (0).slices == slicesBefore, "...undo puts the marker back");
+
+        // A sample still loading lands as a SAMPLE step, not twice.
+        settle();
+        const int h0 = ops.position();
+        sm.loadFile (11, writeAudio ("a11_other", makeTone (24000, 1), 48000.0, Fmt::wavFloat));
+        waitForLoads (r.p);
+        settle();
+        check (ops.position() == h0 + 1 && ops.undoName() == "SAMPLE", "loading a sample is one undo step");
+        ops.undo();
+        check (sm.getInfo (11).status == tb::SampleManager::Status::empty, "...undo unloads it");
+
+        // History is capped.
+        for (int i = 0; i < 60; ++i) ops.copyPad (0, 12 + (i % 2));
+        check (ops.historySize() == tb::PadOps::kMaxHistory, "the history keeps the last 50 steps");
+
+        // A project load starts a new history.
+        juce::MemoryBlock mb;
+        r.p.getStateInformation (mb);
+        r.p.setStateInformation (mb.getData(), (int) mb.getSize());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        waitForLoads (r.p);
+        check (! ops.canUndo() && ! ops.canRedo(), "loading a project clears the undo history");
+    }
+
+    void testA11Mikro()
+    {
+        using namespace tb::mikro;
+        std::cout << "\n== A11: DUPLICATE and undo on the Mikro ==" << std::endl;
+        Rig r;
+        auto& ops = r.p.getPadOps();
+        ops.stopWatchingForTesting();
+        auto& mm = r.p.getMikroMode();
+        auto& br = r.p.getBridge();
+        auto hub = std::make_shared<tb::MikroHub> (false);
+        MikroRec mrec;
+        hub->setSinkForTesting (&mrec);
+        mm.useHubForTesting (hub);
+        double now = 1000.0;
+        MikroIn in;
+        auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
+        auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
+        auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+        auto tapPad = [&] (int padNo) { const int i = tb::MikroController::hidPadOf (padNo); send (MikroIn::pad (i, 0x10, 3000)); adv(); send (MikroIn::pad (i, 0x30, 0)); adv(); };
+        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) ++n; return n; };
+        send (in.report());
+        adv();
+        r.load (0, writeAudio ("a11_mikro", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        tb::SeqStep st; st.on = true;
+        br.seq.set (0, 2, st);
+        adv();
+        drain();
+
+        hold (duplicate, true);
+        tapPad (0);                     // copy from pad 01 ...
+        tapPad (2);                     // ... onto pad 03
+        hold (duplicate, false);
+        check (r.p.getSamples().getInfo (2).buffer.get() == r.p.getSamples().getInfo (0).buffer.get() && br.seq.get (2, 2).on && drain() == 0,
+               "hold DUPLICATE, hit pad 01 then pad 03: pad 03 becomes a copy (no sound)");
+
+        hold (shift, true);
+        tapPad (0);                     // SHIFT + pad 1 = UNDO
+        hold (shift, false);
+        check (r.p.getSamples().getInfo (2).status == tb::SampleManager::Status::empty && ! br.seq.get (2, 2).on && drain() == 0,
+               "SHIFT + pad 1 = UNDO");
+        hold (shift, true);
+        tapPad (1);                     // SHIFT + pad 2 = REDO
+        hold (shift, false);
+        check (br.seq.get (2, 2).on, "SHIFT + pad 2 = REDO");
+
+        hold (shift, true); hold (duplicate, true);
+        tapPad (0); tapPad (5);         // SHIFT + DUPLICATE: swap 01 and 06
+        hold (duplicate, false); hold (shift, false);
+        check (r.p.getSamples().getInfo (0).status == tb::SampleManager::Status::empty && r.p.getSamples().getInfo (5).buffer != nullptr,
+               "SHIFT + DUPLICATE swaps the two pads");
+
+        // SHIFT + pad 11 / 12: copy / paste the selected pad.
+        mm.setSelectedPad (5); adv();
+        hold (shift, true); tapPad (10); hold (shift, false);
+        mm.setSelectedPad (7); adv();
+        hold (shift, true); tapPad (11); hold (shift, false);
+        check (r.p.getSamples().getInfo (7).buffer != nullptr && ops.undoName() == "PASTE", "SHIFT + pad 11 copies the selected pad, SHIFT + pad 12 pastes it");
+
+        hold (shift, true); hold (erase, true);
+        tapPad (7);
+        hold (erase, false); hold (shift, false);
+        check (r.p.getSamples().getInfo (7).status == tb::SampleManager::Status::empty && ops.undoName() == "CLEAR PAD", "SHIFT + ERASE + pad clears the whole pad");
+        hub->setSinkForTesting (nullptr);
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -6152,6 +6334,8 @@ int main (int argc, char* argv[])
         testMikroEngine();
         testA9();
         testA10();
+        testA11Ops();
+        testA11Mikro();
         testEditorDrivesState();
         testRealtimeSafety();
 

@@ -228,6 +228,7 @@ namespace tb
         int lastFx = 1;                                // fx::lpf
         int stepPage = 0;
         int chosenSlice = 0;
+        int dupSource = -1;                            // DUPLICATE held: the pad picked to copy from (A11)
         int chosenFor = -1;                            // the pad the chosen slice belongs to (another pad: WHOLE again)
         std::atomic<bool> selectedHasSlices { true };  // A10: KEYBOARD stays dark on a pad with no slice markers
         bool wholeOnly (int pad) const;

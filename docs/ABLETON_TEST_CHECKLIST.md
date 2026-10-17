@@ -102,6 +102,17 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.19: copy, paste, swap, undo
+
+- [ ] Right-click a loaded, sliced pad with steps > Copy; right-click an empty pad > Paste: same sample, slices, settings and steps, its own MIDI note.
+- [ ] Paste special > Steps only / Sound only / Settings only paste just that part.
+- [ ] Alt-drag a pad onto another copies it; Shift-drag swaps them; no sound plays.
+- [ ] Cmd-C / Cmd-V on the selected pad (click the plugin window first).
+- [ ] UNDO / REDO keys: step back through paste, swap, clear, a sample drop, a marker move and some step taps; each burst is one step.
+- [ ] Mikro: hold DUPLICATE, hit pad 1 then pad 3 (copy); SHIFT + DUPLICATE swaps; SHIFT + ERASE + pad clears; SHIFT + pad 1 / 2 = undo / redo; SHIFT + pad 11 / 12 = copy / paste the selected pad.
+- [ ] Push: hold Duplicate, hit two pads; Undo / Shift + Undo.
+- [ ] Reopen the set: UNDO is dark (fresh history), everything else as saved.
+
 ## 0.18: whole-pad steps and slice steps
 - [ ] Mikro: PAD MODE, hit a looping break pad; STEP: tap steps -> the break plays out like the plugin's own steps (until choked)
 - [ ] KEYBOARD: pick a slice; STEP: tap -> slice steps (in colour); PAD MODE pick again -> whole-pad steps (orange)

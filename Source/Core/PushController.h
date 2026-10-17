@@ -266,6 +266,7 @@ namespace tb
         // ---- Message thread -------------------------------------------------------------------------
         Page page = Page::pad;
         int  selectedPad = 0;
+        int  dupSource = -1;          // Duplicate held: the pad picked to copy from (A11)
         uint32_t selectionVersion = 0;
         std::bitset<128> held;                               // buttons held (in inbox order)
         struct HeldStep { int step; bool created; bool edited; };

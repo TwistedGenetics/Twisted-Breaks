@@ -267,6 +267,19 @@ namespace tb::ui
 
     void PadComponent::mouseDown (const MouseEvent& e)
     {
+        drag = Drag::none;
+        if (e.mods.isPopupMenu())
+        {
+            if (onSelect) onSelect (index);
+            if (onMenu)   onMenu (index);
+            return;
+        }
+        if (e.mods.isAltDown() || e.mods.isShiftDown())
+        {
+            drag = e.mods.isShiftDown() ? Drag::swap : Drag::copy;
+            if (onSelect) onSelect (index);
+            return;
+        }
         pressed = true;
         const float rel = jlimit (0.0f, 1.0f, (float) e.y / (float) jmax (1, getHeight()));
         const float velocity = jmap (rel, 1.0f, 0.35f);
@@ -276,8 +289,24 @@ namespace tb::ui
         repaint();
     }
 
-    void PadComponent::mouseUp (const MouseEvent&)
+    void PadComponent::mouseDrag (const MouseEvent& e)
     {
+        if (drag != Drag::none)
+            setMouseCursor (e.getDistanceFromDragStart() > 4 ? (drag == Drag::copy ? MouseCursor::CopyingCursor : MouseCursor::DraggingHandCursor)
+                                                             : MouseCursor::NormalCursor);
+    }
+
+    void PadComponent::mouseUp (const MouseEvent& e)
+    {
+        if (drag != Drag::none)
+        {
+            const bool swap = drag == Drag::swap;
+            drag = Drag::none;
+            setMouseCursor (MouseCursor::NormalCursor);
+            if (e.getDistanceFromDragStart() > 4 && onDragOnto) onDragOnto (index, e.getScreenPosition(), swap);
+            return;
+        }
+        if (e.mods.isPopupMenu()) return;
         pressed = false;
         if (onRelease) onRelease (index);
         repaint();

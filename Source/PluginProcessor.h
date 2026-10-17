@@ -14,6 +14,7 @@
 #include "Core/PushController.h"
 #include "Core/MikroTester.h"
 #include "Core/MikroController.h"
+#include "Core/PadOps.h"
 
 /*
     TwistedBreaksProcessor
@@ -75,6 +76,7 @@ public:
     tb::PushController&  getPush() noexcept      { return *push; }
     tb::MikroTester&     getMikro() noexcept     { return *mikro; }
     tb::MikroController& getMikroMode() noexcept { return *mikroMode; }
+    tb::PadOps&          getPadOps() noexcept    { return *padOps; }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -153,6 +155,7 @@ private:
     std::unique_ptr<tb::Resampler>       resampler;
     std::unique_ptr<tb::PushController>  push;
     std::unique_ptr<tb::MikroTester>     mikro;      // Mikro MK3 USB test (not saved)
+    std::unique_ptr<tb::PadOps>          padOps;     // A11: copy / paste / undo
     std::unique_ptr<tb::MikroController> mikroMode;  // A8: Mikro MK3 mode       // A7: Push 3 mode (after mutator / resampler: destroyed first)
 
     template <typename Load> void fillParams (tb::AudioEngine::BlockParams&, Load&&) const;

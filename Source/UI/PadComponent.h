@@ -18,6 +18,8 @@ namespace tb::ui
           * mouse up    -> release (used by gate/loop modes from Phase 2)
           * any click also selects the pad for the editor sections
           * drop a WAV / AIFF on the pad to load it
+          * right-click: copy / paste / swap / clear menu
+          * Alt-drag onto another pad copies it, Shift-drag swaps them (no sound)
     */
     class PadComponent final : public juce::Component,
                                  public juce::SettableTooltipClient,
@@ -34,6 +36,10 @@ namespace tb::ui
         std::function<void (int pad)>                 onRelease;
         std::function<void (int pad)>                 onSelect;
         std::function<void (int pad, const juce::File&)> onFileDropped;
+        /** Right-click: the pad's COPY / PASTE / SWAP / CLEAR menu (A11). */
+        std::function<void (int pad)>                 onMenu;
+        /** Alt-drag (copy) or Shift-drag (swap) let go at this screen position. */
+        std::function<void (int pad, juce::Point<int> screenPos, bool swap)> onDragOnto;
 
         void setActivity (float level);          // 0..1 from the audio engine
         void setSelected (bool shouldBeSelected);
@@ -58,6 +64,7 @@ namespace tb::ui
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
 
     private:
         juce::Rectangle<float> glassArea() const;
@@ -70,6 +77,7 @@ namespace tb::ui
         bool  warning   = false;   // missing / unreadable sample
         bool  hasSample = false;
         bool  fileHover = false;
+        enum class Drag { none, copy, swap } drag = Drag::none;
 
         juce::String upperLabel, nameLabel;
         int  note  = 36;

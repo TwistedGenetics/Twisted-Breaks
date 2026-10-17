@@ -24,6 +24,8 @@ namespace tb::ui
         const Rectangle<int> padEditor   {  36, 606,  540, 128 };
         const Rectangle<int> statusStrip {  36, 740,  540,  38 };
         const Rectangle<int> lightsKey   { 470, 744,  100,  30 };
+        const Rectangle<int> undoKey     { 410, 138,   78,  28 };       // A11, on the PAD MATRIX title row
+        const Rectangle<int> redoKey     { 496, 138,   78,  28 };
 
         const Rectangle<int> transPanel  { 612, 132,  572, 150 };
         const Rectangle<int> transport   { 626, 166,  544, 108 };
@@ -291,6 +293,11 @@ namespace tb::ui
         addAndMakeVisible (panicButton);
         addAndMakeVisible (lightsKey);
         lightsKey.onClick = [this] { showLightsMenu(); };
+        addAndMakeVisible (undoKey);
+        addAndMakeVisible (redoKey);
+        undoKey.onClick = [this] { processor.getPadOps().undo(); };
+        redoKey.onClick = [this] { processor.getPadOps().redo(); };
+        setWantsKeyboardFocus (true);
         // PANIC: stop every voice and tail, and switch the effects off so
         // nothing LOCKED re-engages on the next beat.
         panicButton.onClick = [this] { processor.allFxOff(); processor.requestPanic(); panicButton.flash(); };
@@ -385,6 +392,8 @@ namespace tb::ui
         limiterSwitch.setBounds (layout::limiter);
         panicButton.setBounds (layout::panic);
         lightsKey.setBounds (layout::lightsKey);
+        undoKey.setBounds (layout::undoKey);
+        redoKey.setBounds (layout::redoKey);
 
         auto rail = layout::navRail;
         const int keyW = rail.getWidth() / juce::jmax (1, navKeys.size());
@@ -465,6 +474,30 @@ namespace tb::ui
         lightsKey.setBlinking (lights.isLearning() || (lights.getDevice().isNotEmpty() && ! lights.isConnected())
                                || (push.isEnabled() && ! push.isConnected()));
         lightsKey.tick();
+
+        auto& ops = processor.getPadOps();
+        if (ops.getVersion() != shownUndoVersion)
+        {
+            shownUndoVersion = ops.getVersion();
+            undoKey.setEnabled (ops.canUndo());
+            redoKey.setEnabled (ops.canRedo());
+            undoKey.setTooltip (ops.canUndo() ? "Undo " + ops.undoName() + " (Cmd-Z)" : juce::String ("Nothing to undo"));
+            redoKey.setTooltip (ops.canRedo() ? "Redo " + ops.redoName() + " (Cmd-Shift-Z)" : juce::String ("Nothing to redo"));
+        }
+    }
+
+    bool MainView::keyPressed (const KeyPress& k)
+    {
+        auto& ops = processor.getPadOps();
+        const auto mods = k.getModifiers();
+        if (! mods.isCommandDown()) return false;
+        const auto c = juce::CharacterFunctions::toLowerCase (k.getTextCharacter() != 0 ? k.getTextCharacter() : (juce::juce_wchar) k.getKeyCode());
+        const int sel = padGrid.getSelectedPad();
+        if (c == 'z') { if (mods.isShiftDown()) ops.redo(); else ops.undo(); return true; }
+        if (c == 'y') { ops.redo(); return true; }
+        if (c == 'c') { ops.copy (sel); return true; }
+        if (c == 'v') { ops.paste (sel); return true; }
+        return false;
     }
 
     void MainView::mouseDown (const MouseEvent&)

@@ -361,6 +361,14 @@ a { color: var(--amber-ink); }
       <tr><td><span class="key">Note</span></td><td>The pad's MIDI note. Drag or scroll it, or press LEARN and play a note.</td></tr>
     </tbody>
   </table></div>
+  <h3>Copy, paste, swap &amp; undo</h3>
+  <p><b>Right-click</b> a pad for <span class="key plain">Copy</span>, <span class="key plain">Paste</span>, <span class="key plain">Paste special</span>, <span class="key plain">Copy to</span>, <span class="key plain">Swap with</span> and <span class="key plain">Clear pad</span>. A copy takes everything about the pad: the sample (shared, so nothing reloads), its slice markers, every setting on the SOUND / PLAY / SLICE / SWAP / SEQ pages, its sequencer lane and its slice sequence. It leaves the MIDI note, mute and solo where they are. Paste special pastes just the <b>sound</b> (sample, slices, settings), just the <b>steps</b> or just the <b>settings</b>.</p>
+  <ul>
+    <li><b>Alt-drag</b> a pad onto another to copy it there; <b>Shift-drag</b> to swap them. Neither makes a sound.</li>
+    <li><b>Cmd-C</b> / <b>Cmd-V</b> copy the selected pad and paste onto it.</li>
+    <li><span class="key plain">Undo</span> / <span class="key plain">Redo</span> (top right of the pad matrix, or <b>Cmd-Z</b> / <b>Cmd-Shift-Z</b>) step back through the last 50 pad edits: pastes, swaps, clears, loading a sample, slice-marker edits and step edits from the mouse, Push, Mikro or live recording. Each burst of editing is one step. Knob moves are Live's own undo (Cmd-Z in Live's window).</li>
+    <li>Opening a Live set starts a fresh history.</li>
+  </ul>
 </section>
 
 <!-- ===================================================================== 04 SLICER -->
@@ -723,13 +731,13 @@ a { color: var(--amber-ink); }
       <tr><td>Touch strip</td><td>The A / B crossfader, while you touch it</td></tr>
       <tr><td>Column right of the pads, from the top</td><td><b>MUTATE</b> · <b>FILL</b> (hold) · <b>RESAMPLE</b> (again to cancel) · <b>VIEW</b> A / B · <b>LAYOUT</b></td></tr>
       <tr><td>Mute / Solo + pad</td><td>Mute / solo that pad</td></tr>
-      <tr><td>Duplicate + pad</td><td>Copy that pad's lane onto the selected pad</td></tr>
+      <tr><td>Duplicate + pad, pad</td><td>Hold Duplicate, hit the pad to copy, then the pad to copy it onto (everything: sample, slices, settings, steps). Shift + Duplicate swaps the two. Shift + Delete + pad clears the pad.</td></tr>
       <tr><td>Delete + pad / step</td><td>Clear that lane / step</td></tr>
       <tr><td>Shift or Select + pad</td><td>Select it without playing</td></tr>
       <tr><td>‹ › and the jog wheel</td><td>Previous / next pad</td></tr>
       <tr><td>Up / Down (and Octave)</td><td>Scene A / B</td></tr>
       <tr><td>Fixed Length</td><td>LEN 8 / 16 / 32 (SHIFT: the pad's own LEN)</td></tr>
-      <tr><td>Accent / Repeat / Undo</td><td>MUTATE / FILL / undo the last MUTATE</td></tr>
+      <tr><td>Accent / Repeat / Undo</td><td>MUTATE / FILL / undo the last pad edit (Shift + Undo: redo). Undo MUTATE from the plugin's MUTATE view.</td></tr>
       <tr><td>Play / Record</td><td>Live's play and record, via Twisted Breaks Remote (lit green while Live plays, red while it records)</td></tr>
     </tbody>
   </table></div>
@@ -753,7 +761,9 @@ a { color: var(--amber-ink); }
       <tr><td>Plug-In / Swing / Volume</td><td>Encoder page: PAD (gain, pan, pitch, start, end, slice, character, pressure …) · SEQ (step, LEN, launch, mutate …) · MIX (groups, crossfader, curve, macro, master). Turn: value. Push, or Shift + turn: next setting. The screen shows name and value.</td></tr>
       <tr><td>Touch strip</td><td>Crossfader (Shift: macro amount)</td></tr>
       <tr><td>Note Repeat (hold)</td><td>Held pads roll in time on Live's grid; Shift + Note Repeat: 1/8, 1/16, 1/32</td></tr>
-      <tr><td>Mute / Solo / Duplicate / Erase / Select + pad</td><td>Mute, solo, copy its lane to the selected pad, clear its lane, select without playing</td></tr>
+      <tr><td>Mute / Solo / Erase / Select + pad</td><td>Mute, solo, clear its lane (Shift + Erase: clear the whole pad), select without playing</td></tr>
+      <tr><td>Duplicate + pad, pad</td><td>Hold Duplicate, hit the pad to copy, then the pad to copy it onto. Shift + Duplicate swaps them.</td></tr>
+      <tr><td>Shift + pad 1 / 2 / 11 / 12</td><td>Undo / Redo / Copy the selected pad / Paste onto the selected pad (as printed under Maschine's pads). Not in SCENE or PERFORM.</td></tr>
       <tr><td>Fixed Vel</td><td>Every hit at full velocity</td></tr>
       <tr><td>Variation / Tap / Sampling</td><td>MUTATE (Shift: undo) / FILL while held / RESAMPLE</td></tr>
       <tr><td>Play / Stop / Rec</td><td>Live's transport, through the <b>Twisted Breaks Remote</b> port (map it once, below). Play lights while Live plays, Rec while it records.</td></tr>
