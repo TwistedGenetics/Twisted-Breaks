@@ -21,6 +21,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/Core/FactoryKits.cpp
     ${TB_SRC}/Core/Exporter.cpp
     ${TB_SRC}/Core/SongMode.cpp
+    ${TB_SRC}/Core/NotesPort.cpp
     ${TB_SRC}/Core/RemotePort.cpp
     ${TB_SRC}/Core/SnapshotManager.cpp
     ${TB_SRC}/Core/BreakBank.cpp

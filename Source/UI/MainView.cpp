@@ -385,6 +385,7 @@ namespace tb::ui
             sequencer.setSelectedPad (pad);
             processor.getMutator().setSelectedPad (pad);
             processor.getPadOps().setSelectedPad (pad);
+            processor.getBridge().selectedPad.store (pad);
             processor.getResampler().setSelectedPad (pad);
             sliceSeq.setPad (pad);
             snapshotPanel.setSelectedPad (pad);
@@ -638,6 +639,19 @@ namespace tb::ui
         m.addItem ("Copy Mikro test report", mk.isRunning() || mk.getStatus().isNotEmpty(), false,
                    [&mk] { SystemClipboard::copyTextToClipboard (mk.getReport()); });
 
+        // A12: what you play goes out as MIDI, so Live can record your jamming.
+        {
+            m.addSeparator();
+            m.addSectionHeader ("MIDI OUT - record your playing in Live");
+            const bool po = processor.getMidiOutPlugin(), pt = processor.getMidiOutPort(), st = processor.getMidiOutSteps();
+            m.addItem ("Plugin MIDI out (VST3: a MIDI track's MIDI From = this track)", true, po, [this, po, pt, st] { processor.setMidiOut (! po, pt, st); });
+            m.addItem (String ("\"") + NotesPort::kName + "\" port (AU or VST3: Track on in Live's MIDI settings)", true, pt,
+                       [this, po, pt, st] { processor.setMidiOut (po, ! pt, st); });
+            m.addItem ("Include sequencer steps", po || pt, st, [this, po, pt, st] { processor.setMidiOut (po, pt, ! st); });
+            auto& sc = processor.getBridge().midiSliceChannel;
+            const bool sl = sc.load();
+            m.addItem ("Channel 2 notes 36-51 play slices of the selected pad", true, sl, [&sc, sl] { sc.store (! sl); });
+        }
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&lightsKey));
     }
 

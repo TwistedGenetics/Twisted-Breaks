@@ -438,7 +438,25 @@ namespace tb
     public:
         /** The tempo a break plays at, from its length (90-180 BPM, see loopBeatsFor). */
         static double tempoOf (const SampleBuffer&) noexcept;
+
+        // ---- A12: MIDI out (what you play, for recording into Live) ------------------
+        struct OutEvent { int offset; uint8_t bytes[3]; };
+        static constexpr int kMaxOut = 512;
+        int getOutCount() const noexcept { return outCount; }
+        const OutEvent& getOut (int i) const noexcept { return outEvents[(size_t) i]; }
+        static constexpr int kSliceChannel = 2;           // slices go out (and in) on channel 2, notes 36-51
+        static constexpr int kSliceBaseNote = 36;
     private:
+        std::array<OutEvent, kMaxOut> outEvents {};
+        int outCount = 0;
+        std::array<std::array<bool, 128>, 2> outHeld {};          // channel 1 / 2: note sounding (sent on, no off yet)
+        std::array<std::array<int, 128>, 2> outOffIn {};          // > 0: send the off this many samples from now
+        int outBlockLen = 0;
+        void emitNote (int channel, int note, float velocity, int offset, int autoOffSamples = 0) noexcept;   // velocity 0 = off
+        void emitPadNote (int pad, float velocity, int offset, int autoOffSamples = 0) noexcept;
+        void flushAutoOffs (int numSamples) noexcept;
+        bool wasPlayingLast = false;
+        void stopAllBreaks() noexcept;     // A12: Live stopped
         double freePpq = 0.0, clock0 = 0.0, clockDppq = 0.0;   // slice-sequencer clock (Live's, or free when stopped)
         bool   clockPlaying = false;
         int    blockLength = 0;

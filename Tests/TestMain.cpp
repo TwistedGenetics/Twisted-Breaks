@@ -113,6 +113,7 @@ namespace
 
     void runBlock (TwistedBreaksProcessor& p, FakeHost& host, juce::AudioBuffer<float>& buf, juce::MidiBuffer& midi)
     {
+        midi.ensureSize (8192);        // like a host's buffer: MIDI out (A12) never grows it on the audio thread
         tTrackAllocations = true;
         p.processBlock (buf, midi);
         tTrackAllocations = false;
@@ -4332,7 +4333,7 @@ namespace
         auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
         auto hit = [&] (int idx, int value = 3000) { send (MikroIn::pad (idx, 0x10, value)); };
         auto lift = [&] (int idx) { send (MikroIn::pad (idx, 0x30, 0)); };
-        auto drain = [&br] { std::vector<tb::ControllerHit> v; tb::ControllerHit h; while (br.mikroEvents.pop (h)) v.push_back (h); return v; };
+        auto drain = [&br] { std::vector<tb::ControllerHit> v; tb::ControllerHit h; while (br.mikroEvents.pop (h)) if (h.kind != tb::ControllerHit::sliceOff) v.push_back (h); return v; };   // (sliceOff: MIDI out only)
         auto rawP = [&r] (const juce::String& id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
 
         send (in.report());          // first report: the encoder's starting position
@@ -4589,7 +4590,7 @@ namespace
         auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
         auto press = [&] (int b) { hold (b, true); hold (b, false); };
         auto tapPad = [&] (int idx) { send (MikroIn::pad (idx, 0x10, 3000)); adv(); send (MikroIn::pad (idx, 0x30, 0)); adv(); };
-        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) ++n; return n; };
+        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) if (h.kind != tb::ControllerHit::sliceOff) ++n; return n; };
         send (in.report());
         adv();
         r.load (0, writeAudio ("a9_break", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
@@ -4821,7 +4822,7 @@ namespace
         auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
         auto press = [&] (int b) { hold (b, true); hold (b, false); };
         auto tapPad = [&] (int padNo) { const int i = tb::MikroController::hidPadOf (padNo); send (MikroIn::pad (i, 0x10, 3000)); adv(); send (MikroIn::pad (i, 0x30, 0)); adv(); };
-        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) ++n; return n; };
+        auto drain = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) if (h.kind != tb::ControllerHit::sliceOff) ++n; return n; };
         send (in.report());
         adv();
         r.load (0, writeAudio ("a11_mikro", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
@@ -5394,6 +5395,134 @@ namespace
             juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
             check (r2.p.getSong().getEntries().size() == 2 && r2.p.getSong().getEntries()[1].bars == 2, "the song is saved with the Live set");
         }
+    }
+
+    void testA12MidiStop()
+    {
+        std::cout << "\n== A12: MIDI out of what you play; Live stopping stops every break ==" << std::endl;
+        struct Rec : tb::NotesPort::Sink { std::vector<juce::MidiMessage> got; void send (const juce::MidiMessage& m) override { got.push_back (m); } } rec;
+        tb::NotesPort::setSinkForTesting (&rec);
+        Rig r;
+        auto& br = r.p.getBridge();
+        juce::AudioBuffer<float> buf (2, kBlock);
+        auto block = [&] (juce::MidiBuffer in = {})
+        {
+            juce::MidiBuffer m (in);
+            m.ensureSize (8192);
+            tTrackAllocations = true;
+            r.p.processBlock (buf, m);
+            tTrackAllocations = false;
+            r.host.advance (buf.getNumSamples(), kSr);
+            return m;
+        };
+        auto notes = [] (const juce::MidiBuffer& m, bool on)
+        {
+            std::vector<juce::MidiMessage> v;
+            for (const auto e : m) { auto msg = e.getMessage(); if (on ? msg.isNoteOn() : msg.isNoteOff()) v.push_back (msg); }
+            return v;
+        };
+        r.load (0, writeAudio ("a12_loop", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        r.load (3, writeAudio ("a12_hit", makeTone (4800, 1), 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (0);
+
+        // Mouse / Push / Mikro pad hits go out on channel 1, the pad's note.
+        r.p.triggerPadFromUi (3, 0.8f, true);
+        auto out = block();
+        const auto on = notes (out, true);
+        r.p.triggerPadFromUi (3, 0.0f, false);
+        const auto off = notes (block(), false);
+        check (on.size() == 1 && on[0].getChannel() == 1 && on[0].getNoteNumber() == r.p.getEngine().getPadNote (3) && on[0].getVelocity() == 102
+                 && off.size() == 1 && off[0].getNoteNumber() == on[0].getNoteNumber(),
+               "a pad hit (mouse, Push, Mikro) goes out as its MIDI note, velocity included; the release as a note off");
+        br.mikroEvents.push ({ tb::ControllerHit::sliceOn, 0, 5, 0, 1.0f });
+        const auto sOn = notes (block(), true);
+        br.mikroEvents.push ({ tb::ControllerHit::sliceOff, 0, 5, 0, 0.0f });
+        const auto sOff = notes (block(), false);
+        check (sOn.size() == 1 && sOn[0].getChannel() == 2 && sOn[0].getNoteNumber() == 40 && sOff.size() == 1,
+               "a slice hit (Mikro KEYBOARD) goes out on channel 2: slice 5 = note 40");
+
+        // Incoming MIDI isn't echoed (no feedback loop).
+        juce::MidiBuffer in;
+        in.addEvent (juce::MidiMessage::noteOn (1, r.p.getEngine().getPadNote (3), (juce::uint8) 100), 10);
+        const auto echo = block (in);
+        check (notes (echo, true).empty(), "MIDI coming in isn't sent back out");
+
+        // Channel 2 notes 36-51 in: slices of the selected pad.
+        br.selectedPad = 0;
+        const auto c0 = br.padTriggerCount[0].load(), c1 = br.padTriggerCount[1].load();
+        juce::MidiBuffer s2;
+        s2.addEvent (juce::MidiMessage::noteOn (2, 37, (juce::uint8) 100), 0);
+        block (s2);
+        check (br.padTriggerCount[0].load() == c0 + 1 && br.padTriggerCount[1].load() == c1, "channel 2, note 37 plays slice 2 of the selected pad (so a recorded clip plays back)");
+
+        // Sequencer steps: off by default.
+        auto& seq = br.seq;
+        seq.clearAll();
+        tb::SeqStep st; st.on = true; st.velocity = 90;
+        for (int k = 0; k < 16; ++k) seq.set (3, k, st);
+        r.host.playing = true; r.host.ppq = 0.0;
+        int stepNotes = 0;
+        for (int i = 0; i < 20; ++i) stepNotes += (int) notes (block(), true).size();
+        r.p.setMidiOut (true, false, true);
+        int stepNotes2 = 0, stepOffs = 0;
+        for (int i = 0; i < 20; ++i) { auto m = block(); stepNotes2 += (int) notes (m, true).size(); stepOffs += (int) notes (m, false).size(); }
+        r.p.setMidiOut (true, false, false);
+        check (stepNotes == 0 && stepNotes2 > 0 && std::abs (stepOffs - stepNotes2) <= 1, "sequencer steps go out only with that option on (each with its note off)");
+        seq.clearAll();
+
+        // The "Twisted Breaks Notes" port.
+        r.p.setMidiOut (false, true, false);
+        rec.got.clear();
+        r.p.triggerPadFromUi (3, 1.0f, true);
+        const auto viaPlugin = notes (block(), true);
+        if (auto* np = r.p.getNotesPortForTesting()) np->drainForTesting();
+        check (viaPlugin.empty() && rec.got.size() == 1 && rec.got[0].isNoteOn(), "the Twisted Breaks Notes port carries the same notes (plugin out off here)");
+        r.p.triggerPadFromUi (3, 0.0f, false);
+        block();
+        r.p.setMidiOut (true, false, false);
+
+        // ---- Stop means stop.
+        auto level = [&] { float m = 0.0f; for (int i = 0; i < 16; ++i) { block(); m = juce::jmax (m, buf.getMagnitude (0, kBlock)); } return m; };
+        r.p.getPadOps();   // (keep)
+        setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+        setPadParam (r.p, 0, tb::params::padSwap, 1.0f);           // a SWAP pad latches while Live plays
+        setPadParam (r.p, 0, tb::params::padVelSens, 0.0f);
+        r.host.playing = true;
+        r.p.triggerPadFromUi (0, 1.0f, true);
+        block();
+        r.p.triggerPadFromUi (0, 0.0f, false);
+        const float playingLevel = level();
+        r.host.playing = false;
+        block(); block();
+        const float stoppedLevel = level();
+        check (playingLevel > 0.05f && stoppedLevel < 1.0e-4f, "Live stops: a latched SWAP loop stops too (" + juce::String (playingLevel, 3) + " -> " + juce::String (stoppedLevel, 6) + ")");
+
+        setPadParam (r.p, 0, tb::params::padSwap, 0.0f);
+        setPadParam (r.p, 0, tb::params::padSliceSeq, 1.0f);        // a slice sequence
+        r.host.playing = true;
+        r.p.triggerPadFromUi (0, 1.0f, true);
+        block();
+        r.p.triggerPadFromUi (0, 0.0f, false);
+        const float seqPlaying = level();
+        r.host.playing = false;
+        block(); block();
+        const float seqStopped = level();
+        check (seqPlaying > 0.05f && seqStopped < 1.0e-4f, "Live stops: a running slice sequence stops (" + juce::String (seqPlaying, 3) + " -> " + juce::String (seqStopped, 6) + ")");
+
+        // While stopped: plays while held, never latches.
+        r.p.triggerPadFromUi (0, 1.0f, true);
+        const float held = level();
+        r.p.triggerPadFromUi (0, 0.0f, false);
+        block(); block();
+        check (held > 0.05f && level() < 1.0e-4f, "with Live stopped a pad plays while held and stops when let go (nothing on the free clock)");
+        setPadParam (r.p, 0, tb::params::padSliceSeq, 0.0f);
+        setPadParam (r.p, 0, tb::params::padSwap, 1.0f);
+        r.p.triggerPadFromUi (0, 1.0f, true);
+        const float swapHeld = level();
+        r.p.triggerPadFromUi (0, 0.0f, false);
+        block(); block();
+        check (swapHeld > 0.05f && level() < 1.0e-4f, "...SWAP pads too");
+        tb::NotesPort::setSinkForTesting (nullptr);
     }
 
     void testA10()
@@ -6905,6 +7034,7 @@ int main (int argc, char* argv[])
         testA11Presets();
         testA11Extras();
         testA11ExportSong();
+        testA12MidiStop();
         testEditorDrivesState();
         testRealtimeSafety();
 

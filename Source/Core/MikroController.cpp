@@ -339,6 +339,7 @@ namespace tb
         if (pad != selectedPad.load()) heldSteps.clear();
         if (pad != chosenFor) { chosenSlice = 0; chosenFor = pad; }      // a new pad starts on WHOLE (A10)
         selectedPad = pad;
+        bridge.selectedPad.store (pad);
         ++selectionVersion;
         processor.getMutator().setSelectedPad (pad);
         processor.getResampler().setSelectedPad (pad);
@@ -355,6 +356,7 @@ namespace tb
         if (pad < 0) return;
         if (heldRoll[(size_t) i]) bridge.mikroEvents.push ({ ControllerHit::rollOff, (int8_t) pad, 0, 0, 0.0f });
         if (! heldSlice[(size_t) i]) bridge.mikroEvents.push ({ ControllerHit::padOff, (int8_t) pad, 0, 0, 0.0f });
+        else                         bridge.mikroEvents.push ({ ControllerHit::sliceOff, (int8_t) pad, (uint8_t) (padNumberOf (i) + 1), 0, 0.0f });   // (MIDI out: note off)
         bridge.padPressure[(size_t) pad].store (0.0f);
         heldPlay[(size_t) i] = -1;
         heldRoll[(size_t) i] = heldSlice[(size_t) i] = false;

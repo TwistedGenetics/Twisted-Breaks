@@ -102,6 +102,14 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.22.1: record your jamming, stop means stop
+
+- [ ] VST3: new MIDI track, MIDI From = Twisted Breaks track / Twisted Breaks, arm, record while playing pads (mouse, Mikro, Push): notes land in the clip in time.
+- [ ] Route that track's MIDI To the Twisted Breaks track (disarm the recorder) and play the clip: the jam plays back. Mikro KEYBOARD slices too (channel 2).
+- [ ] AU: LIGHTS > "Twisted Breaks Notes" port on; Live Settings > MIDI: Track on for Twisted Breaks Notes; record on a MIDI track with that input.
+- [ ] Start Live, latch a SWAP loop, start a slice sequence and a SEQ pad, stop Live: all stop at once.
+- [ ] With Live stopped, hold a loop pad: plays while held, stops on release; nothing keeps running.
+
 ## 0.22: export and song
 
 - [ ] PRESETS > EXPORT > The whole kit > 4 bars: RENDER % then DRAG WAV; drag it onto an audio track: 4 bars, in time, sounds like the kit.

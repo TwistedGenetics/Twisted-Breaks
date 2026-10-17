@@ -824,12 +824,115 @@ namespace tb
 
     void AudioEngine::releasePad (int pad) noexcept
     {
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+
+        // A12: with Live stopped nothing latches: loops, SWAP pads, slice sequences and
+        // sequence pads play only while held (one-shots finish as usual).
+        const bool stopped = transportNow == nullptr || ! transportNow->isPlaying;
+        if (stopped)
+        {
+            if (sliceRun[(size_t) pad].running) stopSliceSeq (pad);
+            if (laneRun[(size_t) pad].running)  stopLane (pad);
+            const int g = padSwap[(size_t) pad];
+            if (g > 0)
+            {
+                if (pendingSwap[(size_t) g].active && pendingSwap[(size_t) g].pad == pad) pendingSwap[(size_t) g] = {};
+                if (swapPlaying[(size_t) g] == pad) swapPlaying[(size_t) g] = -1;
+            }
+            for (auto& v : voices[(size_t) pad])
+                if (v.isLooping()) v.release();
+            return;
+        }
+
         // One-shots (and slices) ignore note-off; loops play while held.
         // Pads in a SWAP group latch: they play until another pad takes over.
-        if (! juce::isPositiveAndBelow (pad, kNumPads) || padMode[(size_t) pad] != params::modeLoop
+        if (padMode[(size_t) pad] != params::modeLoop
              || padSwap[(size_t) pad] > 0 || padSliceSeq[(size_t) pad] || isSeqPad (pad)) return;
         for (auto& v : voices[(size_t) pad])
             if (v.isLooping()) v.release();
+    }
+
+    //==========================================================================
+    //  A12: MIDI out of what you play
+    //==========================================================================
+    void AudioEngine::emitNote (int channel, int note, float velocity, int offset, int autoOffSamples) noexcept
+    {
+        if (! bridge.midiOutEnabled.load (std::memory_order_relaxed)) return;
+        if (note < 0 || note > 127 || (channel != 1 && channel != 2)) return;
+        auto& held = outHeld[(size_t) (channel - 1)][(size_t) note];
+        auto& offIn = outOffIn[(size_t) (channel - 1)][(size_t) note];
+        offset = juce::jlimit (0, juce::jmax (0, outBlockLen - 1), offset);
+        auto push = [this, offset] (uint8_t a, uint8_t b, uint8_t c)
+        {
+            if (outCount < kMaxOut) outEvents[(size_t) outCount++] = { offset, { a, b, c } };
+        };
+        const auto st = (uint8_t) (channel - 1);
+        if (velocity <= 0.0f)
+        {
+            if (! held) return;
+            push ((uint8_t) (0x80 | st), (uint8_t) note, 0);
+            held = false;
+            offIn = 0;
+            return;
+        }
+        if (held) push ((uint8_t) (0x80 | st), (uint8_t) note, 0);          // the last one ends here
+        push ((uint8_t) (0x90 | st), (uint8_t) note, (uint8_t) juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)));
+        held = true;
+        offIn = 0;
+        if (autoOffSamples > 0)
+        {
+            const int at = offset + autoOffSamples;
+            if (at < outBlockLen)
+            {
+                if (outCount < kMaxOut) outEvents[(size_t) outCount++] = { at, { (uint8_t) (0x80 | st), (uint8_t) note, 0 } };
+                held = false;
+            }
+            else offIn = at - outBlockLen + 1;        // samples into a later block (+1: 0 means none)
+        }
+    }
+
+    void AudioEngine::emitPadNote (int pad, float velocity, int offset, int autoOffSamples) noexcept
+    {
+        if (juce::isPositiveAndBelow (pad, kNumPads)) emitNote (1, getPadNote (pad), velocity, offset, autoOffSamples);
+    }
+
+    void AudioEngine::flushAutoOffs (int numSamples) noexcept
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            for (int n = 0; n < 128; ++n)
+            {
+                auto& offIn = outOffIn[(size_t) ch][(size_t) n];
+                if (offIn <= 0) continue;
+                if (offIn - 1 < numSamples)
+                {
+                    if (outHeld[(size_t) ch][(size_t) n] && outCount < kMaxOut)
+                        outEvents[(size_t) outCount++] = { offIn - 1, { (uint8_t) (0x80 | ch), (uint8_t) n, 0 } };
+                    outHeld[(size_t) ch][(size_t) n] = false;
+                    offIn = 0;
+                }
+                else offIn -= numSamples;
+            }
+    }
+
+    void AudioEngine::stopAllBreaks() noexcept
+    {
+        // Live stopped: every break stops (5 ms fades), whatever its mode. FX tails ring on.
+        for (auto& padVoices : voices)
+            for (auto& v : padVoices)
+                v.release();
+        for (auto& r : rollRun) r.active = false;
+        pendingSwap.fill ({});
+        swapPlaying.fill (-1);
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            if (sliceRun[(size_t) p].running) stopSliceSeq (p);
+            if (laneRun[(size_t) p].running)  stopLane (p);
+            bridge.padQueued[(size_t) p].store (false, std::memory_order_relaxed);
+        }
+        // Notes still sounding on the MIDI out end too.
+        for (int ch = 0; ch < 2; ++ch)
+            for (int n = 0; n < 128; ++n)
+                if (outHeld[(size_t) ch][(size_t) n]) emitNote (ch + 1, n, 0.0f, 0);
     }
 
     void AudioEngine::panic() noexcept
@@ -874,12 +977,23 @@ namespace tb
             const int learning = learnPad.exchange (-1);
             if (learning >= 0) setPadNote (learning, m.getNoteNumber());
 
+            // A12: channel 2, notes 36-51 = slices 1-16 of the selected pad (what the MIDI out sends for slice hits).
+            const int slice = m.getNoteNumber() - kSliceBaseNote + 1;
+            if (m.getChannel() == kSliceChannel && bridge.midiSliceChannel.load (std::memory_order_relaxed) && slice >= 1 && slice <= 16)
+            {
+                const int sp = juce::jlimit (0, kNumPads - 1, bridge.selectedPad.load (std::memory_order_relaxed));
+                recordHit (sp, m.getFloatVelocity(), currentOffset, slice);
+                controllerSliceHit (sp, slice, m.getFloatVelocity(), currentOffset);
+                return;
+            }
             const int pad = padForNote (m.getNoteNumber());
             if (pad >= 0) { recordHit (pad, m.getFloatVelocity(), currentOffset); triggerPad (pad, m.getFloatVelocity(), currentOffset); }
             else          handleFxNote (m.getNoteNumber(), true);
         }
         else if (m.isNoteOff())
         {
+            if (m.getChannel() == kSliceChannel && bridge.midiSliceChannel.load (std::memory_order_relaxed)
+                 && m.getNoteNumber() >= kSliceBaseNote && m.getNoteNumber() < kSliceBaseNote + 16) return;
             const int pad = padForNote (m.getNoteNumber());
             if (pad >= 0) releasePad (pad);
             else          handleFxNote (m.getNoteNumber(), false);
@@ -1601,6 +1715,9 @@ namespace tb
     {
         const int numSamples = buffer.getNumSamples();
         buffer.clear();
+        outCount = 0;
+        outBlockLen = numSamples;
+        flushAutoOffs (numSamples);
         padPeak.fill (0.0f);
         padFlash.fill (false);
         groupPeak.fill (0.0f);
@@ -1626,6 +1743,10 @@ namespace tb
                     if (v.isActive()) v.setPressure (sm, what, sixteenth);
             }
         }
+
+        // ---- A12: Live stopped -> every break stops, whatever is playing.
+        if (wasPlayingLast && ! transport.isPlaying) stopAllBreaks();
+        wasPlayingLast = transport.isPlaying;
 
         // ---- Synced loops re-lock to the host's position at the block start.
         if (transport.isPlaying)
@@ -1655,8 +1776,8 @@ namespace tb
         PadUiEvent ev;
         while (bridge.padEvents.pop (ev))
         {
-            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
-            else           releasePad (ev.pad);
+            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); emitPadNote (ev.pad, ev.velocity, 0); }
+            else           { releasePad (ev.pad); emitPadNote (ev.pad, 0.0f, 0); }
         }
         // ---- A8: the Mikro MK3 (pads, slices, note-repeat rolls).
         {
@@ -1667,18 +1788,26 @@ namespace tb
                 if (p < 0 || p >= kNumPads) continue;
                 switch (h.kind)
                 {
-                    case ControllerHit::padOn:     pressNow[(size_t) p] = 0.0f; recordHit (p, h.velocity, 0); triggerPad (p, h.velocity, 0); break;
-                    case ControllerHit::padOff: releasePad (p); break;
+                    case ControllerHit::padOn:     pressNow[(size_t) p] = 0.0f; recordHit (p, h.velocity, 0); triggerPad (p, h.velocity, 0); emitPadNote (p, h.velocity, 0); break;
+                    case ControllerHit::padOff: releasePad (p); emitPadNote (p, 0.0f, 0); break;
                     case ControllerHit::sliceOn:
                         recordHit (p, h.velocity, 0, h.slice);          // A9: armed lane + Live playing: written with its slice
                         controllerSliceHit (p, h.slice, h.velocity, 0);
+                        emitNote (kSliceChannel, kSliceBaseNote + juce::jlimit (1, 16, (int) h.slice) - 1, h.velocity, 0);
+                        break;
+                    case ControllerHit::sliceOff:
+                        emitNote (kSliceChannel, kSliceBaseNote + juce::jlimit (1, 16, (int) h.slice) - 1, 0.0f, 0);
                         break;
                     case ControllerHit::rollOn:
                         // A press that just played (velocity > 0 = it came with the hit) skips grid points in the next 10 ms.
                         rollRun[(size_t) p] = { true, juce::jlimit (0, 2, (int) h.rate), juce::jmax (0.01f, std::abs (h.velocity)), h.slice,
                                                 h.velocity > 0.0f ? clockAt (0) + 0.010 * sampleRate * clockDppq : -1.0e300 };
                         break;
-                    case ControllerHit::rollOff: rollRun[(size_t) p].active = false; break;
+                    case ControllerHit::rollOff:
+                        rollRun[(size_t) p].active = false;
+                        if (rollRun[(size_t) p].slice > 0) emitNote (kSliceChannel, kSliceBaseNote + rollRun[(size_t) p].slice - 1, 0.0f, 0);
+                        else                               emitPadNote (p, 0.0f, 0);
+                        break;
                 }
             }
             addRollEvents (numSamples);
@@ -1689,8 +1818,8 @@ namespace tb
         {
             if (ev.pad < 0 || ev.pad >= kNumPads) continue;
             if (ev.noteOn) pressNow[(size_t) ev.pad] = 0.0f;       // a fresh hit starts without the last press's pressure
-            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); }
-            else           releasePad (ev.pad);
+            if (ev.noteOn) { recordHit (ev.pad, ev.velocity, 0); triggerPad (ev.pad, ev.velocity, 0); emitPadNote (ev.pad, ev.velocity, 0); }
+            else           { releasePad (ev.pad); emitPadNote (ev.pad, 0.0f, 0); }
         }
 
         // ---- Sample-accurate MIDI and sequencer steps, in time order: render
@@ -1718,6 +1847,8 @@ namespace tb
                     {
                         const auto st = SeqStep::unpack (e.step);
                         triggerPad (e.pad, e.velocity, e.offset, true, &st);
+                        if (bridge.midiOutSteps.load (std::memory_order_relaxed) && st.hit)
+                            emitPadNote (e.pad, e.velocity, e.offset, juce::jmax (1, (int) (seqStepPpq / juce::jmax (1.0e-9, clockDppq) * 0.9)));
                         break;
                     }
                     case SeqKind::stepFxOn:
@@ -1733,7 +1864,14 @@ namespace tb
                             sliceHit (e.pad, SliceStep::unpack (e.step), e.velocity, e.offset);
                         break;
                     case SeqKind::rollHit:
-                        if (rollRun[(size_t) e.pad].active) controllerSliceHit (e.pad, (int) e.step, e.velocity, e.offset);
+                        if (rollRun[(size_t) e.pad].active)
+                        {
+                            controllerSliceHit (e.pad, (int) e.step, e.velocity, e.offset);
+                            static constexpr double kRollLen[] = { 0.5, 0.25, 0.125 };
+                            const int len = juce::jmax (1, (int) (kRollLen[juce::jlimit (0, 2, rollRun[(size_t) e.pad].rate)] / juce::jmax (1.0e-9, clockDppq) * 0.5));
+                            if ((int) e.step > 0) emitNote (kSliceChannel, kSliceBaseNote + (int) e.step - 1, e.velocity, e.offset, len);
+                            else                  emitPadNote (e.pad, e.velocity, e.offset, len);
+                        }
                         break;
                     case SeqKind::sliceRelease:
                         if (sliceRun[(size_t) e.pad].running && sliceRun[(size_t) e.pad].gen == e.gen)

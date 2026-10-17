@@ -18,6 +18,7 @@
 #include "Core/PresetManager.h"
 #include "Core/Exporter.h"
 #include "Core/SongMode.h"
+#include "Core/NotesPort.h"
 
 /*
     TwistedBreaksProcessor
@@ -51,7 +52,7 @@ public:
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool   acceptsMidi() const override  { return true; }
-    bool   producesMidi() const override { return false; }
+    bool   producesMidi() const override { return true; }    // A12: what you play goes out, for recording in Live
     bool   isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.5; }
 
@@ -83,6 +84,14 @@ public:
     tb::PresetManager&   getPresets() noexcept   { return *presets; }
     tb::Exporter&        getExporter() noexcept  { return *exporter; }
     tb::SongMode&        getSong() noexcept      { return *song; }
+
+    // ---- A12: MIDI out of what you play (message thread) -------------------------
+    void setMidiOut (bool pluginOut, bool port, bool steps);
+    bool getMidiOutPlugin() const noexcept { return midiOutPlugin.load(); }
+    bool getMidiOutPort() const noexcept   { return midiOutPort.load(); }
+    bool getMidiOutSteps() const noexcept  { return bridge.midiOutSteps.load(); }
+    bool isNotesPortAvailable() const noexcept { return notesPort != nullptr && notesPort->isAvailable(); }
+    tb::NotesPort* getNotesPortForTesting() noexcept { return notesPort.get(); }
 
     // ---- MUTATE (see Mutator) -----------------------------------------------------
     /** Message thread: arm a pattern change; returns a frame it replaced (not applied). */
@@ -161,6 +170,12 @@ private:
     std::unique_ptr<tb::Resampler>       resampler;
     std::unique_ptr<tb::PushController>  push;
     std::unique_ptr<tb::MikroTester>     mikro;      // Mikro MK3 USB test (not saved)
+    std::atomic<bool> midiOutPlugin { true }, midiOutPort { false };
+    tb::NotesPort::Queue notesQueue;
+    std::shared_ptr<tb::NotesPort> notesPort;
+    std::array<tb::AudioEngine::OutEvent, 1024> outCollected {};
+    int outCollectedCount = 0;
+    void collectOut (int offset) noexcept;
     std::unique_ptr<tb::PadOps>          padOps;     // A11: copy / paste / undo
     std::unique_ptr<tb::PresetManager>   presets;    // A11: kits, pads, sequences
     std::unique_ptr<tb::SongMode>        song;       // A11: snapshot chain

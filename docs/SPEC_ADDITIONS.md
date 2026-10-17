@@ -514,3 +514,23 @@ plays a one-shot / slice break at Live's tempo.
 whole kit for N bars to WAV (rendered offline at Live's tempo), and drag a
 MIDI clip of the main sequence into Live. Song mode chains snapshots (slot,
 bars) and steps through them while Live plays.
+
+## A12. Record your jamming, stop means stop, stretch modes, macro editor, AKAIZER
+
+Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
+
+1. **MIDI out of what you play.** Pad hits from the mouse, Push, the Mikro and
+   note-repeat rolls go out on channel 1 as the pads' notes (velocity, note
+   off); Mikro KEYBOARD slices on channel 2, notes 36-51. Plugin MIDI out
+   (VST3) and a virtual port "Twisted Breaks Notes" (AU / any). Incoming MIDI
+   isn't echoed; sequencer steps only with "Include sequencer steps". Channel
+   2 notes 36-51 coming in play slices of the selected pad.
+2. **Stop means stop.** Live stopping stops every break (5 ms fades; FX tails
+   ring). While stopped, pads play while held only.
+3. **STRETCH per pad**: Off / Repitch / Beats / Texture / Akai cyclic; better
+   tempo detection, ORIGINAL BPM, pitch without speed.
+4. **Macro editor**: each macro's recipe editable (every FX setting, MILD /
+   HARD), add / remove FX, rename, reset; saved in the set, kits, .tbmacro.
+5. **AKAIZER** (replaces STUTTER in the grid): cyclic time-stretch / pitch shift
+   after the Akai S-series (Classic / Revised splices, CYCLE, PITCH, STRETCH,
+   MIX); per-pad Akai stretch mode and RENDER AKAI.

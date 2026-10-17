@@ -4,7 +4,7 @@
 # =============================================================================
 cmake_minimum_required(VERSION 3.22)
 
-project(TwistedBreaks VERSION 0.22.0 LANGUAGES C CXX)
+project(TwistedBreaks VERSION 0.22.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,7 +52,7 @@ juce_add_plugin(TwistedBreaks
     FORMATS                     ${TB_FORMATS}
     IS_SYNTH                    TRUE        # an instrument: Ableton shows it under Instruments
     NEEDS_MIDI_INPUT            TRUE
-    NEEDS_MIDI_OUTPUT           FALSE
+    NEEDS_MIDI_OUTPUT           TRUE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     VST3_CATEGORIES             Instrument Sampler Drum

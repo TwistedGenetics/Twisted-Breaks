@@ -128,6 +128,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
 
 TwistedBreaksProcessor::~TwistedBreaksProcessor()
 {
+    if (notesPort != nullptr) notesPort->detach (&notesQueue);
     push.reset();      // first: it uses the mutator and resampler
     mikroMode.reset(); // (it uses them too, and the snapshots)
     mikro.reset();
@@ -422,9 +423,11 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     if (numCuts == 2 && cuts[1] < cuts[0]) std::swap (cuts[0], cuts[1]);
     cuts[numCuts++] = n;
 
+    outCollectedCount = 0;
     if (numCuts == 1)
     {
         engine.process (buffer, midi, ts, p);
+        collectOut (0);
     }
     else
     {
@@ -442,6 +445,7 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             tsPart.numSamples = end - pos;
             if (pos > 0) tsPart.justStarted = tsPart.justStopped = tsPart.jumped = false;
             engine.process (part, midiFirst, tsPart, p);
+            collectOut (pos);
 
             if (end < n)
             {
@@ -452,8 +456,41 @@ void TwistedBreaksProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         }
     }
 
-    midi.clear();   // instrument: nothing passes through
+    midi.clear();   // instrument: nothing passes through...
+    // ...except what you play (A12): the plugin's MIDI out and the "Twisted Breaks Notes" port.
+    const bool toPlugin = midiOutPlugin.load (std::memory_order_relaxed);
+    const bool toPort   = midiOutPort.load (std::memory_order_relaxed);
+    for (int i = 0; i < outCollectedCount; ++i)
+    {
+        const auto& e = outCollected[(size_t) i];
+        if (toPlugin) midi.addEvent (e.bytes, 3, juce::jlimit (0, juce::jmax (0, n - 1), e.offset));
+        if (toPort)   notesQueue.push ({ { e.bytes[0], e.bytes[1], e.bytes[2] } });
+    }
     blockEpoch.fetch_add (1, std::memory_order_release);
+}
+
+void TwistedBreaksProcessor::collectOut (int offset) noexcept
+{
+    for (int i = 0; i < engine.getOutCount() && outCollectedCount < (int) outCollected.size(); ++i)
+    {
+        auto e = engine.getOut (i);
+        e.offset += offset;
+        outCollected[(size_t) outCollectedCount++] = e;
+    }
+}
+
+void TwistedBreaksProcessor::setMidiOut (bool pluginOut, bool port, bool steps)
+{
+    midiOutPlugin = pluginOut;
+    bridge.midiOutSteps = steps;
+    if (port != midiOutPort.load())
+    {
+        midiOutPort = port;
+        if (port) { notesPort = tb::NotesPort::shared(); notesPort->attach (&notesQueue); }
+        else if (notesPort != nullptr) { notesPort->detach (&notesQueue); notesPort.reset(); }
+    }
+    bridge.midiOutEnabled = pluginOut || port;
+    markStateChanged();
 }
 
 //==============================================================================
@@ -504,6 +541,10 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
     meta.setProperty ("pluginVersion", JucePlugin_VersionString, nullptr);
+    meta.setProperty ("midiOutPlugin", midiOutPlugin.load(), nullptr);
+    meta.setProperty ("midiOutPort", midiOutPort.load(), nullptr);
+    meta.setProperty ("midiOutSteps", bridge.midiOutSteps.load(), nullptr);
+    meta.setProperty ("midiSliceChannel", bridge.midiSliceChannel.load(), nullptr);
     if (presets != nullptr)
     {
         meta.setProperty ("kitName", presets->getKitName(), nullptr);
@@ -558,6 +599,15 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     if (padOps != nullptr) padOps->reset();             // a new project: no undo back into the old one
+    {
+        const auto m = state.getChildWithName (kMetaId);
+        const bool po = (bool) m.getProperty ("midiOutPlugin", true), pt = (bool) m.getProperty ("midiOutPort", false),
+                   st = (bool) m.getProperty ("midiOutSteps", false);
+        bridge.midiSliceChannel = (bool) m.getProperty ("midiSliceChannel", true);
+        auto apply = [this, po, pt, st] { setMidiOut (po, pt, st); };
+        if (juce::MessageManager::getInstanceWithoutCreating() != nullptr && juce::MessageManager::getInstance()->isThisTheMessageThread()) apply();
+        else juce::MessageManager::callAsync (apply);
+    }
     if (presets != nullptr)
     {
         const auto m = state.getChildWithName (kMetaId);

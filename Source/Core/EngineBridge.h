@@ -72,7 +72,7 @@ namespace tb
     /** A8: what the Mikro MK3 asks of the engine (its USB thread is the only producer). */
     struct ControllerHit
     {
-        enum Kind : uint8_t { padOn, padOff, sliceOn, rollOn, rollOff };
+        enum Kind : uint8_t { padOn, padOff, sliceOn, rollOn, rollOff, sliceOff };   // sliceOff: only for MIDI out (A12)
         Kind    kind = padOn;
         int8_t  pad = 0;
         uint8_t slice = 0;       // 1..16 (slice hits, rolls of a slice)
@@ -121,6 +121,12 @@ namespace tb
         std::array<std::atomic<bool>, kNumPads> sliceFill {};    // FILL held (UI -> audio)
 
         std::atomic<int>      lastMidiNote     { -1 };
+
+        // ---- A12: MIDI out of what you play (for recording into Live) ----------------
+        std::atomic<bool> midiOutEnabled { true };    // anything goes out at all (plugin out / port)
+        std::atomic<bool> midiOutSteps   { false };   // main-sequencer steps too
+        std::atomic<bool> midiSliceChannel { true };  // channel 2 notes 36-51 in = slices of the selected pad
+        std::atomic<int>  selectedPad    { 0 };       // the window / controller selection (channel-2 slices)
         std::atomic<int>      lastMidiVelocity { 0 };
         std::atomic<uint32_t> midiEventCount   { 0 };
 
