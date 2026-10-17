@@ -104,7 +104,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 
 ## Mikro MK3 mode (0.16)
 - [ ] NI's Maschine app closed. LIGHTS > Mikro MK3 mode: the pads light, the screen shows PADS A and the pad
-- [ ] PAD MODE: pads play with velocity (Mikro pad 13 top left = plugin 01), pressure works (pad's Pressure setting), GROUP flips to B
+- [ ] PAD MODE: pads play with velocity (Mikro pad 1, bottom left = plugin 01), pressure works (pad's Pressure setting), GROUP flips to B
 - [ ] STEP: tap steps on / off, hold one + turn the encoder (push = next field), > for 17-32, playhead moves
 - [ ] KEYBOARD: a sliced break plays slice by slice; PERFORM: pads switch the FX; SCENE: SHIFT + pad stores, pad recalls
 - [ ] Encoder pages: PLUG-IN / SWING / VOLUME, push = next setting, the screen shows name + value
@@ -177,7 +177,7 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Save, close, reopen: slots, steps and settings come back
 
 ## MIDI pad triggering
-- [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 in reading order (top-left = pad 1); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
+- [ ] ✅ Notes **C1–D#2 (36–51)** fire pads 1–16 (0.16.1: bottom-left = pad 1, top-right = pad 16, like a Drum Rack); pad lamp flashes; MIDI lamp blinks; LAST NOTE shows the note
 - [ ] ✅ Velocity changes loudness (play soft vs hard from a controller)
 - [ ] ✅ Mouse: clicking near the top of a pad is louder than near the bottom
 - [ ] ✅ Notes outside 36–51 do nothing (but still blink the MIDI lamp)

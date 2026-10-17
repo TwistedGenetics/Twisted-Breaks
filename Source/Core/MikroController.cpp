@@ -400,7 +400,7 @@ namespace tb
                         if (pad < 0) continue;
                         if (e.down && ! heldRoll[(size_t) i])
                         {
-                            const int slice = heldSlice[(size_t) i] ? positionOf (i) + 1 : 0;
+                            const int slice = heldSlice[(size_t) i] ? i + 1 : 0;
                             bridge.mikroEvents.push ({ ControllerHit::rollOn, (int8_t) pad, (uint8_t) slice, (uint8_t) rollRate.load(), -heldVel[(size_t) i] });
                             heldRoll[(size_t) i] = true;
                         }
@@ -426,7 +426,6 @@ namespace tb
             const bool down = e.padEvent == 0x10, up = e.padEvent == 0x20 || e.padEvent == 0x30;
             if (! down && ! up) continue;
 
-            const int pos = positionOf (i);
             const auto mode = getMode();
             const float vel = fixedVelOn.load() ? 1.0f : velocityOf (e.value);
             if (down && (usbMods & noPlay) == 0 && (mode == Mode::pads || mode == Mode::keyboard))
@@ -436,7 +435,7 @@ namespace tb
                 if (mode == Mode::pads)
                 {
                     const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
-                    pad = view * kPadsPerScene + pos;
+                    pad = view * kPadsPerScene + i;          // pad numbers match: 1 bottom left
                     selectedPad = pad;                 // (the message thread does the rest of selecting)
                     bridge.padPressure[(size_t) pad].store (0.0f);
                     bridge.mikroEvents.push ({ ControllerHit::padOn, (int8_t) pad, 0, 0, vel });
@@ -444,7 +443,7 @@ namespace tb
                 else
                 {
                     pad = selectedPad.load();
-                    slice = pos + 1;
+                    slice = i + 1;
                     bridge.mikroEvents.push ({ ControllerHit::sliceOn, (int8_t) pad, (uint8_t) slice, 0, vel });
                 }
                 heldPlay[(size_t) i] = pad;
@@ -460,7 +459,7 @@ namespace tb
             else if (up) releaseHeld (i);              // released as it was pressed (pad or slice)
 
             Event q = e;
-            q.index = pos;            // the message thread works in plugin positions
+            q.index = i;              // Mikro pad number (0 = bottom left)
             q.down = down;
             inbox.push (q);
         }
@@ -779,8 +778,9 @@ namespace tb
         }
     }
 
-    void MikroController::handlePad (int pos, bool down, double nowMs)
+    void MikroController::handlePad (int i, bool down, double nowMs)
     {
+        const int pos = positionOf (i);           // reading order (steps, FX grid)
         const auto mode = getMode();
         const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
         auto& seq = bridge.seq;
@@ -791,7 +791,7 @@ namespace tb
             case Mode::pads:
             {
                 if (! down) return;
-                const int pad = view * kPadsPerScene + pos;
+                const int pad = view * kPadsPerScene + i;
                 auto toggle = [this, pad] (const char* name)
                 {
                     const auto id = params::padId (pad, name);
@@ -851,7 +851,7 @@ namespace tb
                 return;
             }
             case Mode::keyboard:
-                if (down) flash ("SLICE", juce::String (pos + 1), nowMs);
+                if (down) flash ("SLICE", juce::String (i + 1), nowMs);
                 return;
             case Mode::perform:
                 if (down) lastFx = pos;
@@ -859,9 +859,9 @@ namespace tb
                 if (down) flash (fx::def (pos).name, raw (fx::paramId (groupOf (sel), pos)) > 0.5f ? "ON" : "OFF", nowMs);
                 return;
             case Mode::scene:
-                if (! down || pos >= SnapshotManager::kSlots) return;
-                if (held[shift]) { processor.getSnapshots().store (pos); flash ("SNAPSHOT", "STORE " + juce::String (pos + 1), nowMs); }
-                else             { processor.getSnapshots().recall (pos); flash ("SNAPSHOT", juce::String (pos + 1), nowMs); }
+                if (! down || i >= SnapshotManager::kSlots) return;       // pads 1-8
+                if (held[shift]) { processor.getSnapshots().store (i); flash ("SNAPSHOT", "STORE " + juce::String (i + 1), nowMs); }
+                else             { processor.getSnapshots().recall (i); flash ("SNAPSHOT", juce::String (i + 1), nowMs); }
                 return;
         }
     }
@@ -932,14 +932,15 @@ namespace tb
         lights.setButton (play, bridge.transport.isPlaying.load (std::memory_order_relaxed) ? levelBright : levelOff);
 
         // ---- Pads.
-        for (int pos = 0; pos < 16; ++pos)
+        for (int i = 0; i < 16; ++i)               // Mikro pad (0 = bottom left)
         {
+            const int pos = positionOf (i);            // reading order
             int colour = off, level = 0;
             switch (mode)
             {
                 case Mode::pads:
                 {
-                    const int pad = view * kPadsPerScene + pos;
+                    const int pad = view * kPadsPerScene + i;
                     const bool muted   = raw (params::padId (pad, params::padMute)) > 0.5f;
                     const bool queued  = bridge.padQueued[(size_t) pad].load (std::memory_order_relaxed);
                     const bool running = bridge.laneStep[(size_t) pad].load (std::memory_order_relaxed) >= 0
@@ -976,7 +977,7 @@ namespace tb
                     const bool loaded = bridge.padLoaded[(size_t) sel].load (std::memory_order_relaxed);
                     colour = loaded ? lightOrange : off;
                     level = 1;
-                    if ((heldMask.load() >> hidPadOf (pos)) & 1u) { colour = white; level = 3; }
+                    if ((heldMask.load() >> i) & 1u) { colour = white; level = 3; }
                     break;
                 }
                 case Mode::perform:
@@ -990,16 +991,16 @@ namespace tb
                 }
                 case Mode::scene:
                 {
-                    if (pos >= SnapshotManager::kSlots) break;
+                    if (i >= SnapshotManager::kSlots) break;
                     using S = SnapshotManager::SlotState;
-                    const auto stt = processor.getSnapshots().getState (pos);
+                    const auto stt = processor.getSnapshots().getState (i);
                     colour = blue;
                     level = stt == S::empty ? 0 : stt == S::active ? 3 : (stt == S::loading || stt == S::waiting) ? (blinkOn ? 3 : 0) : 1;
                     if (stt == S::empty) colour = off;
                     break;
                 }
             }
-            lights.setPad (hidPadOf (pos), colour, level);
+            lights.setPad (i, colour, level);
         }
 
         // ---- Touch strip: where the crossfader (SHIFT: macro amount) is.

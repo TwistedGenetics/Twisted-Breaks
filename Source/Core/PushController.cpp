@@ -329,11 +329,11 @@ namespace tb
     {
         if (row < 0 || row > 7 || col < 0 || col > 7) return -1;
         if (row >= 4)
-            return (col / 4) * kPadsPerScene + (7 - row) * 4 + (col % 4);    // A left, B right, 01 top left
+            return (col / 4) * kPadsPerScene + (row - 4) * 4 + (col % 4);    // A left, B right, 01 bottom left
         if (layoutAtomic.load() == 1)
         {
             const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
-            return view * kPadsPerScene + (3 - row) * 4 + col / 2;           // big pads, 2 wide
+            return view * kPadsPerScene + row * 4 + col / 2;                 // big pads, 2 wide, 01 bottom left
         }
         return -1;                                                              // a step
     }

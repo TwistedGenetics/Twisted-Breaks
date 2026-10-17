@@ -3849,62 +3849,62 @@ namespace
                                48000.0, Fmt::wavFloat));
         step();
         const int lenNow = juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::seqLength)->load());
-        check (rec.padLed (padNote (7, 0)) == 9 && rec.padLed (padNote (7, 1)) == 10 && rec.padLed (padNote (7, 2)) == 0
+        check (rec.padLed (padNote (4, 0)) == 9 && rec.padLed (padNote (4, 1)) == 10 && rec.padLed (padNote (4, 2)) == 0
                  && rec.padLed (padNote (3, 0)) == 13 && (lenNow > 16 || rec.padLed (padNote (1, 0)) == 0),
                "pads: selected amber, loaded dim amber, empty off; steps: empty dark, past LEN off");
         setPadParam (r.p, 1, tb::params::padMute, 1.0f);
         step();
-        check (rec.padLed (padNote (7, 1)) == 12, "a muted pad shows dim red");
+        check (rec.padLed (padNote (4, 1)) == 12, "a muted pad shows dim red");
         setPadParam (r.p, 1, tb::params::padMute, 0.0f);
 
         // Playing pads: velocity, A / B layout, selection.
         drainPads();
-        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
-        in (juce::MidiMessage::noteOn (1, padNote (4, 7), (juce::uint8) 64));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 1), (juce::uint8) 100));
+        in (juce::MidiMessage::noteOn (1, padNote (7, 7), (juce::uint8) 64));
         auto ev = drainPads();
         check (ev.size() == 2 && ev[0].pad == 1 && ev[0].noteOn && std::abs (ev[0].velocity - 100.0f / 127.0f) < 1e-4f
                  && ev[1].pad == 31 && std::abs (ev[1].velocity - 64.0f / 127.0f) < 1e-4f,
-               "top half = the 32 pads (A left, B right, 01 top left), played straight from the MIDI thread with velocity");
+               "top half = the 32 pads (A left, B right, 01 bottom left), played straight from the MIDI thread with velocity");
         step();
         check (push.getSelectedPad() == 31 && juce::roundToInt (r.p.getParameters().getRawParameterValue (tb::params::sceneView)->load()) == 1,
                "a hit selects the pad, and a scene B pad flips the view to B");
-        in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
-        in (juce::MidiMessage::noteOff (1, padNote (4, 7)));
+        in (juce::MidiMessage::noteOff (1, padNote (4, 1)));
+        in (juce::MidiMessage::noteOff (1, padNote (7, 7)));
         ev = drainPads();
         check (ev.size() == 2 && ! ev[0].noteOn && ev[0].pad == 1 && ! ev[1].noteOn, "releases go through too (loops stop)");
         {
-            in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 127));
+            in (juce::MidiMessage::noteOn (1, padNote (4, 1), (juce::uint8) 127));
             juce::AudioBuffer<float> buf (2, kBlock); juce::MidiBuffer midi;
             runBlock (r.p, r.host, buf, midi);
             check (peakOf (buf) > 0.1f, "a Push hit plays the pad's sound");
-            in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
+            in (juce::MidiMessage::noteOff (1, padNote (4, 1)));
             r.settle();
             drainPads();
         }
 
         // Pressure.
-        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
-        in (juce::MidiMessage::aftertouchChange (1, padNote (7, 1), 64));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 1), (juce::uint8) 100));
+        in (juce::MidiMessage::aftertouchChange (1, padNote (4, 1), 64));
         const float pr = br.padPressure[1].load();
-        in (juce::MidiMessage::noteOff (1, padNote (7, 1)));
+        in (juce::MidiMessage::noteOff (1, padNote (4, 1)));
         check (std::abs (pr - 64.0f / 127.0f) < 1e-4f && br.padPressure[1].load() == 0.0f, "per-pad pressure (poly aftertouch) goes to that pad, back to 0 on release");
         drainPads();
 
         // Modifiers: MUTE / SOLO / SHIFT + pad don't play.
         in (juce::MidiMessage::controllerEvent (1, mute, 127));
-        in (juce::MidiMessage::noteOn (1, padNote (7, 2), (juce::uint8) 100));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 2), (juce::uint8) 100));
         step();
-        in (juce::MidiMessage::noteOff (1, padNote (7, 2)));
+        in (juce::MidiMessage::noteOff (1, padNote (4, 2)));
         in (juce::MidiMessage::controllerEvent (1, mute, 0));
         step();
         check (drainPads().empty() && r.p.getParameters().getRawParameterValue (tb::params::padId (2, tb::params::padMute))->load() > 0.5f,
                "MUTE + pad mutes it (and doesn't play it)");
         setPadParam (r.p, 2, tb::params::padMute, 0.0f);
         in (juce::MidiMessage::controllerEvent (1, shift, 127));
-        in (juce::MidiMessage::noteOn (1, padNote (7, 0), (juce::uint8) 100));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 0), (juce::uint8) 100));
         step();
         in (juce::MidiMessage::controllerEvent (1, shift, 0));
-        in (juce::MidiMessage::noteOff (1, padNote (7, 0)));
+        in (juce::MidiMessage::noteOff (1, padNote (4, 0)));
         step();
         check (drainPads().empty() && push.getSelectedPad() == 0, "SHIFT + pad selects without playing");
 
@@ -4055,23 +4055,23 @@ namespace
         setParam (r.p, tb::params::seqLength, 16.0f);
         in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0));
         step();
-        check (push.getLayout() == tb::PushController::Layout::pads && push.padAt (3, 0) == 0 && push.padAt (3, 1) == 0 && push.padAt (0, 7) == 15,
+        check (push.getLayout() == tb::PushController::Layout::pads && push.padAt (0, 0) == 0 && push.padAt (0, 1) == 0 && push.padAt (3, 7) == 15,
                "LAYOUT: the bottom half becomes the scene on view as big pads");
         in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0));
         step();
         in (juce::MidiMessage::controllerEvent (1, duplicate, 127));
         seq.clearAll();
         { tb::SeqStep st; st.on = true; seq.set (5, 3, st); }
-        in (juce::MidiMessage::noteOn (1, padNote (6, 1), (juce::uint8) 100));     // pad 06
+        in (juce::MidiMessage::noteOn (1, padNote (5, 1), (juce::uint8) 100));     // pad 06
         step();
-        in (juce::MidiMessage::noteOff (1, padNote (6, 1)));
+        in (juce::MidiMessage::noteOff (1, padNote (5, 1)));
         in (juce::MidiMessage::controllerEvent (1, duplicate, 0));
         step();
         check (seq.get (1, 3).on && drainPads().empty(), "DUPLICATE + pad copies that pad's lane onto the selected pad");
 
         // Leaving User mode lets go of everything.
         in (juce::MidiMessage::controllerEvent (1, sceneTop - 1, 127));             // FILL held
-        in (juce::MidiMessage::noteOn (1, padNote (7, 1), (juce::uint8) 100));
+        in (juce::MidiMessage::noteOn (1, padNote (4, 1), (juce::uint8) 100));
         step();
         drainPads();
         rec.msgs.clear();
@@ -4091,8 +4091,8 @@ namespace
             push2.useHubForTesting (hub);
             drainPads();
             rec.msgs.clear();
-            in (juce::MidiMessage::noteOn (1, padNote (7, 3), (juce::uint8) 100));
-            in (juce::MidiMessage::noteOff (1, padNote (7, 3)));
+            in (juce::MidiMessage::noteOn (1, padNote (4, 3), (juce::uint8) 100));
+            in (juce::MidiMessage::noteOff (1, padNote (4, 3)));
             tb::PadUiEvent e; int n2 = 0;
             while (r2.p.getBridge().controllerPadEvents.pop (e)) ++n2;
             now += 25.0; push.processPending (now); push.tick (now);
@@ -4150,7 +4150,7 @@ namespace
         if (grid == nullptr) { check (false, "found the pad grid"); return; }
         hub->dispatch (pushSysex ({ 0x0A, 0x01 }));
         hub->dispatch (juce::MidiMessage::controllerEvent (1, shift, 127));
-        hub->dispatch (juce::MidiMessage::noteOn (1, padNote (5, 6), (juce::uint8) 100));    // B11
+        hub->dispatch (juce::MidiMessage::noteOn (1, padNote (6, 6), (juce::uint8) 100));    // B11
         push.processPending (juce::Time::getMillisecondCounterHiRes());
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
         check (grid->getSelectedPad() == 26, "a pad picked on Push is selected in the plugin window, scene B and all (" + tb::padLabel (grid->getSelectedPad()) + ")");
@@ -4337,17 +4337,17 @@ namespace
 
         // Pads: Mikro pad 13 (top left, HID 12) = plugin pad 01; Mikro pad 1 (bottom left) = 13.
         check (tb::MikroController::positionOf (12) == 0 && tb::MikroController::positionOf (0) == 12 && tb::MikroController::positionOf (3) == 15,
-               "the pads are laid out like the plugin's matrix (01 top left)");
+               "reading order (steps, FX) runs from the top left; pad numbers match the plugin's (1 = bottom left)");
         drain();
-        hit (12, 4095); lift (12);
-        hit (0, 1024);
+        hit (0, 4095); lift (0);
+        hit (12, 1024);
         auto ev = drain();
         check (ev.size() == 3 && ev[0].kind == tb::ControllerHit::padOn && ev[0].pad == 0 && std::abs (ev[0].velocity - 1.0f) < 1e-4f
                  && ev[1].kind == tb::ControllerHit::padOff && ev[2].pad == 12 && std::abs (ev[2].velocity - 32.0f / 127.0f) < 1e-4f,
                "pads play straight from the USB thread, with velocity, and release");
-        send (MikroIn::pad (0, 0x40, 2048));
+        send (MikroIn::pad (12, 0x40, 2048));
         const float pr = br.padPressure[12].load();
-        lift (0);
+        lift (12);
         adv();
         check (std::abs (pr - 2048.0f / 4095.0f) < 1e-3f && br.padPressure[12].load() == 0.0f && mm.getSelectedPad() == 12,
                "pressure goes to the held pad (0 on release); a hit selects the pad");
@@ -4357,20 +4357,20 @@ namespace
         r.load (1, writeAudio ("mikro_blip", [] { juce::AudioBuffer<float> b (1, 4800); b.clear(); for (int i = 0; i < 100; ++i) b.setSample (0, i, 0.5f); return b; }(),
                                48000.0, Fmt::wavFloat));
         adv();
-        check (mm.getLights().state[(size_t) (39 + 13)] == padByte (orange, 1) && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3)
+        check (mm.getLights().state[(size_t) (39 + 1)] == padByte (orange, 1) && mm.getLights().state[(size_t) (39 + 12)] == padByte (orange, 3)
                  && mm.getLights().state[(size_t) padMode] == levelBright && mm.getLights().state[(size_t) step] == levelDim,
                "lights: loaded pad dim orange, selected bright; PAD MODE lit, the other modes dim");
 
         // Modifiers.
         hold (mute, true);
-        hit (13); lift (13);
+        hit (1); lift (1);
         adv();
         hold (mute, false);
         check (drain().empty() && rawP (tb::params::padId (1, tb::params::padMute)) > 0.5f, "MUTE + pad mutes it (and doesn't play it)");
         setPadParam (r.p, 1, tb::params::padMute, 0.0f);
         press (group);
         check (juce::roundToInt (rawP (tb::params::sceneView)) == 1 && mm.getSelectedPad() == 28, "GROUP flips to scene B (same pad position)");
-        hit (12); lift (12);
+        hit (0); lift (0);
         ev = drain();
         check (! ev.empty() && ev[0].pad == 16, "...and the pads play scene B");
         press (group);
@@ -4425,8 +4425,8 @@ namespace
 
         // KEYBOARD = slices.
         press (keyboard);
-        hit (12); lift (12);
         hit (0); lift (0);
+        hit (12); lift (12);
         ev = drain();
         check (ev.size() == 2 && ev[0].kind == tb::ControllerHit::sliceOn && ev[0].slice == 1 && ev[0].pad == sp && ev[1].slice == 13,
                "KEYBOARD: the pads play the selected pad's slices 1-16");
@@ -4459,7 +4459,7 @@ namespace
         // SCENE = snapshots.
         press (scene);
         hold (shift, true);
-        hit (12); lift (12);
+        hit (0); lift (0);
         adv();
         hold (shift, false);
         check (r.p.getSnapshots().getState (0) != tb::SnapshotManager::SlotState::empty, "SCENE: SHIFT + pad 1 stores snapshot 1 (pad recalls it)");
@@ -4728,6 +4728,12 @@ namespace
         };
         find (*ed);
         check (strip && grid && seqPanel && tiles.size() == 16, "one 4 x 4 matrix (16 tiles) and the scene strip under it");
+        if (tiles.size() == 16)
+        {
+            auto at = [&tiles] (int pad) { for (auto* t : tiles) if (t->getPadIndex() % 16 == pad) return t->getBounds(); return juce::Rectangle<int>(); };
+            check (at (0).getY() > at (12).getY() && at (0).getX() == at (12).getX() && at (15).getY() == at (12).getY() && at (15).getX() > at (12).getX(),
+                   "pad 01 sits bottom left and 16 top right, like a hardware pad controller / Drum Rack");
+        }
         if (! (strip && grid && seqPanel)) return;
 
         grid->setSelectedPad (2);

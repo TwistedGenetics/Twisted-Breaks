@@ -13,8 +13,10 @@ namespace tb::ui
     /*
         PadGrid
         -------
-        The 4 x 4 matrix of PadComponents in reading order: pad 1 is top-left,
-        pad 16 bottom-right (MIDI 36 = pad 1 by default). It shows one scene
+        The 4 x 4 matrix of PadComponents laid out like a hardware pad
+        controller (MPC, Maschine, Push, a Drum Rack): pad 1 bottom-left,
+        pad 16 top-right (MIDI 36 = pad 1 by default). Changed in 0.16.1;
+        before that pad 1 was top-left. It shows one scene
         at a time (A = pads 1-16, B = pads B01-B16, engine pads 16-31).
 
         Polls the EngineBridge on the UI timer for lamp brightness and keeps

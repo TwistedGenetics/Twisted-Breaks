@@ -700,17 +700,17 @@ a { color: var(--amber-ink); }
   <div class="tablewrap"><table>
     <thead><tr><th colspan="4">Scene A</th><th colspan="4">Scene B</th></tr></thead>
     <tbody>
-      <tr><td>01</td> <td>02</td> <td>03</td> <td>04</td> <td>B01</td> <td>B02</td> <td>B03</td> <td>B04</td></tr>
-      <tr><td>05</td> <td>06</td> <td>07</td> <td>08</td> <td>B05</td> <td>B06</td> <td>B07</td> <td>B08</td></tr>
-      <tr><td>09</td> <td>10</td> <td>11</td> <td>12</td> <td>B09</td> <td>B10</td> <td>B11</td> <td>B12</td></tr>
       <tr><td>13</td> <td>14</td> <td>15</td> <td>16</td> <td>B13</td> <td>B14</td> <td>B15</td> <td>B16</td></tr>
+      <tr><td>09</td> <td>10</td> <td>11</td> <td>12</td> <td>B09</td> <td>B10</td> <td>B11</td> <td>B12</td></tr>
+      <tr><td>05</td> <td>06</td> <td>07</td> <td>08</td> <td>B05</td> <td>B06</td> <td>B07</td> <td>B08</td></tr>
+      <tr><td>01</td> <td>02</td> <td>03</td> <td>04</td> <td>B01</td> <td>B02</td> <td>B03</td> <td>B04</td></tr>
       <tr><td class="num">1</td> <td class="num">2</td> <td class="num">3</td> <td class="num">4</td> <td class="num">5</td> <td class="num">6</td> <td class="num">7</td> <td class="num">8</td></tr>
       <tr><td class="num">9</td> <td class="num">10</td> <td class="num">11</td> <td class="num">12</td> <td class="num">13</td> <td class="num">14</td> <td class="num">15</td> <td class="num">16</td></tr>
       <tr><td class="num">17</td> <td class="num">18</td> <td class="num">19</td> <td class="num">20</td> <td class="num">21</td> <td class="num">22</td> <td class="num">23</td> <td class="num">24</td></tr>
       <tr><td class="num">25</td> <td class="num">26</td> <td class="num">27</td> <td class="num">28</td> <td class="num">29</td> <td class="num">30</td> <td class="num">31</td> <td class="num">32</td></tr>
     </tbody>
   </table></div>
-  <p>The top four rows are all 32 pads, laid out like the matrix: hit one to play it (with velocity and pressure) and select it. The bottom four rows are the selected pad's 32 steps, eight to a row. Tap a step to switch it on or off. Hold a step and turn the encoders to set its VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV and COND. Hold one step and tap another to copy it across the range. <span class="key">Layout</span> swaps the bottom half for big pads of the scene on view.</p>
+  <p>The top four rows are all 32 pads, laid out like the matrix (01 bottom left): hit one to play it (with velocity and pressure) and select it. The bottom four rows are the selected pad's 32 steps, eight to a row. Tap a step to switch it on or off. Hold a step and turn the encoders to set its VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV and COND. Hold one step and tap another to copy it across the range. <span class="key">Layout</span> swaps the bottom half for big pads of the scene on view.</p>
   <p><b>Lights.</b> Dim amber: loaded. Amber: selected. White: playing. Green: its sequence is running. Flashing: a launch, stop or SWAP is waiting. Red: muted. On the steps: amber is on (dim if soft), white is the playhead, and nothing is lit past LEN.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>Push</th><th>Does</th></tr></thead>
@@ -742,10 +742,10 @@ a { color: var(--amber-ink); }
   <div class="tablewrap"><table>
     <thead><tr><th>Mikro</th><th>Does</th></tr></thead>
     <tbody>
-      <tr><td>Pad Mode</td><td>The 16 pads of the scene on view, laid out like the matrix (Mikro pad 13, top left, is 01). Velocity and pressure; lit like the tiles (dim: loaded, bright: selected, white: playing, green: sequence running, red: muted, flashing: waiting).</td></tr>
+      <tr><td>Pad Mode</td><td>The 16 pads of the scene on view, laid out like the matrix: Mikro pad 1 (bottom left) is 01, pad 16 (top right) is 16. Velocity and pressure; lit like the tiles (dim: loaded, bright: selected, white: playing, green: sequence running, red: muted, flashing: waiting).</td></tr>
       <tr><td>Group</td><td>Scene A / B</td></tr>
       <tr><td>Step</td><td>The selected pad's steps 1–16 (‹ › for 17–32). Tap: on / off. Hold a step and turn the encoder; push the encoder for the next field (VEL, CHANCE, RATCHET, PITCH, SLICE, MICRO, REV, COND). Hold one and tap another to copy it across. Erase + step clears it.</td></tr>
-      <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad</td></tr>
+      <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad (slice 1 on pad 1, bottom left)</td></tr>
       <tr><td>Perform</td><td>The 16 performance FX of the selected pad's group; the encoder edits the last one you hit</td></tr>
       <tr><td>Scene</td><td>Pads 1–8 recall snapshots 1–8 (Shift + pad stores)</td></tr>
       <tr><td>Plug-In / Swing / Volume</td><td>Encoder page: PAD (gain, pan, pitch, start, end, slice, character, pressure …) · SEQ (step, LEN, launch, mutate …) · MIX (groups, crossfader, curve, macro, master). Turn: value. Push, or Shift + turn: next setting. The screen shows name and value.</td></tr>

@@ -32,7 +32,8 @@ namespace tb::ui
         const int rowH = (getHeight() - gapV * 3) / 4;
 
         for (int i = 0; i < kPadsPerScene; ++i)
-            pads[(size_t) i]->setBounds ((i % 4) * (cell + gap), (i / 4) * (rowH + gapV), cell, rowH);
+            // 01 bottom left .. 16 top right, like an MPC / Maschine / a Drum Rack (0.16.1).
+            pads[(size_t) i]->setBounds ((i % 4) * (cell + gap), (3 - i / 4) * (rowH + gapV), cell, rowH);
     }
 
     void PadGrid::setSelectedPad (int pad)

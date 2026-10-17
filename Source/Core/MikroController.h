@@ -81,12 +81,12 @@ namespace tb
         ---------------
         The Mikro as a dedicated Twisted Breaks controller:
 
-          PAD MODE   the 16 pads of the scene on view (matrix layout, 01 top
-                     left), velocity + pressure; lit like the plugin's tiles.
+          PAD MODE   the 16 pads of the scene on view (Mikro pad 1 = 01, bottom
+                     left, like the matrix), velocity + pressure; lit like the tiles.
                      GROUP flips scene A / B.
           STEP       the selected pad's steps 1-16 (< > for 17-32): tap = on /
                      off, hold + encoder = edit (push = next field).
-          KEYBOARD   the selected pad's slices 1-16 on the pads.
+          KEYBOARD   the selected pad's slices 1-16 on pads 1-16.
           PERFORM    the 16 performance FX of the selected pad's group.
           SCENE      pads 1-8 recall snapshots 1-8 (SHIFT + pad stores).
           Encoder    PLUG-IN = PAD page, SWING = SEQ page, VOLUME = MIX page
@@ -146,7 +146,9 @@ namespace tb
         void tick (double nowMs);
         const mikro::Lights& getLights() const noexcept { return lights; }
         const mikro::Screen& getScreen() const noexcept { return screen; }
-        /** Plugin pad position (0..15, 01 top left) of a Mikro pad index (0 = bottom left), and back. */
+        /** Reading-order position (0 = top left .. 15 = bottom right) of a Mikro pad (0 = bottom left),
+            and back. Pads, slices and snapshots follow the pad numbers (1 bottom left, like the plugin's
+            matrix); steps and the FX grid read left to right from the top. */
         static int positionOf (int hidPad) noexcept { return (3 - hidPad / 4) * 4 + hidPad % 4; }
         static int hidPadOf (int position) noexcept { return positionOf (position); }   // the same swap both ways
 

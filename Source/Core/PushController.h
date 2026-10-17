@@ -92,7 +92,7 @@ namespace tb
         to Live).
 
           GRID   top 4 rows     the 32 pads: scene A left 4x4, scene B right 4x4,
-                                laid out like the plugin's matrix (01 top left).
+                                laid out like the plugin's matrix (01 bottom left).
                                 Hit = play (with velocity) + select.
                  bottom 4 rows  LANE layout: the selected pad's 32 steps, 8 per row.
                                 Tap = on / off, hold + encoders = edit, hold one and

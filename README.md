@@ -44,7 +44,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.14 | Sequence pads: launch a pad's sequence by hitting it, SWAP between sequences; 0.14.1: launched sequences follow Live's playhead | **done** |
 | 0.15 | Push 3 mode: play and program the plugin from Push 3 in User mode; per-pad pressure | **done** |
 | 0.15.1 | Maschine Mikro MK3 over USB, step 1: a hardware test (LIGHTS > Mikro MK3 test) | **done** — tested on Jamie's Mikro |
-| 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** — 598/598 automated checks |
+| 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** |
+| 0.16.1 | Pad matrix numbered like hardware: 01 bottom left, 16 top right (Push and Mikro follow) | **done** — 599/599 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
