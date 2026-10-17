@@ -4404,26 +4404,30 @@ namespace
         seq.clearAll();
         press (step);
         const int sp = mm.getSelectedPad();
-        hit (0); lift (0);                       // step 1
+        hit (tb::MikroController::hidPadOf (0)); lift (tb::MikroController::hidPadOf (0));                       // step 1
         adv();
         const bool on1 = seq.get (sp, 0).on;
-        hit (1);                                  // hold step 2
+        hit (tb::MikroController::hidPadOf (1));                                  // hold step 2
         adv();
         in.enc = 9; send (in.report()); adv();    // SLICE +1 (3 ticks)
         press (encoderPress);                      // -> VEL
         in.enc = 8; send (in.report()); adv();    // -1
-        lift (1);
+        lift (tb::MikroController::hidPadOf (1));
         adv();
         const auto s2 = seq.get (sp, 1);
         check (mm.getMode() == tb::MikroController::Mode::steps && on1 && s2.on && s2.slice == 1 && s2.velocity == 99 && drain().empty(),
                "STEP: pads = steps (tap = on), hold + encoder edits the SLICE first, push = next field (VEL)");
         press (right);
-        hit (0); lift (0);
+        hit (tb::MikroController::hidPadOf (0)); lift (tb::MikroController::hidPadOf (0));
         adv();
         check (seq.get (sp, 16).on && mm.getStepPage() == 1, "> = steps 17-32");
-        const bool pastLenOff = mm.getLights().state[(size_t) (39 + 0)] == 0;      // step 17 > LEN 16
+        const bool pastLenOff = mm.getLights().state[(size_t) (39 + tb::MikroController::hidPadOf (0))] == 0;      // step 17 > LEN 16
         press (left);
-        check (pastLenOff && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
+        check (pastLenOff && mm.getLights().state[(size_t) (39 + tb::MikroController::hidPadOf (0))] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
+        hit (3); lift (3); adv();                 // top-right Mikro pad
+        hit (12); lift (12); adv();               // bottom-left Mikro pad (step 1 off again)
+        check (seq.get (sp, 15).on && ! seq.get (sp, 0).on, "steps follow the pad numbers: bottom left = step 1, top right = step 16");
+        { tb::SeqStep on1s; on1s.on = true; seq.set (sp, 15, {}); seq.set (sp, 0, on1s); }
 
         // KEYBOARD = slices (of a sliced pad).
         r.load (sp, writeAudio ("mikro_kbd", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
@@ -4591,19 +4595,19 @@ namespace
         tapPad (10);                                         // Mikro pad 7
         check (mm.getChosenSlice() == 7 && drain() == 1, "KEYBOARD: hitting a pad plays its slice and makes it the chosen one");
         press (step);
-        tapPad (0);                                        // step 1 (top left)
+        tapPad (tb::MikroController::hidPadOf (0));                                        // step 1 (top left)
         const auto s1 = seq.get (sel, 0);
         press (keyboard);
         tapPad (14);                                         // slice 3
         press (step);
-        tapPad (1);                                        // step 2 gets slice 3
-        tapPad (0);                                        // step 1 had slice 7: becomes 3, stays on
+        tapPad (tb::MikroController::hidPadOf (1));                                        // step 2 gets slice 3
+        tapPad (tb::MikroController::hidPadOf (0));                                        // step 1 had slice 7: becomes 3, stays on
         const auto s1b = seq.get (sel, 0), s2 = seq.get (sel, 1);
-        tapPad (0);                                        // same slice again: off
+        tapPad (tb::MikroController::hidPadOf (0));                                        // same slice again: off
         check (s1.on && s1.slice == 7 && s2.on && s2.slice == 3 && s1b.on && s1b.slice == 3 && ! seq.get (sel, 0).on,
                "STEP: an empty step gets the chosen slice; another slice is replaced; the same slice again switches it off");
         adv();
-        check (mm.getLights().state[(size_t) (39 + 1)] == padByte (3, 2) || mm.getLights().state[(size_t) (39 + 1)] == padByte (3, 3),
+        check (mm.getLights().state[(size_t) (39 + tb::MikroController::hidPadOf (1))] == padByte (3, 2) || mm.getLights().state[(size_t) (39 + tb::MikroController::hidPadOf (1))] == padByte (3, 3),
                "steps light in their slice's colour (slice 3 = colour 3)");
 
         // Hold KEYBOARD from STEP: choose and come straight back.
@@ -4615,7 +4619,7 @@ namespace
                "hold KEYBOARD in STEP: the slices for a moment; hit one, let go, back on the steps");
         drain();
         hold (shift, true); press (keyboard); hold (shift, false);
-        tapPad (2);                                        // step 3: whole pad
+        tapPad (tb::MikroController::hidPadOf (2));                                        // step 3: whole pad
         check (mm.getChosenSlice() == 0 && mm.getMode() == tb::MikroController::Mode::steps && seq.get (sel, 2).on && seq.get (sel, 2).slice == 0,
                "SHIFT + KEYBOARD clears the chosen slice: new steps play the whole pad");
 
@@ -4737,15 +4741,15 @@ namespace
         press (padMode);
         tapPad (hidOf (0));                              // back to the pad: WHOLE
         press (step);
-        tapPad (0);                                      // step 1
+        tapPad (tb::MikroController::hidPadOf (0));                                      // step 1
         check (sliceChosen && mm.getChosenSlice() == 0 && seq.get (0, 0).on && seq.get (0, 0).slice == 0,
                "pick a pad in PAD MODE, tap a step: a whole-pad step (even after a slice was chosen)");
         press (keyboard); tapPad (hidOf (4)); press (step);
-        tapPad (1);                                      // step 2 = slice 5
-        tapPad (0);                                      // step 1 (whole) takes slice 5, stays on
+        tapPad (tb::MikroController::hidPadOf (1));                                      // step 2 = slice 5
+        tapPad (tb::MikroController::hidPadOf (0));                                      // step 1 (whole) takes slice 5, stays on
         const auto s1 = seq.get (0, 0), s2 = seq.get (0, 1);
         hold (padMode, true); tapPad (hidOf (0)); hold (padMode, false);    // quick pick: pad 01, WHOLE
-        tapPad (1);                                      // step 2 (slice 5) -> whole, stays on
+        tapPad (tb::MikroController::hidPadOf (1));                                      // step 2 (slice 5) -> whole, stays on
         check (s2.slice == 5 && s1.on && s1.slice == 5 && seq.get (0, 1).on && seq.get (0, 1).slice == 0
                  && mm.getMode() == tb::MikroController::Mode::steps,
                "a step of the other kind takes the new choice and stays on; hold PAD MODE in STEP to pick the pad and come back");
@@ -4773,7 +4777,7 @@ namespace
         press (keyboard); tapPad (hidOf (2));             // slice 3 chosen
         setPadParam (r.p, 0, tb::params::padStepsWhole, 1.0f);
         press (step);
-        tapPad (5);                                      // step 6
+        tapPad (tb::MikroController::hidPadOf (5));                                      // step 6
         check (seq.get (0, 5).on && seq.get (0, 5).slice == 0, "a WHOLE ONLY pad: a tap writes a whole-pad step even with a slice chosen");
         setPadParam (r.p, 0, tb::params::padStepsWhole, 0.0f);
 

@@ -467,3 +467,49 @@ As built:
   SEQUENCER view header for the selected lane): the engine ignores a
   step's slice for that pad, and the Mikro writes whole-pad steps.
 
+
+## A11. Mikro step order, pad copy / paste, preset manager, and more
+
+Shipped in stages: 0.18.1, 0.19, 0.20, 0.21, 0.22.
+
+**1. Mikro step order (0.18.1).** In STEP mode the Mikro's steps follow the
+pad numbers: step 1 = pad 1 (bottom left), along the row and up, step 16 top
+right; ‹ › page 17–32 the same way. The FX grid keeps the plugin's on-screen
+order.
+
+**2. Copy / paste between pads, undo (0.19).** Copy takes the sample, slice
+markers, sensitivity and slice count, every per-pad parameter, the main lane
+and the slice sequence (not the MIDI note). Paste = everything; Paste special
+= Sound only / Steps only / Settings only. Also Swap and Clear. Plugin:
+right-click a pad, Cmd-C / Cmd-V, Alt-drag copies, Shift-drag swaps. Mikro:
+hold DUPLICATE, hit source then target (SHIFT + DUPLICATE swaps); Push 3 the
+same with Duplicate. Sample buffers are shared, not reloaded. Undo / redo
+(Cmd-Z / Cmd-Shift-Z, 50 steps) covers paste, swap, clear, preset loads,
+slice edits and step edits (parameter moves are Live's undo).
+
+**3. Preset manager (0.20).** Kit (all pads, sequences, snapshots, bank, FX,
+mixer; not controller settings or MIDI map), Pad (what Copy takes) and
+Sequence (patterns only) presets: `.tbkit` / `.tbpad` / `.tbseq`, a zip of
+`preset.xml` + `audio/` FLAC copies (24-bit, original rate, de-duplicated by
+hash). Embedded audio unpacks to `~/Music/Twisted Breaks/Library/Audio`.
+Browser view PRESETS: folders under `~/Music/Twisted Breaks/Presets`, search,
+tags, favourites, sort, preview, load, Save / Save As (name, tags, note),
+rename, delete to Trash, show in Finder, import, drag-in, prev / next, kit
+name with a modified mark. Collect Samples copies every used sample into the
+Library and repoints the pads. Mikro SHIFT + BROWSER and Push 3 browse with
+the encoder. Kit loads while Live plays land on the next bar; old sounds keep
+playing until the new ones are ready. Versioned format; corrupt or newer files
+are refused with a message and change nothing; missing audio loads as MISSING.
+Three small factory kits from the repo's own test audio.
+
+**4. TWIST, round robin, break tempo (0.21).** TWIST randomises the
+selected pad's sound settings (pitch, filter, start, drive …) within an
+amount, with a lock per setting; one undo step. Round robin / velocity layers:
+up to 4 extra samples per pad, played in turn or by velocity. Break tempo:
+the detected BPM of each break shown on the pad page, and a FIT setting that
+plays a one-shot / slice break at Live's tempo.
+
+**5. Export and song mode (0.22).** Export the selected pad's pattern or the
+whole kit for N bars to WAV (rendered offline at Live's tempo), and drag a
+MIDI clip of the main sequence into Live. Song mode chains snapshots (slot,
+bars) and steps through them while Live plays.

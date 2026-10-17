@@ -818,8 +818,8 @@ namespace tb
 
     void MikroController::handlePad (int i, bool down, double nowMs)
     {
-        const int pos = i;                        // reading order (steps, FX grid)
-        const int num = padNumberOf (i);          // pad number, 0 = pad 1 bottom left (pads, slices, snapshots)
+        const int pos = i;                        // reading order (FX grid, as on screen)
+        const int num = padNumberOf (i);          // pad number, 0 = pad 1 bottom left (pads, slices, snapshots, steps)
         const auto mode = getMode();
         const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
         auto& seq = bridge.seq;
@@ -859,7 +859,7 @@ namespace tb
             }
             case Mode::steps:
             {
-                const int st = stepPage * 16 + pos;
+                const int st = stepPage * 16 + num;   // step 1 = pad 1 (bottom left), step 16 top right
                 if (down)
                 {
                     if (held[erase]) { seq.set (sel, st, SeqStep {}); processor.markStateChanged(); return; }
@@ -1007,8 +1007,8 @@ namespace tb
         // ---- Pads.
         for (int i = 0; i < 16; ++i)               // Mikro pad index (reading order: 0 = top left)
         {
-            const int pos = i;                         // steps, FX grid
-            const int num = padNumberOf (i);           // pads, slices, snapshots (0 = pad 1, bottom left)
+            const int pos = i;                         // FX grid (reading order, as on screen)
+            const int num = padNumberOf (i);           // pads, slices, snapshots, steps (0 = pad 1, bottom left)
             int colour = off, level = 0;
             switch (mode)
             {
@@ -1032,7 +1032,7 @@ namespace tb
                 }
                 case Mode::steps:
                 {
-                    const int st = stepPage * 16 + pos;
+                    const int st = stepPage * 16 + num;   // step 1 = pad 1 (bottom left), step 16 top right
                     const int len = laneLength (sel);
                     const bool seqPad = params::isSeqMode (juce::roundToInt (raw (params::padId (sel, params::padMode))));
                     const int ph = seqPad ? bridge.laneStep[(size_t) sel].load() : bridge.seqStep.load();

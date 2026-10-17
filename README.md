@@ -49,6 +49,7 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.17 | Sequencer follows Live only (no RUN key); Mikro / Push Play-Stop-Rec drive Live (Twisted Breaks Remote port); build breaks slice by slice on the Mikro | **done** |
 | 0.17.1 | Mikro pads fixed: it reports pads top-left first, so pad 1 (bottom left) now plays 01 | **done** |
 | 0.18 | Whole-pad steps and slice steps: pick a pad (whole) or a slice on the Mikro, hold PAD MODE in STEP to pick the pad, per-pad WHOLE ONLY | **done** — 615/615 automated checks |
+| 0.18.1 | Mikro steps numbered like the pads: step 1 bottom left, 16 top right | **done** — 616/616 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
