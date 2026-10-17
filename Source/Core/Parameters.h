@@ -43,6 +43,7 @@ namespace tb::params
     inline constexpr int kV15 = 15; // parameters introduced in 0.13.x (scenes: pads 17-32, crossfader)
     inline constexpr int kV16 = 16; // parameters introduced in 0.14.x (sequence pads)
     inline constexpr int kV17 = 17; // parameters introduced in 0.15.x (Push 3 mode)
+    inline constexpr int kV18 = 18; // parameters introduced in 0.18.x (whole-pad steps)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -169,6 +170,9 @@ namespace tb::params
     // ---- 0.15: Push 3 mode (A7) ---------------------------------------------------
     inline constexpr const char* padPress = "press";       // choice: what Push 3 pad pressure does to this pad
     enum PressTarget { pressFilter = 0, pressDrive, pressStutter, pressPitch, pressOff };   // append only
+
+    // ---- 0.18: whole-pad steps (A10) ------------------------------------------------
+    inline constexpr const char* padStepsWhole = "whole";  // bool: this pad's steps always play the whole pad (never a slice)
     inline const char* const kPressNames[] = { "Filter", "Drive", "Stutter", "Pitch", "Off" };
     enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
 

@@ -74,10 +74,11 @@ TwistedBreaksProcessor::TwistedBreaksProcessor()
         pp.seqLen     = apvts.getRawParameterValue (padId (pad, padSeqLen));
         pp.swapFrom   = apvts.getRawParameterValue (padId (pad, padSwapFrom));
         pp.press      = apvts.getRawParameterValue (padId (pad, padPress));
+        pp.stepsWhole = apvts.getRawParameterValue (padId (pad, padStepsWhole));
         jassert (pp.gain && pp.pan && pp.pitch && pp.start && pp.end && pp.reverse
                  && pp.mode && pp.sync && pp.rate && pp.choke && pp.velSens && pp.mute && pp.solo && pp.slice
                  && pp.swap && pp.swapAt && pp.group && pp.fixVel && pp.sliceSeq && pp.sliceSlot && pp.followBank && pp.character
-                 && pp.launch && pp.seqLen && pp.swapFrom && pp.press);
+                 && pp.launch && pp.seqLen && pp.swapFrom && pp.press && pp.stepsWhole);
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)
@@ -288,6 +289,7 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.seqLen     = juce::roundToInt (ld (src.seqLen));
         dst.swapFrom   = juce::roundToInt (ld (src.swapFrom));
         dst.press      = juce::roundToInt (ld (src.press));
+        dst.stepsWhole = ld (src.stepsWhole) > 0.5f;
     }
 
     for (int g = 0; g < tb::kNumGroups; ++g)

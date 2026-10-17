@@ -150,7 +150,7 @@ namespace tb::ui
             prm->endChangeGesture();
         };
 
-        for (Component* comp : std::initializer_list<Component*> { &lenRead, &stepRead, &quantRead, &armKey, &clearKey,
+        for (Component* comp : std::initializer_list<Component*> { &lenRead, &stepRead, &quantRead, &armKey, &clearKey, &wholeKey,
                                                                     &velRead, &chanceRead, &ratRead, &pitchRead, &sliceRead, &microRead,
                                                                     &fxRead, &condRead, &revKey, &hitKey, &fillKey })
             addAndMakeVisible (comp);
@@ -231,6 +231,7 @@ namespace tb::ui
 
     SequencerPanel::~SequencerPanel()
     {
+        wholeAtt.reset();
         driftAtt.reset();
         for (auto& a : targetAtts) a.reset();
         lenRead.attach (nullptr); stepRead.attach (nullptr); quantRead.attach (nullptr);
@@ -240,6 +241,11 @@ namespace tb::ui
     {
         selectedPad = jlimit (0, SequencerData::kPads - 1, pad);
         armKey.setButtonText ("ARM PAD " + padLabel (selectedPad));
+        // A10: WHOLE ONLY for the selected pad's lane.
+        wholeAtt.reset();
+        wholeKey.setClickingTogglesState (true);
+        wholeAtt = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (processor.getParameters(),
+                                                                                      params::padId (selectedPad, params::padStepsWhole), wholeKey);
         refresh();
         repaint();
     }
@@ -375,7 +381,8 @@ namespace tb::ui
         stepRead.setBounds (x, y - 6, 52, h + 6); x += 56;
         quantRead.setBounds (x, y - 6, 56, h + 6); x += 62;
         armKey.setBounds   (x, y, 94, h);      x += 98;
-        clearKey.setBounds (x, y, jmin (68, getWidth() - x - 14), h);
+        clearKey.setBounds (x, y, 64, h);  x += 68;
+        wholeKey.setBounds (x, y, jmin (72, getWidth() - x - 14), h);
 
         // Bottom area: [STEP / MUTATE tabs] then the page's two rows.
         const auto ins = inspectorArea().toNearestInt().reduced (8, 6);

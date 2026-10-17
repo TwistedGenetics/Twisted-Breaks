@@ -486,7 +486,7 @@ a { color: var(--amber-ink); }
   <ul>
     <li><b>Click</b> a cell to place a step (and select it), <b>drag up or down</b> on a step for velocity, click a lit step to clear it. <b>Right-click</b> or <b>shift-click</b> selects a step without switching it off.</li>
     <li>Click a lane number to select that pad; <span class="key">Arm</span> and <span class="key plain">Clear</span> follow it.</li>
-    <li>The pattern plays exactly while Live plays: Live's play starts it, Live's stop stops it (there's no separate run key since 0.17). <span class="key">Len</span> 1–32 steps (polymetric against Live's bar is fine); <span class="key">Step</span> 1/8, 1/16 or 1/32.</li>
+    <li>The pattern plays exactly while Live plays: Live's play starts it, Live's stop stops it (there's no separate run key since 0.17). <span class="key">Whole</span>: the selected pad's steps always play the whole pad, never a slice. <span class="key">Len</span> 1–32 steps (polymetric against Live's bar is fine); <span class="key">Step</span> 1/8, 1/16 or 1/32.</li>
     <li><b>Live recording:</b> <span class="key red">Arm</span> a pad, press play in Live and hit the pad (mouse or MIDI). Hits are quantised to <span class="key">Rec Q</span> (1/4–1/32); anything finer than the step size is kept as micro-timing.</li>
   </ul>
   <h3>The STEP row</h3>
@@ -759,11 +759,14 @@ a { color: var(--amber-ink); }
       <tr><td>Play / Stop / Rec</td><td>Live's transport, through the <b>Twisted Breaks Remote</b> port (map it once, below). Play lights while Live plays, Rec while it records.</td></tr>
     </tbody>
   </table></div>
+  <h4>Whole-pad steps and slice steps</h4>
+  <p>A step plays either the <b>whole pad</b> (looped or one-shot, until its choke group or the next hit cuts it, as the plugin's sequencer always has) or <b>one slice</b> of it. On the Mikro, what you picked last decides: a pad in <span class="key">Pad Mode</span> means whole-pad steps (screen: WHOLE), a slice on <span class="key">Keyboard</span> means slice steps (S07). Selecting another pad always starts on WHOLE. In <span class="key">Step</span>, <b>hold</b> Pad Mode to pick the pad you're sequencing (it plays) and come straight back to its lane. Whole-pad steps light orange, slice steps in their slice's colour.</p>
+  <p>A pad with no slice markers shows NO SLICES on Keyboard. To make a pad's steps <b>always</b> whole, switch on <span class="key">Whole</span> for its lane in the SEQUENCER view (the <code>Pad … Whole Steps</code> parameter): its steps then play the whole pad whatever they say.</p>
   <h4>Building a break slice by slice</h4>
   <ol class="steps">
     <li><div>Load a break on a pad, slice it (§ 04) and select it.</div></li>
     <li><div><span class="key">Keyboard</span>: hit a slice. It plays and becomes the chosen slice.</div></li>
-    <li><div><span class="key">Step</span>: tap steps. An empty step gets the chosen slice; a step with another slice takes this one; the same slice again switches it off. Steps light in their slice's colour, so you can see the break you're building.</div></li>
+    <li><div><span class="key">Step</span>: tap steps. An empty step gets the chosen slice; a step with another slice (or a whole-pad step) takes this one; the same again switches it off. Steps light in their slice's colour, so you can see the break you're building.</div></li>
     <li><div>Pick the next slice and place it, and so on. Quicker: in Step, <b>hold</b> Keyboard, hit a slice, let go, and you're back on the steps.</div></li>
   </ol>
   <p>Hold a step and the encoder edits its SLICE first (push for VEL, CHANCE …). With the pad's lane armed (§ 09) and Live playing, slices you finger-drum on Keyboard are recorded into the lane with their slice numbers. Slices on steps don't apply to SWAP or SLICE SEQ pads; the screen says so.</p>

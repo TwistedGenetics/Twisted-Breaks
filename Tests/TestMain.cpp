@@ -368,7 +368,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1097, "1097 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 26 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
+        check (p.getParameters().processor.getParameters().size() == 1129, "1129 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 27 x 32 pads + 5 x 4 groups + 50 x 4 group FX)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3519,7 +3519,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -4425,7 +4425,10 @@ namespace
         press (left);
         check (pastLenOff && mm.getLights().state[(size_t) (39 + 0)] == padByte (orange, 3), "steps light orange when on, nothing past LEN");
 
-        // KEYBOARD = slices.
+        // KEYBOARD = slices (of a sliced pad).
+        r.load (sp, writeAudio ("mikro_kbd", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (sp);
+        adv();
         press (keyboard);
         hit (12); lift (12);
         hit (0); lift (0);
@@ -4577,6 +4580,7 @@ namespace
         send (in.report());
         adv();
         r.load (0, writeAudio ("a9_break", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (0);
         adv();
         auto& seq = br.seq;
         seq.clearAll();
@@ -4666,6 +4670,117 @@ namespace
         }
     }
 
+
+    //==========================================================================
+    //  A10: whole-pad steps and slice steps
+    //==========================================================================
+    void testA10()
+    {
+        using namespace tb::mikro;
+        std::cout << "\n== A10: whole-pad steps and slice steps ==" << std::endl;
+
+        // Engine: a slice step starts at its slice; a whole-pad step (or WHOLE ONLY) at the top.
+        {
+            SeqRig x;
+            juce::AudioBuffer<float> ramp (1, 96000);
+            for (int i = 0; i < 96000; ++i) ramp.setSample (0, i, (float) i / 96000.0f);
+            x.r.load (2, writeAudio ("a10_ramp", ramp, 48000.0, Fmt::wavFloat));
+            x.r.p.getSamples().equalSlice (2);
+            x.r.settle();
+            auto at = [&x] (int slice)
+            {
+                x.seq.clearAll();
+                tb::SeqStep st; st.on = true; st.velocity = 127; st.slice = slice;
+                x.seq.set (2, 4, st);                                  // step 5 = 24000 samples at 120 BPM
+                return x.run (26000).getSample (0, 24100);
+            };
+            const float whole = at (0), slice9 = at (9);
+            setPadParam (x.r.p, 2, tb::params::padStepsWhole, 1.0f);
+            const float forced = at (9);
+            setPadParam (x.r.p, 2, tb::params::padStepsWhole, 0.0f);
+            check (std::abs (whole - 100.0f / 96000.0f) < 0.002f && std::abs (slice9 - (0.5f + 100.0f / 96000.0f)) < 0.01f
+                     && std::abs (forced - 100.0f / 96000.0f) < 0.002f,
+                   "a whole-pad step plays the pad from the top; a slice step from its slice; WHOLE ONLY makes every step whole ("
+                     + juce::String (whole, 4) + " / " + juce::String (slice9, 3) + " / " + juce::String (forced, 4) + ")");
+        }
+
+        // The Mikro: what you picked decides.
+        Rig r;
+        auto& mm = r.p.getMikroMode();
+        auto& br = r.p.getBridge();
+        auto hub = std::make_shared<tb::MikroHub> (false);
+        MikroRec mrec;
+        hub->setSinkForTesting (&mrec);
+        mm.useHubForTesting (hub);
+        double now = 1000.0;
+        MikroIn in;
+        auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
+        auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
+        auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+        auto press = [&] (int b) { hold (b, true); hold (b, false); };
+        auto tapPad = [&] (int idx) { send (MikroIn::pad (idx, 0x10, 3000)); adv(); send (MikroIn::pad (idx, 0x30, 0)); adv(); };
+        auto hidOf = [] (int padNumber) { return tb::MikroController::hidPadOf (padNumber); };
+        auto drainSlices = [&br] { tb::ControllerHit h; int n = 0; while (br.mikroEvents.pop (h)) n += h.kind == tb::ControllerHit::sliceOn ? 1 : 0; return n; };
+        send (in.report());
+        adv();
+        r.load (0, writeAudio ("a10_break", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        r.load (1, writeAudio ("a10_plain", makeTone (48000, 1), 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (0);
+        adv();
+        auto& seq = br.seq;
+        seq.clearAll();
+
+        tapPad (hidOf (0));                              // PAD MODE: pad 01
+        press (keyboard);
+        tapPad (hidOf (4));                              // slice 5
+        const bool sliceChosen = mm.getChosenSlice() == 5;
+        press (padMode);
+        tapPad (hidOf (0));                              // back to the pad: WHOLE
+        press (step);
+        tapPad (0);                                      // step 1
+        check (sliceChosen && mm.getChosenSlice() == 0 && seq.get (0, 0).on && seq.get (0, 0).slice == 0,
+               "pick a pad in PAD MODE, tap a step: a whole-pad step (even after a slice was chosen)");
+        press (keyboard); tapPad (hidOf (4)); press (step);
+        tapPad (1);                                      // step 2 = slice 5
+        tapPad (0);                                      // step 1 (whole) takes slice 5, stays on
+        const auto s1 = seq.get (0, 0), s2 = seq.get (0, 1);
+        hold (padMode, true); tapPad (hidOf (0)); hold (padMode, false);    // quick pick: pad 01, WHOLE
+        tapPad (1);                                      // step 2 (slice 5) -> whole, stays on
+        check (s2.slice == 5 && s1.on && s1.slice == 5 && seq.get (0, 1).on && seq.get (0, 1).slice == 0
+                 && mm.getMode() == tb::MikroController::Mode::steps,
+               "a step of the other kind takes the new choice and stays on; hold PAD MODE in STEP to pick the pad and come back");
+
+        // Hold PAD MODE from STEP: another pad.
+        hold (padMode, true); tapPad (hidOf (1)); hold (padMode, false);
+        check (mm.getSelectedPad() == 1 && mm.getMode() == tb::MikroController::Mode::steps, "...and to switch to another pad's lane");
+
+        // No slices on pad 02: KEYBOARD stays quiet and steps stay whole.
+        press (keyboard);
+        drainSlices();
+        tapPad (hidOf (3));
+        check (drainSlices() == 0 && mm.getChosenSlice() == 0 && mm.getLights().state[(size_t) (39 + hidOf (3))] == 0,
+               "a pad with no slices: KEYBOARD dark and silent (NO SLICES), nothing chosen");
+
+        // A slice chosen for one pad doesn't follow you to another.
+        mm.setSelectedPad (0);
+        press (keyboard); tapPad (hidOf (6));
+        const bool chosen7 = mm.getChosenSlice() == 7;
+        mm.setSelectedPad (1);
+        check (chosen7 && mm.getChosenSlice() == 0, "selecting another pad (here from the plugin window) starts on WHOLE again");
+
+        // WHOLE ONLY: steps never become slices.
+        mm.setSelectedPad (0);
+        press (keyboard); tapPad (hidOf (2));             // slice 3 chosen
+        setPadParam (r.p, 0, tb::params::padStepsWhole, 1.0f);
+        press (step);
+        tapPad (5);                                      // step 6
+        check (seq.get (0, 5).on && seq.get (0, 5).slice == 0, "a WHOLE ONLY pad: a tap writes a whole-pad step even with a slice chosen");
+        setPadParam (r.p, 0, tb::params::padStepsWhole, 0.0f);
+
+        mm.setEnabled (false);
+        hub->setSinkForTesting (nullptr);
+    }
+
     void testPressure()
     {
         std::cout << "\n== 0.15: pad pressure (PadVoice) ==" << std::endl;
@@ -4731,7 +4846,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1097 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1129 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -4906,7 +5021,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -5114,7 +5229,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -5394,7 +5509,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1097, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1129, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -6032,6 +6147,7 @@ int main (int argc, char* argv[])
         testMikroMode();
         testMikroEngine();
         testA9();
+        testA10();
         testEditorDrivesState();
         testRealtimeSafety();
 

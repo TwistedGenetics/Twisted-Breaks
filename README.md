@@ -47,7 +47,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.16 | Mikro MK3 mode: pads, steps, slices, FX, snapshots, encoder + screen, strip, note repeat | **done** |
 | 0.16.1 | Pad matrix numbered like hardware: 01 bottom left, 16 top right (Push and Mikro follow) | **done** |
 | 0.17 | Sequencer follows Live only (no RUN key); Mikro / Push Play-Stop-Rec drive Live (Twisted Breaks Remote port); build breaks slice by slice on the Mikro | **done** |
-| 0.17.1 | Mikro pads fixed: it reports pads top-left first, so pad 1 (bottom left) now plays 01 | **done** — 608/608 automated checks |
+| 0.17.1 | Mikro pads fixed: it reports pads top-left first, so pad 1 (bottom left) now plays 01 | **done** |
+| 0.18 | Whole-pad steps and slice steps: pick a pad (whole) or a slice on the Mikro, hold PAD MODE in STEP to pick the pad, per-pad WHOLE ONLY | **done** — 615/615 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -166,7 +167,10 @@ Sections that aren't built yet are visibly marked offline on the panel
   rolls held pads (SHIFT: 1/8 / 1/16 / 1/32); **VARIATION** = MUTATE,
   **TAP** = FILL, **SAMPLING** = RESAMPLE. **Slice by slice** (0.17): hit a
   slice on KEYBOARD, tap steps in STEP to place it (hold KEYBOARD from STEP
-  for a quick pick); steps light in their slice's colour. **PLAY / STOP /
+  for a quick pick); steps light in their slice's colour. **Whole-pad
+  steps** (0.18): pick a pad in PAD MODE (or hold PAD MODE in STEP) and the
+  steps you tap play the whole pad, looped / one-shot until choked;
+  **WHOLE** in the SEQUENCER view makes a pad's steps always whole. **PLAY / STOP /
   REC** drive Live through the **Twisted Breaks Remote** MIDI port: in
   Live turn Remote on for it and MIDI-map Play, Stop and Record once
   (notes 94 / 93 / 95, channel 16; Push 3's Play / Record send the same).

@@ -219,6 +219,8 @@ namespace tb
         bool usbRepeatHeld = false;
         bool kbdTemp = false, kbdUsed = false;         // KEYBOARD held from STEP: back to STEP on release
         double kbdDownMs = 0.0;
+        bool padTemp = false, padUsed = false;         // A10: PAD MODE held from STEP: pick a pad, back to STEP
+        double padDownMs = 0.0;
 
         // ---- Message thread -------------------------------------------------------------------
         Page page = Page::pad;
@@ -226,6 +228,9 @@ namespace tb
         int lastFx = 1;                                // fx::lpf
         int stepPage = 0;
         int chosenSlice = 0;
+        int chosenFor = -1;                            // the pad the chosen slice belongs to (another pad: WHOLE again)
+        std::atomic<bool> selectedHasSlices { true };  // A10: KEYBOARD stays dark on a pad with no slice markers
+        bool wholeOnly (int pad) const;
         std::shared_ptr<RemotePort> remote;
         uint32_t selectionVersion = 0;
         std::bitset<mikro::kNumButtons> held;

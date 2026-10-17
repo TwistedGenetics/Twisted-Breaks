@@ -320,9 +320,15 @@ namespace tb
         return "";
     }
 
+    bool MikroController::wholeOnly (int pad) const
+    {
+        return raw (params::padId (pad, params::padStepsWhole)) > 0.5f;
+    }
+
     void MikroController::setSelectedPad (int pad)
     {
         pad = juce::jlimit (0, tb::kNumPads - 1, pad);
+        if (pad != chosenFor) { chosenSlice = 0; chosenFor = pad; }      // a new pad starts on WHOLE (A10)
         if (pad != selectedPad.load()) heldSteps.clear();
         selectedPad = pad;
     }
@@ -331,6 +337,7 @@ namespace tb
     {
         pad = ((pad % tb::kNumPads) + tb::kNumPads) % tb::kNumPads;
         if (pad != selectedPad.load()) heldSteps.clear();
+        if (pad != chosenFor) { chosenSlice = 0; chosenFor = pad; }      // a new pad starts on WHOLE (A10)
         selectedPad = pad;
         ++selectionVersion;
         processor.getMutator().setSelectedPad (pad);
@@ -384,7 +391,12 @@ namespace tb
                     // Decided here, so the very next pad press already follows them.
                     switch (e.index)
                     {
-                        case padMode:  modeAtomic = (int) Mode::pads; break;
+                        case padMode:
+                            padTemp = getMode() == Mode::steps;          // held from STEP: pick the pad to sequence
+                            padUsed = false;
+                            padDownMs = juce::Time::getMillisecondCounterHiRes();
+                            modeAtomic = (int) Mode::pads;
+                            break;
                         case keyboard:
                             if ((usbMods & 1u) != 0) break;              // SHIFT + KEYBOARD: clear the chosen slice (message thread)
                             kbdTemp = getMode() == Mode::steps;          // held from STEP: a quick look at the slices
@@ -399,6 +411,11 @@ namespace tb
                         case noteRepeat: if ((usbMods & 1u) != 0) rollRate = (rollRate.load() + 1) % 3; break;
                         default: break;
                     }
+                }
+                if (e.index == padMode && ! e.down && padTemp)
+                {
+                    if (padUsed || juce::Time::getMillisecondCounterHiRes() - padDownMs > 400.0) modeAtomic = (int) Mode::steps;
+                    padTemp = false;
                 }
                 if (e.index == keyboard && ! e.down && kbdTemp)
                 {
@@ -444,7 +461,7 @@ namespace tb
 
             const auto mode = getMode();
             const float vel = fixedVelOn.load() ? 1.0f : velocityOf (e.value);
-            if (down && (usbMods & noPlay) == 0 && (mode == Mode::pads || mode == Mode::keyboard))
+            if (down && (usbMods & noPlay) == 0 && (mode == Mode::pads || (mode == Mode::keyboard && selectedHasSlices.load())))
             {
                 releaseHeld (i);                       // (a missed release of this pad: start it clean)
                 int pad, slice = 0;
@@ -452,7 +469,8 @@ namespace tb
                 {
                     const int view = juce::jlimit (0, kNumScenes - 1, juce::roundToInt (sceneViewRaw->load()));
                     pad = view * kPadsPerScene + padNumberOf (i);   // pad 1 (bottom left) = 01
-                    selectedPad = pad;                 // (the message thread does the rest of selecting)
+                    selectedPad = pad;
+                    padUsed = true;                 // (the message thread does the rest of selecting)
                     bridge.padPressure[(size_t) pad].store (0.0f);
                     bridge.mikroEvents.push ({ ControllerHit::padOn, (int8_t) pad, 0, 0, vel });
                 }
@@ -631,7 +649,7 @@ namespace tb
                 case 1: return juce::String (st.probability) + "%";
                 case 2: return "X" + juce::String (st.ratchet);
                 case 3: return (st.pitch > 0 ? "+" : "") + juce::String (st.pitch) + " ST";
-                case 4: return st.slice == 0 ? juce::String ("PAD") : juce::String (st.slice);
+                case 4: return st.slice == 0 || wholeOnly (selectedPad.load()) ? juce::String ("WHOLE PAD") : juce::String (st.slice);
                 case 5: return (st.micro > 0 ? "+" : "") + juce::String (st.micro);
                 case 6: return st.rev ? "ON" : "OFF";
                 default: return kSeqCondNames[juce::jlimit (0, kNumSeqConds - 1, st.cond)];
@@ -831,7 +849,12 @@ namespace tb
                     }
                 }
                 else if (held[erase]) { seq.clearLane (pad); processor.markStateChanged(); flash ("CLEAR LANE", padLabel (pad), nowMs); }
-                else selectPad (pad);
+                else
+                {
+                    selectPad (pad);
+                    chosenSlice = 0;                         // PAD MODE: steps play the whole pad (A10)
+                    chosenFor = pad;
+                }
                 return;
             }
             case Mode::steps:
@@ -852,20 +875,22 @@ namespace tb
                     }
                     auto s = seq.get (sel, st);
                     const bool created = ! s.on;
-                    if (chosenSlice > 0 && (raw (params::padId (sel, params::padSwap)) > 0.5f || raw (params::padId (sel, params::padSliceSeq)) > 0.5f))
+                    // What the tap writes: the chosen slice, or the whole pad (PAD MODE pick, or a WHOLE ONLY pad).
+                    const int choice = wholeOnly (sel) ? 0 : chosenSlice;
+                    if (choice > 0 && (raw (params::padId (sel, params::padSwap)) > 0.5f || raw (params::padId (sel, params::padSliceSeq)) > 0.5f))
                         flash ("SLICES IGNORED", raw (params::padId (sel, params::padSwap)) > 0.5f ? "SWAP PAD" : "SLICE SEQ", nowMs);
                     if (created)
                     {
                         s = SeqStep {};
                         s.on = true;
-                        s.slice = chosenSlice;            // the chosen slice (0: the whole pad)
+                        s.slice = choice;                 // the chosen slice (0: the whole pad)
                         seq.set (sel, st, s);
                         processor.markStateChanged();
                     }
-                    else if (chosenSlice > 0 && s.slice != chosenSlice)
+                    else if (s.slice != choice)
                     {
-                        // A step with another slice: it takes the chosen one (and stays on).
-                        s.slice = chosenSlice;
+                        // A step of the other kind / another slice: it takes the choice (and stays on).
+                        s.slice = choice;
                         seq.set (sel, st, s);
                         processor.markStateChanged();
                         heldSteps.push_back ({ st, false, true });
@@ -893,8 +918,10 @@ namespace tb
             case Mode::keyboard:
                 if (down)
                 {
+                    if (! selectedHasSlices.load()) { flash ("NO SLICES", "SLICE THE PAD FIRST", nowMs); return; }
                     chosenSlice = num + 1;               // STEP writes this slice into the steps you tap (A9)
-                    flash ("SLICE " + juce::String (chosenSlice), "CHOSEN", nowMs);
+                    chosenFor = sel;
+                    flash ("SLICE " + juce::String (chosenSlice), wholeOnly (sel) ? "WHOLE ONLY PAD" : "CHOSEN", nowMs);
                 }
                 return;
             case Mode::perform:
@@ -1024,7 +1051,7 @@ namespace tb
                 case Mode::keyboard:
                 {
                     // Each slice in its own colour (as its steps show); the chosen one bright.
-                    const bool loaded = bridge.padLoaded[(size_t) sel].load (std::memory_order_relaxed);
+                    const bool loaded = bridge.padLoaded[(size_t) sel].load (std::memory_order_relaxed) && selectedHasSlices.load();
                     colour = loaded ? num + 1 : off;
                     level = chosenSlice == num + 1 ? 3 : 1;
                     if ((heldMask.load() >> i) & 1u) { colour = white; level = 3; }
@@ -1069,7 +1096,14 @@ namespace tb
         juce::String head = modeName (mode);
         if (mode == Mode::pads)  head << " " << (juce::roundToInt (sceneViewRaw->load()) == 0 ? "A" : "B");
         if (mode == Mode::steps) head << (stepPage == 0 ? " 1-16" : " 17-32");
-        if ((mode == Mode::steps || mode == Mode::keyboard) && chosenSlice > 0) head << "  S" << juce::String (chosenSlice).paddedLeft ('0', 2);
+        if (mode == Mode::steps || mode == Mode::keyboard)
+        {
+            const int sp = selectedPad.load();
+            if (mode == Mode::keyboard && ! selectedHasSlices.load()) head << " NO SLICES";
+            else if (wholeOnly (sp))  head << " W-ONLY";
+            else if (chosenSlice > 0) head << " S" << juce::String (chosenSlice).paddedLeft ('0', 2);
+            else                      head << " WHOLE";
+        }
         screen.text (0, 0, head.toRawUTF8());
         const auto pad = padLabel (selectedPad.load());
         screen.text (kScreenW - 6 * pad.length(), 0, pad.toRawUTF8());
@@ -1107,6 +1141,11 @@ namespace tb
         }
         if (! wasActive) { wasActive = true; lightsKnown = screenKnown = false; }
 
+        {
+            // A10: does the selected pad have slice markers? (KEYBOARD stays dark if not)
+            const auto info = processor.getSamples().getInfo (selectedPad.load());
+            selectedHasSlices = info.buffer != nullptr && ! info.slices.isEmpty();
+        }
         buildLights (nowMs);
         if (! lightsKnown || lights.state != sentLights || nowMs - lastLightsMs > 2000.0)
         {

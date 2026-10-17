@@ -157,6 +157,10 @@ namespace tb::params
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padPress), kV17 }, prefix + "Pressure",
                 StringArray (kPressNames, 5), pressFilter));
+
+            // ---- 0.18: whole-pad steps only (A10) ----
+            layout.add (std::make_unique<AudioParameterBool> (
+                ParameterID { padId (pad, padStepsWhole), kV18 }, prefix + "Whole Steps", false));
         }
     }
 

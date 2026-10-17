@@ -102,6 +102,13 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.18: whole-pad steps and slice steps
+- [ ] Mikro: PAD MODE, hit a looping break pad; STEP: tap steps -> the break plays out like the plugin's own steps (until choked)
+- [ ] KEYBOARD: pick a slice; STEP: tap -> slice steps (in colour); PAD MODE pick again -> whole-pad steps (orange)
+- [ ] In STEP, hold PAD MODE, hit another pad, let go: you're on that pad's lane
+- [ ] An unsliced pad: KEYBOARD shows NO SLICES
+- [ ] SEQUENCER view: WHOLE on for a pad -> its slice steps play the whole pad
+
 ## 0.17: transport, host-locked sequencer, slice by slice
 - [ ] Sequencer: plays with Live's play, stops with Live's stop; no RUN key in the SEQUENCER view
 - [ ] SEQ pads / SLICE SEQ still play when hit with Live stopped

@@ -212,6 +212,7 @@ private:
         std::atomic<float>* seqLen = nullptr;
         std::atomic<float>* swapFrom = nullptr;
         std::atomic<float>* press = nullptr;
+        std::atomic<float>* stepsWhole = nullptr;
     };
     std::array<PadParamPointers, tb::kNumPads> padParams {};
 

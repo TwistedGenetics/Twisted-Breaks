@@ -97,6 +97,7 @@ namespace tb
             int   seqLen    = 0;      // 0 = global LEN
             int   swapFrom  = 0;      // 0 same step, 1 step 1
             int   press     = 0;      // params::PressTarget (Push 3 pad pressure)
+            bool  stepsWhole = false; // A10: steps play the whole pad, never a slice
         };
 
         struct GroupParams
@@ -358,6 +359,7 @@ namespace tb
         std::array<std::atomic<int>, kNumPads> padNote {};
         std::array<int,  kNumPads>  padMode {};       // this block's mode per pad
         std::array<int,  kNumPads>  padChoke {};
+        std::array<bool, kNumPads>  padStepsWhole {};     // A10
         std::array<float, kNumPads> padVelSens {};
         std::array<bool,  kNumPads> padFixVel {};
         std::array<int,  kNumPads>  padSwap {};       // 0 = off, 1..4

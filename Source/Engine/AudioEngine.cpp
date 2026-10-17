@@ -235,6 +235,7 @@ namespace tb
             const auto& pp = bp.pads[(size_t) p];
             padMode[(size_t) p]    = pp.mode;
             padChoke[(size_t) p]   = pp.choke;
+            padStepsWhole[(size_t) p] = pp.stepsWhole;
             padVelSens[(size_t) p] = juce::jlimit (0.0f, 1.0f, pp.velSens);
             padFixVel[(size_t) p]  = pp.fixVel;
             padPitchNow[(size_t) p] = pp.pitch;
@@ -428,7 +429,7 @@ namespace tb
         }
 
         // A sequencer step with its own pitch / reverse / slice.
-        if (step != nullptr && step->hasSoundTweak())
+        if (step != nullptr && (step->pitch != 0 || step->rev || (step->slice > 0 && ! padStepsWhole[(size_t) pad])))
         {
             const auto s = tweakedSettings (pad, *step);
             startVoice (pad, level, sampleOffset, -1.0, &s);
@@ -480,7 +481,7 @@ namespace tb
         if (buf == nullptr) return s;
         const double fileRate = buf->sourceSampleRate / sampleRate;
 
-        if (st.slice > 0)
+        if (st.slice > 0 && ! padStepsWhole[(size_t) pad])       // (WHOLE: the pad plays whole whatever the step says)
         {
             // SLICE n: that slice of the pad's break (equal 1/16ths if it has no
             // markers), one-shot from its start, at the pad's own pitch.

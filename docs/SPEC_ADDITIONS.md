@@ -441,3 +441,29 @@ As built:
   an armed lane with their slice numbers while Live plays (rolls don't).
   SWAP / SLICE SEQ pads: the screen says slices are ignored.
 
+## A10. Whole-pad steps and slice steps
+
+**Status: built in 0.18.0**, with the per-pad switch (Jamie: "go with").
+
+Prompt:
+
+> On the plugin, a step plays the whole break (looped or one-shot) until
+> another pad in the same choke group cuts it. On the Mikro, my steps play
+> the break as a short hit. I want to be able to sequence either single
+> pad hits (the whole pad) or slices picked from KEYBOARD, and choose which
+> pad I'm sequencing, from the Mikro.
+
+As built:
+* Two kinds of step in one lane: whole-pad (slice 0: plays like the
+  plugin's sequencer always has) and slice (1-16).
+* Mikro: the last pick decides. PAD MODE hit = WHOLE; KEYBOARD hit =
+  that slice. Selecting another pad (Mikro or plugin window) resets to
+  WHOLE. Tap rules: empty -> the choice; another kind / slice -> takes
+  the choice, stays on; the same -> off. Hold PAD MODE in STEP: pick the
+  pad (it plays) and come back to its lane. Whole-pad steps light orange,
+  slice steps in their slice colour; holding a step shows WHOLE PAD /
+  the slice. A pad with no slice markers: KEYBOARD dark, NO SLICES.
+* Per pad `padNN_whole` (kV18, "Pad NN Whole Steps"; WHOLE key in the
+  SEQUENCER view header for the selected lane): the engine ignores a
+  step's slice for that pad, and the Mikro writes whole-pad steps.
+

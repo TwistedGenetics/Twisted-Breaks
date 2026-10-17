@@ -130,6 +130,8 @@ namespace tb::ui
         DragReadout quantRead { "REC Q", "Live-record quantise: 1/4, 1/8, 1/16, 1/32 (click to change)" };
         PushKey     armKey   { "ARM", "Record the selected pad's hits (mouse or MIDI) into its lane while Live plays", juce::Colour (0xffff3a1c) };
         PushKey     clearKey { "CLEAR", "Clear the selected pad's lane" };
+        PushKey     wholeKey { "WHOLE", "WHOLE ONLY: this pad's steps always play the whole pad (looped / one-shot, until choked), never a slice", juce::Colour (0xffffa928) };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> wholeAtt;
 
         // STEP row (Phase 9)
         DragReadout velRead    { "VEL",    "Velocity of the selected step" };
