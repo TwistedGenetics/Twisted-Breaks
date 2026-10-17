@@ -102,6 +102,15 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.25: AKAIZER
+
+- [ ] FX grid: AKAIZER where STUTTER was (MIDI G#3). On an amen: Classic, 25 ms, +5 st; try 10 / 60 ms; Revised.
+- [ ] Hold it as MOMENTARY, then set it LOCKED; automate PITCH.
+- [ ] Right-click a pad > Render Akai: 200 %, 0 st, 25 ms Classic: a new pad with the stretched break.
+- [ ] Pad Stretch > Akai Classic at a different Live tempo.
+- [ ] An old set that used STUTTER opens fine (AKAIZER is off; JUNGLE ROLL still rolls).
+- [ ] Listen to docs/audio/akaizer against the real Akaizer / an S950 if you have them.
+
 ## 0.24: macro editor
 
 - [ ] FX > MACRO > EDIT (or right-click a macro): change DESTROY's CRUSH HARD, take DRIVE out, add LPF; HOLD TO HEAR and AMOUNT 0 / 100 %.

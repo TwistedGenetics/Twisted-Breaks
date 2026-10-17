@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include "Core/FxDefs.h"
+#include "Engine/Akaizer.h"
 
 namespace tb
 {
@@ -24,11 +25,11 @@ namespace tb
         fixed order (spec: Pad -> Group Bus -> FX 1 -> FX 2 ... -> Group Output):
 
             MUTE  LPF  HPF  BPF  CRUSH  RATE  DRIVE  TAPE
-            STUTTER  REPEAT  GATE  PITCH  DELAY  REVERB  COMB  REVERSE
+            AKAIZER  REPEAT  GATE  PITCH  DELAY  REVERB  COMB  REVERSE
 
         Engaging / disengaging
           * insert effects crossfade dry <-> wet over 10 ms (no clicks);
-          * STUTTER, REPEAT and REVERSE wait for the next musical boundary of
+          * REPEAT and REVERSE wait for the next musical boundary of
             their size, then crossfade in over 3 ms, so they land on the beat;
           * DELAY and REVERB are "throws": engaging feeds them, disengaging
             stops feeding them, and the tail rings out on its own.
@@ -138,7 +139,8 @@ namespace tb
         float gateGain = 1.0f;
 
         // Capture effects
-        Looper stutterL, repeatL, reverseL;
+        Looper repeatL, reverseL;
+        AkaiShifter akai;                          // A12: AKAIZER (STUTTER's place)
         History pitchHist;
         bool   pitchActive = false;
         double pitchRead = 0.0, pitchRate = 1.0, pitchRateStep = 0.0;

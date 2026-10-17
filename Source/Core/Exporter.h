@@ -46,6 +46,12 @@ namespace tb
 
         juce::File getLastFile() const { return lastFile; }
 
+        /** A12 RENDER AKAI: the pad's sample through the Akai cyclic stretch (time factor 25-2000 %,
+            pitch +-36 st, cycle, Classic / Revised), written next to the Exports as a new WAV. */
+        static juce::AudioBuffer<float> akaiRender (const juce::AudioBuffer<float>& src, double rate, double timeFactor,
+                                                    float semis, float cycleMs, bool revised);
+        juce::Result renderAkai (int pad, double timeFactor, float semis, float cycleMs, bool revised, juce::File& out);
+
     private:
         void timerCallback() override;
         void finish (juce::Result, juce::File);

@@ -189,6 +189,57 @@ namespace tb
     }
 
     //==========================================================================
+    juce::AudioBuffer<float> Exporter::akaiRender (const juce::AudioBuffer<float>& src, double rate, double timeFactor,
+                                                   float semis, float cycleMs, bool revised)
+    {
+        // A PadVoice in AKAI stretch, at the file's own rate: the play head crosses the
+        // sample in timeFactor x its length, each cycle read at the pitch.
+        auto buf = SampleBuffer::Ptr (new SampleBuffer());
+        buf->audio.makeCopyOf (src);
+        buf->sourceSampleRate = rate;
+        PadVoice v;
+        v.prepare (rate);
+        PadVoice::Settings s;
+        s.regionStart = 0;
+        s.regionEnd = src.getNumSamples();
+        s.stretch = revised ? 4 : 3;
+        s.increment = 1.0 / juce::jlimit (0.25, 20.0, timeFactor);
+        s.readInc = std::pow (2.0, juce::jlimit (-36.0f, 36.0f, semis) / 12.0);
+        s.grainSamples = juce::jmax (32, (int) (juce::jlimit (2.0f, 400.0f, cycleMs) * 0.001 * rate));
+        v.start (buf, s, 1.0f);
+        const int total = (int) std::ceil (src.getNumSamples() * juce::jlimit (0.25, 20.0, timeFactor)) + (int) (rate * 0.05);
+        juce::AudioBuffer<float> out (2, total);
+        out.clear();
+        constexpr int block = 4096;
+        for (int pos = 0; pos < total && v.isActive(); pos += block)
+        {
+            juce::AudioBuffer<float> part (out.getArrayOfWritePointers(), 2, pos, juce::jmin (block, total - pos));
+            v.renderAdding (part, 0, part.getNumSamples());
+        }
+        return out;
+    }
+
+    juce::Result Exporter::renderAkai (int pad, double timeFactor, float semis, float cycleMs, bool revised, juce::File& outFile)
+    {
+        const auto info = processor.getSamples().getInfo (pad);
+        if (info.buffer == nullptr) return juce::Result::fail ("Pad " + padLabel (pad) + " has no sample");
+        const auto rendered = akaiRender (info.buffer->audio, info.buffer->sourceSampleRate, timeFactor, semis, cycleMs, revised);
+        const auto dir = folder.getParentDirectory().getChildFile ("Akai");
+        dir.createDirectory();
+        const auto name = fileSafe (info.name + " AKAI " + juce::String (juce::roundToInt (timeFactor * 100.0)) + "% "
+                                    + (semis >= 0.0f ? "+" : "") + juce::String (semis, 1) + "st " + juce::String (cycleMs, 0) + "ms" + (revised ? " R" : ""));
+        outFile = dir.getNonexistentChildFile (name, ".wav", false);
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::FileOutputStream> stream (outFile.createOutputStream());
+        std::unique_ptr<juce::AudioFormatWriter> w;
+        if (stream != nullptr) w.reset (wav.createWriterFor (stream.get(), info.buffer->sourceSampleRate, 2, 24, {}, 0));
+        if (w == nullptr) return juce::Result::fail ("Couldn't write " + outFile.getFullPathName());
+        stream.release();
+        w->writeFromAudioSampleBuffer (rendered, 0, rendered.getNumSamples());
+        return juce::Result::ok();
+    }
+
+    //==========================================================================
     juce::Result Exporter::writeMidi (int pad, int bars, const juce::File& file)
     {
         auto& apvts = processor.getParameters();

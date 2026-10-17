@@ -313,7 +313,8 @@ namespace tb::params
             for (int f = 0; f < fx::kNumFx; ++f)
             {
                 const auto& d = fx::def (f);
-                layout.add (std::make_unique<AudioParameterBool> (ParameterID { fx::paramId (g, f), kV8 },
+                const int vh = f == fx::akaizer ? kV22 : kV8;          // AKAIZER took STUTTER's place in 0.25
+                layout.add (std::make_unique<AudioParameterBool> (ParameterID { fx::paramId (g, f), vh },
                                                                   gname + "FX " + d.label, false));
                 for (int k = 0; k < d.numParams; ++k)
                 {
@@ -323,19 +324,29 @@ namespace tb::params
                     {
                         StringArray items;
                         for (int c = 0; c < pd.numChoices; ++c) items.add (pd.choices[c]);
-                        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { fx::paramId (g, f, k), kV8 },
+                        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { fx::paramId (g, f, k), vh },
                                                                             pname, items, roundToInt (pd.def)));
                     }
                     else
                     {
                         layout.add (std::make_unique<AudioParameterFloat> (
-                            ParameterID { fx::paramId (g, f, k), kV8 }, pname,
+                            ParameterID { fx::paramId (g, f, k), vh }, pname,
                             NormalisableRange<float> (0.0f, 1.0f, 0.001f), pd.def,
                             AudioParameterFloatAttributes()
                                 .withStringFromValueFunction ([&pd] (float v, int) { return fx::valueText (pd, v); })));
                     }
                 }
             }
+        }
+
+        // ---- 0.25: STUTTER's old parameters stay (sets that automated them still open); they do nothing now.
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            const auto gk = String ("grp_") + String::charToString ((juce_wchar) ('a' + g)) + "_stutter";
+            const String gname = "Group " + String::charToString ((juce_wchar) ('A' + g)) + " ";
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { gk, kV8 }, gname + "FX STUTTER (old)", false));
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { gk + "_size", kV8 }, gname + "FX STUTTER size (old)",
+                                                                StringArray (fx::kSizes, 5), 3));
         }
 
         // ---- 0.21: TWIST (A11) ----

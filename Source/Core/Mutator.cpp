@@ -13,7 +13,7 @@ namespace tb
         constexpr int kRatchets[] = { 2, 2, 3, 4 };
         constexpr int kPitches[]  = { 12, -12, 7, -5, 5, -7, 2, -2, 12 };
         constexpr int kSlicePitches[] = { 12, -12, 7, -5, 5, -7, 2, -2 };
-        constexpr int kFxThrows[] = { fx::stutter, fx::repeat, fx::reverse, fx::pitch, fx::gate, fx::crush };
+        constexpr int kFxThrows[] = { fx::akaizer, fx::repeat, fx::reverse, fx::pitch, fx::gate, fx::crush };
     }
 
     Mutator::Mutator (TwistedBreaksProcessor& p) : processor (p), rng (juce::Time::currentTimeMillis())

@@ -17,6 +17,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "UI/MacroEditorPanel.h"
+#include "Engine/Akaizer.h"
 #include "PluginEditor.h"
 #include "Engine/TransientDetector.h"
 #include "Core/FxDefs.h"
@@ -376,7 +377,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1331, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch)");
+        check (p.getParameters().processor.getParameters().size() == 1347, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch + AKAIZER and the old STUTTER ids)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -1177,23 +1178,13 @@ namespace
         x.allOff();
         auto engageAt2 = [&] (int fxId) { return [&x, fxId] (int b) { if (b == 2) x.fx (fxId, true); }; };
 
-        // STUTTER 1/16: waits for 6000, lets [6000, 12000) through, then loops it.
-        x.set (stutter, 0, 3.0f);
-        auto out = x.play (40, 60, engageAt2 (stutter));
-        float pass = 0.0f, d1 = 0.0f;
-        for (int k = 0; k < n16; ++k) pass = juce::jmax (pass, std::abs (out.getSample (0, k) - dryC.getSample (0, k)), std::abs (out.getSample (0, n16 + k) - dryC.getSample (0, n16 + k)));
-        for (int k = 300; k < n16 - 300; ++k)
-            d1 = juce::jmax (d1, std::abs (out.getSample (0, 2 * n16 + k) - dryC.getSample (0, n16 + k)),
-                                 std::abs (out.getSample (0, 4 * n16 + k) - dryC.getSample (0, n16 + k)));
-        check (pass < 1.0e-6f, "STUTTER waits for the next 1/16 and lets that 1/16 through");
-        check (d1 < 1.0e-4f, "...then repeats exactly that 1/16, again and again (err " + juce::String (d1, 6) + ")");
-        check (maxStepIn (out, 0, 2 * n16 - 300, 2 * n16 + 300) < maxStepIn (dryC, 0, 1000, n16 * 2) * 1.5f, "...seamlessly");
-        x.allOff();
+        // (STUTTER was here until 0.25: AKAIZER took its place, see testA12Akaizer.)
+        float d1 = 0.0f;
+        juce::AudioBuffer<float> out;
 
         // BEAT REPEAT 1/8: at 12000 it repeats [0, 12000).
         x.set (repeat, 0, 2.0f);
         out = x.play (40, 70, engageAt2 (repeat));
-        d1 = 0.0f;
         float before = 0.0f;
         for (int k = 300; k < n8 - 300; ++k)
         {
@@ -1394,11 +1385,11 @@ namespace
         check (raw (paramId (0, lpf)) < 0.5f, "...click again: off");
 
         // STUTTER (MOMENTARY by default): on only while held.
-        const auto stKey = grid->keyBounds (stutter).getCentre();
+        const auto stKey = grid->keyBounds (akaizer).getCentre();
         mouse (grid, stKey, true);
-        const bool whileHeld = raw (paramId (0, stutter)) > 0.5f;
+        const bool whileHeld = raw (paramId (0, akaizer)) > 0.5f;
         mouse (grid, stKey, false);
-        check (whileHeld && raw (paramId (0, stutter)) < 0.5f, "STUTTER (MOMENTARY): on while the mouse is held, off on release");
+        check (whileHeld && raw (paramId (0, akaizer)) < 0.5f, "AKAIZER (MOMENTARY): on while the mouse is held, off on release");
 
         // Right-click: edit without switching.
         mouse (grid, grid->keyBounds (delay).getCentre(), true, true); mouse (grid, grid->keyBounds (delay).getCentre(), false);
@@ -1443,7 +1434,7 @@ namespace
         r.p.getStateInformation (blob);
         TwistedBreaksProcessor q;
         q.setStateInformation (blob.getData(), (int) blob.getSize());
-        check (! q.isFxLocked (lpf) && q.isFxLocked (hpf) && ! q.isFxLocked (stutter) && q.getEngine().getFxTargetGroup() == 2,
+        check (! q.isFxLocked (lpf) && q.isFxLocked (hpf) && ! q.isFxLocked (akaizer) && q.getEngine().getFxTargetGroup() == 2,
                "key modes and the FX group are saved with the set");
 
         // The PANIC button also switches effects off (so a LOCKED stutter doesn't come back).
@@ -2028,14 +2019,14 @@ namespace
         wheel (panel->readout ("CHANCE"), -5);
         wheel (panel->readout ("PITCH"), 7);
         wheel (panel->readout ("SLICE"), 3);
-        wheel (panel->readout ("FX"), tb::fx::stutter + 1);
+        wheel (panel->readout ("FX"), tb::fx::akaizer + 1);
         wheel (panel->readout ("COND"), tb::cond3of4);
         wheel (panel->readout ("MICRO"), -10);
         panel->revButton().triggerClick();
         panel->hitButton().triggerClick();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
         const auto st = seq.get (4, 9);
-        check (st.ratchet == 3 && st.probability == 75 && st.pitch == 7 && st.slice == 3 && st.fx == tb::fx::stutter + 1
+        check (st.ratchet == 3 && st.probability == 75 && st.pitch == 7 && st.slice == 3 && st.fx == tb::fx::akaizer + 1
                  && st.cond == tb::cond3of4 && st.micro == -10 && st.rev && ! st.hit,
                "the STEP row edits RATCHET, CHANCE, PITCH, SLICE, FX, COND, MICRO, REV and HIT of the selected step");
 
@@ -2651,7 +2642,7 @@ namespace
         x.seq.clearAll();
         x.step (1, 4); x.step (1, 12);
         setParam (x.r.p, tb::fx::paramId (0, tb::fx::delay), 0.0f);
-        setParam (x.r.p, tb::fx::paramId (0, tb::fx::stutter), 1.0f);
+        setParam (x.r.p, tb::fx::paramId (0, tb::fx::akaizer), 1.0f);
         snaps.store (1);
 
         x.r.host.ppq = 0.0; x.r.host.playing = true;
@@ -3527,7 +3518,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -4008,8 +3999,8 @@ namespace
         setParam (r.p, lpfOn, 0.0f);
         {
             // A momentary effect: on while its key is held, and a key pressed on another page switches nothing off.
-            r.p.setFxLocked (tb::fx::stutter, false);
-            const auto stOn = tb::fx::paramId (0, tb::fx::stutter);
+            r.p.setFxLocked (tb::fx::akaizer, false);
+            const auto stOn = tb::fx::paramId (0, tb::fx::akaizer);
             in (juce::MidiMessage::controllerEvent (1, lowerRow1 + 5, 127));
             step();
             const bool heldOn = rawP (stOn) > 0.5f;
@@ -5697,6 +5688,125 @@ namespace
         check (ed.getMacro() == 6 && rc.usesFx (6, ed.getFx()), "the editor opens on a macro, on the first effect it uses");
     }
 
+    double goertzel (const juce::AudioBuffer<float>& b, int from, int n, double hz, double sr)
+    {
+        const double w = juce::MathConstants<double>::twoPi * hz / sr, cw = 2.0 * std::cos (w);
+        double s1 = 0.0, s2 = 0.0;
+        for (int i = 0; i < n; ++i)
+        {
+            const double win = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / (n - 1));
+            const double s0 = b.getSample (0, from + i) * win + cw * s1 - s2;
+            s2 = s1; s1 = s0;
+        }
+        return std::sqrt (s1 * s1 + s2 * s2 - cw * s1 * s2) / n;
+    }
+
+    juce::AudioBuffer<float> runShifter (const juce::AudioBuffer<float>& in, double sr, float semis, float cycleMs, bool revised)
+    {
+        tb::AkaiShifter a;
+        a.prepare (sr);
+        a.setParams (semis, cycleMs, revised);
+        juce::AudioBuffer<float> out (1, in.getNumSamples());
+        for (int i = 0; i < in.getNumSamples(); ++i)
+        {
+            const float x = in.getSample (0, i);
+            a.push (x, x);
+            float l, r; a.next (l, r);
+            out.setSample (0, i, l);
+        }
+        return out;
+    }
+
+    void testA12Akaizer()
+    {
+        std::cout << "\n== A12: AKAIZER ==" << std::endl;
+        const double sr = 48000.0;
+        juce::AudioBuffer<float> sine (1, 96000);
+        for (int i = 0; i < 96000; ++i) sine.setSample (0, i, 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 440.0 * i / sr));
+
+        auto zcFreq = [sr] (const juce::AudioBuffer<float>& b) { int zc = 0; for (int i = 24001; i < 72000; ++i) if (b.getSample (0, i - 1) < 0.0f && b.getSample (0, i) >= 0.0f) ++zc; return zc / (48000.0 / sr); };
+        const auto classic = runShifter (sine, sr, 12.0f, 23.0f, false);
+        const auto revised = runShifter (sine, sr, 12.0f, 23.0f, true);
+        const double fC = zcFreq (classic), fR = zcFreq (revised);
+        check (std::abs (fC - 880.0) < 880.0 * 0.05 && std::abs (fR - 880.0) < 880.0 * 0.05,
+               "AKAIZER +12 st: a 440 Hz sine comes out at 880 Hz (Classic " + juce::String (fC, 0) + ", Revised " + juce::String (fR, 0) + ")");
+        // The cycle rate (23 ms = 43.5 Hz) shows as sidebands around 880 Hz: the Classic buzz, quieter in Revised.
+        const int n = 48000;
+        const double cr = 1000.0 / 23.0;
+        auto side = [&] (const juce::AudioBuffer<float>& b) { return (goertzel (b, 24000, n, 880.0 - cr, sr) + goertzel (b, 24000, n, 880.0 + cr, sr)) / goertzel (b, 24000, n, 880.0, sr); };
+        const double sC = side (classic), sR = side (revised);
+        check (sC > 0.02 && sR < sC * 0.7, "CLASSIC has the cycle-rate buzz (sidebands at 880 +- 43 Hz: " + juce::String (sC, 3)
+                 + "); REVISED is cleaner (" + juce::String (sR, 3) + ")");
+        // Revised joins in phase: no sharp steps.
+        auto maxStep = [] (const juce::AudioBuffer<float>& b) { float m = 0.0f; for (int i = 24001; i < 72000; ++i) m = juce::jmax (m, std::abs (b.getSample (0, i) - b.getSample (0, i - 1))); return m; };
+        const float clean = 0.5f * (float) (juce::MathConstants<double>::twoPi * 880.0 / sr);       // the steepest step of a clean 880 Hz sine
+        check (maxStep (revised) < clean * 1.6f, "REVISED splices without clicks (largest step " + juce::String (maxStep (revised) / clean, 2) + " x a clean sine's)");
+        // Extremes: finite, no denormals.
+        bool finite = true;
+        for (float st : { -36.0f, 36.0f }) for (float cy : { 2.0f, 400.0f }) for (bool rv : { false, true })
+        {
+            const auto b = runShifter (sine, sr, st, cy, rv);
+            for (int i = 0; i < b.getNumSamples(); ++i) { const float v = b.getSample (0, i); finite &= std::isfinite (v) && (v == 0.0f || std::abs (v) > 1.0e-30f); }
+        }
+        check (finite, "extreme settings (+-36 st, 2 / 400 ms cycles) stay finite, no denormals");
+
+        // In the group FX: AKAIZER on group A shifts a pad.
+        {
+            Rig r;
+            r.load (0, writeAudio ("akai_sine", sine, 48000.0, Fmt::wavFloat));
+            setPadParam (r.p, 0, tb::params::padVelSens, 0.0f);
+            setParam (r.p, tb::fx::paramId (0, tb::fx::akaizer, 0), 0.5f + 12.0f / 48.0f);       // +12
+            setParam (r.p, tb::fx::paramId (0, tb::fx::akaizer), 1.0f);
+            const auto b = renderNote (r.p, r.host, r.p.getEngine().getPadNote (0), 127, 160);
+            int zc = 0; for (int i = 30001; i < 78000; ++i) if (b.getSample (0, i - 1) < 0.0f && b.getSample (0, i) >= 0.0f) ++zc;
+            check (std::abs (zc - 880) < 50 && juce::String (tb::fx::def (tb::fx::akaizer).label) == "AKAIZER",
+                   "AKAIZER sits in STUTTER's place on the FX grid and shifts the group (" + juce::String (zc) + " Hz)");
+        }
+
+        // RENDER AKAI: time factor 200 % doubles the length, the cycles repeat the hits.
+        juce::AudioBuffer<float> clicks (1, 48000);
+        clicks.clear();
+        for (int k = 0; k < 8; ++k) for (int i = 0; i < 200; ++i) clicks.setSample (0, k * 6000 + i, 0.8f * std::exp (-(float) i / 30.0f));
+        const auto twice = tb::Exporter::akaiRender (clicks, sr, 2.0, 0.0f, 25.0f, false);
+        int count = 0, last = -100000, lastHit = 0;
+        for (int i = 0; i < twice.getNumSamples(); ++i) if (std::abs (twice.getSample (0, i)) > 0.3f) { if (i - last > 300) { ++count; lastHit = i; } last = i; }
+        check (std::abs (lastHit - 84000) < 1300 && twice.getNumSamples() >= 96000 && count >= 12 && count <= 24,
+               "RENDER AKAI 200 %: twice as long (the last hit at " + juce::String (lastHit) + "), the cycles repeat the hits (" + juce::String (count) + " hits from 8)");
+        // Old sets: STUTTER's parameters are still there (doing nothing).
+        check (TwistedBreaksProcessor().getParameters().getParameter ("grp_a_stutter_size") != nullptr, "STUTTER's old parameters stay, so sets that automated them still open");
+    }
+
+    int renderAkaiRefs (const juce::File& dir)
+    {
+        // Reference renders for listening tests (A12): a synthetic 2-bar break at 140 BPM.
+        dir.createDirectory();
+        const auto brk = makeBreak (44100.0);
+        const double tf170 = 140.0 / 170.0;
+        struct R { const char* name; double tf; float st; float cy; bool rev; };
+        const R refs[] = { { "break 140 to 170 classic 10ms", tf170, 0.0f, 10.0f, false },
+                           { "break 140 to 170 classic 25ms", tf170, 0.0f, 25.0f, false },
+                           { "break 140 to 170 classic 60ms", tf170, 0.0f, 60.0f, false },
+                           { "break 140 to 170 revised 25ms", tf170, 0.0f, 25.0f, true },
+                           { "break +7st classic 25ms", 1.0, 7.0f, 25.0f, false },
+                           { "break -7st revised 25ms", 1.0, -7.0f, 25.0f, true } };
+        juce::WavAudioFormat wav;
+        for (const auto& r : refs)
+        {
+            const auto out = tb::Exporter::akaiRender (brk, 44100.0, r.tf, r.st, r.cy, r.rev);
+            const auto f = dir.getChildFile (juce::String (r.name) + ".wav");
+            f.deleteFile();
+            std::unique_ptr<juce::FileOutputStream> st (f.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (st.get(), 44100.0, 1, 16, {}, 0));
+            if (w != nullptr) { st.release(); w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples()); }
+        }
+        const auto f = dir.getChildFile ("break original.wav");
+        f.deleteFile();
+        std::unique_ptr<juce::FileOutputStream> st (f.createOutputStream());
+        std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (st.get(), 44100.0, 1, 16, {}, 0));
+        if (w != nullptr) { st.release(); w->writeFromAudioSampleBuffer (brk, 0, brk.getNumSamples()); }
+        return 0;
+    }
+
     void testA10()
     {
         using namespace tb::mikro;
@@ -5869,7 +5979,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1331 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1347 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -6044,7 +6154,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -6252,7 +6362,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -6532,7 +6642,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1331, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -6919,7 +7029,7 @@ namespace
             auto tweak = [&seq] (int pad, int s, std::function<void (tb::SeqStep&)> f) { auto st = seq.get (pad, s); st.on = true; f (st); seq.set (pad, s, st); };
             tweak (0, 0,  [] (auto& st) { st.velocity = 110; st.ratchet = 2; st.probability = 75; st.pitch = 5; st.cond = tb::cond1of2; });
             tweak (0, 12, [] (auto& st) { st.velocity = 100; st.slice = 7; st.rev = true; });
-            tweak (0, 28, [] (auto& st) { st.fx = tb::fx::stutter + 1; st.hit = false; });
+            tweak (0, 28, [] (auto& st) { st.fx = tb::fx::akaizer + 1; st.hit = false; });
             tweak (3, 7,  [] (auto& st) { st.ratchet = 3; });
             tweak (3, 23, [] (auto& st) { st.ratchet = 4; st.cond = tb::condFill; });
             tweak (3, 13, [] (auto& st) { st.probability = 50; });
@@ -7140,7 +7250,11 @@ int main (int argc, char* argv[])
     juce::ScopedJuceInitialiser_GUI gui;
 
     int result = 0;
-    if (argc >= 3 && juce::String (argv[1]) == "--snapshot")
+    if (argc >= 3 && juce::String (argv[1]) == "--akai-refs")
+    {
+        result = renderAkaiRefs (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
+    }
+    else if (argc >= 3 && juce::String (argv[1]) == "--snapshot")
     {
         result = renderSnapshot (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
     }
@@ -7218,6 +7332,7 @@ int main (int argc, char* argv[])
         testA12MidiStop();
         testA12Stretch();
         testA12Macros();
+        testA12Akaizer();
         testEditorDrivesState();
         testRealtimeSafety();
 

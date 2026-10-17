@@ -130,6 +130,7 @@ namespace tb::ui
             m.addSubMenu ("Stretch: " + juce::String (params::kStretchNames[juce::jlimit (0, 5, mode)])
                           + (own > 0.0 ? "  (" + juce::String (own, 1) + " BPM)" : juce::String()), st);
         }
+        m.addItem ("Render Akai... (the cyclic stretch, into a new pad)", info.buffer != nullptr, false, [this, pad] { showAkaiDialog (pad); });
         juce::PopupMenu layers;
         const int lm = juce::roundToInt (apvts.getRawParameterValue (params::padId (pad, params::padLayers))->load());
         for (int k = 0; k < 4; ++k)
@@ -158,6 +159,39 @@ namespace tb::ui
         juce::Component* target = this;
         for (auto& t : pads) if (t->getPadIndex() == pad) target = t.get();
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target));
+    }
+
+    void PadGrid::showAkaiDialog (int pad)
+    {
+        auto* w = new juce::AlertWindow ("Render Akai: pad " + padLabel (pad),
+                                         "The Akai S-series cyclic stretch on this pad's sample. The result goes onto the next empty pad.",
+                                         juce::MessageBoxIconType::NoIcon, this);
+        w->addTextEditor ("time", "100", "Time factor % (25 - 2000)");
+        w->addTextEditor ("pitch", "0", "Pitch, semitones (-36 .. +36)");
+        w->addTextEditor ("cycle", "25", "Cycle, ms (5 - 150)");
+        w->addComboBox ("mode", { "Classic", "Revised" }, "Mode");
+        w->addButton ("RENDER", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, pad] (int r)
+        {
+            if (r == 0) return;
+            const double tf = juce::jlimit (25.0, 2000.0, w->getTextEditorContents ("time").getDoubleValue()) / 100.0;
+            const float st  = juce::jlimit (-36.0f, 36.0f, w->getTextEditorContents ("pitch").getFloatValue());
+            const float cy  = juce::jlimit (5.0f, 150.0f, w->getTextEditorContents ("cycle").getFloatValue());
+            const bool rev  = w->getComboBoxComponent ("mode")->getSelectedItemIndex() == 1;
+            juce::File out;
+            const auto res = processor.getExporter().renderAkai (pad, tf, st, cy, rev, out);
+            if (res.failed()) { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Render Akai", res.getErrorMessage()); return; }
+            int target = -1;
+            for (int k = 1; k <= kNumPads && target < 0; ++k)
+            {
+                const int p = (pad + k) % kNumPads;
+                if (processor.getSamples().getInfo (p).status == SampleManager::Status::empty) target = p;
+            }
+            if (target < 0) { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Render Akai", "No empty pad: the file is in " + out.getFullPathName()); return; }
+            processor.getSamples().loadFile (target, out);
+            setSelectedPad (target);
+        }), true);
     }
 
     void PadGrid::chooseLayerFile (int pad, int layer)

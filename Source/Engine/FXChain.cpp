@@ -57,7 +57,7 @@ namespace tb
         }
 
         const int histFrames = (int) (kHistorySeconds * sr) + maxSpan;
-        stutterL.hist.prepare (histFrames);
+        akai.prepare (sr);
         repeatL.hist.prepare (histFrames);
         reverseL.hist.prepare (histFrames);
         pitchHist.prepare (histFrames);
@@ -85,7 +85,8 @@ namespace tb
         tapeLp = {};
         gateGain = 1.0f;
 
-        for (Looper* lp : { &stutterL, &repeatL, &reverseL })
+        akai.reset();
+        for (Looper* lp : { &repeatL, &reverseL })
         {
             lp->state = Looper::State::off;
             lp->wet = lp->wetTarget = 0.0f;
@@ -118,7 +119,6 @@ namespace tb
             const bool on = (mask >> f) & 1u;
             switch (f)
             {
-                case stutter: stutterL.want = on; break;
                 case repeat:  repeatL.want  = on; break;
                 case reverse: reverseL.want = on; break;
                 default:      wet[(size_t) f].setTargetValue (on ? 1.0f : 0.0f); break;
@@ -139,9 +139,9 @@ namespace tb
     bool FXChain::isIdle() const noexcept
     {
         for (int f = 0; f < kNumFx; ++f)
-            if (f != stutter && f != repeat && f != reverse && live (wet[(size_t) f]))
+            if (f != repeat && f != reverse && live (wet[(size_t) f]))
                 return false;
-        for (const Looper* lp : { &stutterL, &repeatL, &reverseL })
+        for (const Looper* lp : { &repeatL, &reverseL })
             if (lp->want || lp->state != Looper::State::off || lp->wet > 0.0f)
                 return false;
         return ! pitchActive && ! delayRinging && reverbTail < kTailFloor;
@@ -155,7 +155,6 @@ namespace tb
             bool on = false;
             switch (f)
             {
-                case stutter: on = stutterL.wet > 0.0f; break;
                 case repeat:  on = repeatL.wet > 0.0f;  break;
                 case reverse: on = reverseL.wet > 0.0f; break;
                 default:      on = wet[(size_t) f].getCurrentValue() > 0.0f || wet[(size_t) f].getTargetValue() > 0.0f; break;
@@ -168,7 +167,6 @@ namespace tb
     uint32_t FXChain::armedMask() const noexcept
     {
         uint32_t m = 0;
-        if (stutterL.want && stutterL.wet <= 0.0f) m |= 1u << stutter;
         if (repeatL.want  && repeatL.wet  <= 0.0f) m |= 1u << repeat;
         if (reverseL.want && reverseL.wet <= 0.0f) m |= 1u << reverse;
         return m;
@@ -177,8 +175,9 @@ namespace tb
     //==========================================================================
     void FXChain::advanceSilent (int n, const FxClock& c) noexcept
     {
-        for (History* h : { &stutterL.hist, &repeatL.hist, &reverseL.hist })
+        for (History* h : { &repeatL.hist, &reverseL.hist })
             h->writeSilence (n);
+        for (int i = 0; i < n; ++i) akai.push (0.0f, 0.0f);
         freePpq = (c.playing ? c.ppq : freePpq) + n * (c.playing ? c.ppqPerSample : c.bpm / 60.0 / sr);
         for (auto& w : wet) w.skip (n);
     }
@@ -186,8 +185,11 @@ namespace tb
     void FXChain::recordOnly (const float* l, const float* r, int n, const FxClock& c) noexcept
     {
         for (int i = 0; i < n; ++i)
-            for (History* h : { &stutterL.hist, &repeatL.hist, &reverseL.hist })
+        {
+            for (History* h : { &repeatL.hist, &reverseL.hist })
                 h->write (l[i], r[i]);
+            akai.push (l[i], r[i]);
+        }
         freePpq = (c.playing ? c.ppq : freePpq) + n * (c.playing ? c.ppqPerSample : c.bpm / 60.0 / sr);
     }
 
@@ -322,8 +324,23 @@ namespace tb
             }
         }
 
-        // ---- 9, 10. STUTTER / BEAT REPEAT -------------------------------------------------
-        processLooper (stutter, stutterL, L, R, n, ppq0, dppq, c);
+        // ---- 9. AKAIZER: Akai cyclic pitch (its input is kept even while it's off) ----------
+        {
+            const bool on = live (wet[akaizer]);
+            if (on) akai.setParams (akaiSemis (prm[akaizer][0]), cycleMs (prm[akaizer][1]), choiceIndex (prm[akaizer][2], 2) == 1);
+            for (int i = 0; i < n; ++i)
+            {
+                akai.push (L[i], R[i]);
+                if (! on) continue;
+                float wl, wr;
+                akai.next (wl, wr);
+                const float m = wet[akaizer].getNextValue();
+                L[i] += m * (wl - L[i]);
+                R[i] += m * (wr - R[i]);
+            }
+        }
+
+        // ---- 10. BEAT REPEAT ---------------------------------------------------------------
         processLooper (repeat,  repeatL,  L, R, n, ppq0, dppq, c);
 
         // ---- 11. GATE: tempo-synced chopper with 2 ms edges -------------------------------
@@ -515,8 +532,7 @@ namespace tb
                     {
                         const int len = juce::jlimit (16, maxLen, (int) std::lround (beatsToSamples (lp.sizeBeats, c)));
                         lp.loopLen = len;
-                        if (id == stutter) { lp.loopStart = abs;       lp.playStart = abs + len; }   // grab what comes next
-                        else               { lp.loopStart = abs - len; lp.playStart = abs; }         // repeat what just played
+                        lp.loopStart = abs - len; lp.playStart = abs;                                  // repeat what just played
                         lp.state = Looper::State::on;
                     }
                 }

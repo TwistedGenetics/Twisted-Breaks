@@ -47,6 +47,7 @@ namespace tb::params
     inline constexpr int kV19 = 19; // parameters introduced in 0.21.x (TWIST, layers, fit to tempo)
     inline constexpr int kV20 = 20; // parameters introduced in 0.22.x (song mode)
     inline constexpr int kV21 = 21; // parameters introduced in 0.23.x (stretch modes)
+    inline constexpr int kV22 = 22; // parameters introduced in 0.25.x (AKAIZER)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full

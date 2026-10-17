@@ -452,7 +452,7 @@ a { color: var(--amber-ink); }
       <tr><td><span class="key">Rate</span></td><td>Sample-rate reduction</td><td>Rate 200 Hz–44.1 kHz, smooth / stepped, mix</td><td class="num">F3</td></tr>
       <tr><td><span class="key">Drive</span></td><td>Distortion</td><td>Soft / hard / saturate, 0–36 dB, mix</td><td class="num">F#3</td></tr>
       <tr><td><span class="key">Tape</span></td><td>Tape saturation</td><td>Saturation, tone</td><td class="num">G3</td></tr>
-      <tr><td><span class="key">Stutter</span></td><td>Repeats a slice of the audio</td><td>Size 1/2–1/32</td><td class="num">G#3</td></tr>
+      <tr><td><span class="key">Akaizer</span></td><td>Akai S950 / S1000 cyclic pitch shift: the metallic 90s jungle sound (in STUTTER's place since 0.25)</td><td>Pitch ±24 st, cycle 5–150 ms, Classic / Revised</td><td class="num">G#3</td></tr>
       <tr><td><span class="key">Repeat</span></td><td>Beat repeat</td><td>Division 1/2–1/32</td><td class="num">A3</td></tr>
       <tr><td><span class="key">Gate</span></td><td>Tempo-synced gate</td><td>1/8, 1/16, 1/32, duty</td><td class="num">A#3</td></tr>
       <tr><td><span class="key">Pitch</span></td><td>Pitch drop (dive)</td><td>Time 1/16–1 bar</td><td class="num">B3</td></tr>
@@ -462,7 +462,17 @@ a { color: var(--amber-ink); }
       <tr><td><span class="key">Reverse</span></td><td>Plays the last moment backwards</td><td>Size 1/8–1 bar</td><td class="num">D#4</td></tr>
     </tbody>
   </table></div>
-  <p>MUTE, STUTTER, REPEAT, PITCH and REVERSE start as MOMENTARY, the rest as LOCKED. STUTTER, REPEAT and REVERSE always start on the next musical boundary. MIDI notes C3–D#4 play the effects of the group picked in the panel; a LOCKED note toggles, a MOMENTARY note holds. The red <span class="key red">Stop</span> button switches every effect off and cuts the tails.</p>
+  <p>MUTE, AKAIZER, REPEAT, PITCH and REVERSE start as MOMENTARY, the rest as LOCKED. REPEAT and REVERSE always start on the next musical boundary. MIDI notes C3–D#4 play the effects of the group picked in the panel; a LOCKED note toggles, a MOMENTARY note holds. The red <span class="key red">Stop</span> button switches every effect off and cuts the tails.</p>
+  <h3>AKAIZER</h3>
+  <p>Akai's S-series samplers stretched and pitched breaks by cutting them into short <b>cycles</b> and replaying each one at the new pitch. The joins buzz at the cycle rate and the sound goes metallic and phasey: the stretched amens of 90s hardcore, jungle and speed garage. AKAIZER does that live on a group:</p>
+  <ul>
+    <li><span class="key">Pitch</span>: ±24 semitones, in quarter-tones. The tempo doesn't change.</li>
+    <li><span class="key">Cycle</span>: 5–150 ms. Short cycles (8–15 ms) buzz and ring like a robot. 20–30 ms is the classic stretched-amen sound. Long cycles (60 ms and up) stutter and echo.</li>
+    <li><span class="key">Mode</span>: <b>Classic</b> splices the cycles almost hard, like the samplers did. <b>Revised</b> crossfades them in phase: smoother, less buzz.</li>
+  </ul>
+  <p>Try these: Classic, 20–30 ms, +3 to +7 st on a break for the 90s sound; Revised, 40 ms, −5 st for darker, smeared drums. AKAIZER runs about one cycle behind the beat (longer when pitched up), like any pitch shifter.</p>
+  <p>The same engine is a pad <b>Stretch</b> mode (Akai Classic / Revised, § 03), and right-click a pad &gt; <b>Render Akai…</b> makes a new sample the way the Akaizer program does: time factor 25–2000 %, pitch ±36 st, cycle and mode, onto the next empty pad. Listening references are in the repo's <code>docs/audio/akaizer/</code>.</p>
+  <p>STUTTER's old settings stay in old Live sets but do nothing now. The JUNGLE ROLL macro rolls with REPEAT instead.</p>
 </section>
 
 <!-- ===================================================================== 08 MACROS -->
@@ -874,7 +884,7 @@ a { color: var(--amber-ink); }
     <li>Audio is stored as 24-bit FLAC at its own sample rate, each sound once however many pads use it. A preset made by a newer version, or a damaged file, is refused with a message and nothing changes. A sound missing from a preset loads as MISSING with its name.</li>
   </ul>
   <h3>What the Live set keeps</h3>
-  <p>All 1331 parameters, the kit name, the song, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
+  <p>All 1347 parameters, the kit name, the song, sample paths, slice markers (and their RESET point), the MIDI note map, both sequencers, snapshots, the break bank, the iRig light layout, Push 3 mode and Mikro MK3 mode. Changes made in the plugin window are reported to Live, so saving, duplicating the track and undo all pick them up. Samples are referenced, not copied: keep them where they are, use <span class="key plain">Collect samples</span> (above) or Live's <b>Collect All and Save</b>, or save a kit preset, which carries its samples.</p>
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>

@@ -24,12 +24,12 @@ namespace tb::fx
     {
         mute, lpf, hpf, bpf,
         crush, rate, drive, tape,
-        stutter, repeat, gate, pitch,
+        akaizer, repeat, gate, pitch,       // akaizer: STUTTER's place until 0.24 (A12)
         delay, reverb, comb, reverse,
         kNumFx
     };
 
-    enum class Text { percent, hz, bits, db, semis, rateHz, choice };
+    enum class Text { percent, hz, bits, db, semis, rateHz, choice, akaiSemis, cycleMs };
 
     struct ParamDef
     {
@@ -64,6 +64,7 @@ namespace tb::fx
     inline constexpr double  kRevBeats[]   = { 0.5,   1.0,   2.0,   4.0 };
     inline const char* const kDriveTypes[] = { "SOFT", "HARD", "SAT" };
     inline const char* const kRateModes[]  = { "SMOOTH", "STEPPED" };
+    inline const char* const kAkaiModes[]  = { "CLASSIC", "REVISED" };
 
     inline const FxDef& def (int id)
     {
@@ -77,7 +78,9 @@ namespace tb::fx
             { "rate",    "RATE",    "SAMPLE RATE REDUCE", 3, { { "freq", "RATE", T::rateHz, 0.5f }, { "mode", "MODE", T::choice, 0.0f, kRateModes, 2 }, { "mix", "MIX", T::percent, 1.0f } } },
             { "drive",   "DRIVE",   "DISTORTION / DRIVE", 3, { { "type", "TYPE", T::choice, 0.0f, kDriveTypes, 3 }, { "amount", "DRIVE", T::db, 0.5f }, { "mix", "MIX", T::percent, 1.0f } } },
             { "tape",    "TAPE",    "TAPE SATURATION",    2, { { "sat", "SAT", T::percent, 0.5f }, { "tone", "TONE", T::hz, 0.75f } } },
-            { "stutter", "STUTTER", "STUTTER",            1, { { "size", "SIZE", T::choice, 3.0f, kSizes, 5 } } },
+            { "akaizer", "AKAIZER", "AKAIZER - AKAI CYCLIC PITCH", 3, { { "pitch", "PITCH", T::akaiSemis, 0.5f + 5.0f / 48.0f },
+                                                                         { "cycle", "CYCLE", T::cycleMs, 0.4732f },
+                                                                         { "mode", "MODE", T::choice, 0.0f, kAkaiModes, 2 } } },
             { "repeat",  "REPEAT",  "BEAT REPEAT",        1, { { "div", "DIV", T::choice, 2.0f, kSizes, 5 } } },
             { "gate",    "GATE",    "GATE",               2, { { "div", "DIV", T::choice, 1.0f, kGateDivs, 3 }, { "duty", "DUTY", T::percent, 0.5f } } },
             { "pitch",   "PITCH",   "PITCH DROP",         1, { { "time", "TIME", T::choice, 2.0f, kDropTimes, 5 } } },
@@ -97,6 +100,8 @@ namespace tb::fx
     inline float driveDb  (float n) noexcept { return 36.0f * juce::jlimit (0.0f, 1.0f, n); }                       // 0 .. 36 dB
     inline float combSemis (float n) noexcept { return -24.0f + 48.0f * juce::jlimit (0.0f, 1.0f, n); }             // around C3
     inline float combHz   (float n) noexcept { return 130.81f * std::pow (2.0f, combSemis (n) / 12.0f); }           // 32.7 Hz .. 523 Hz
+    inline float akaiSemis (float n) noexcept { return (float) juce::roundToInt ((-24.0f + 48.0f * juce::jlimit (0.0f, 1.0f, n)) * 4.0f) / 4.0f; }  // +-24 st, quarter tones
+    inline float cycleMs  (float n) noexcept { return 5.0f * std::pow (30.0f, juce::jlimit (0.0f, 1.0f, n)); }       // 5 .. 150 ms
 
     inline juce::String valueText (const ParamDef& p, float v)
     {
@@ -109,6 +114,8 @@ namespace tb::fx
             case Text::semis:   { const float s = combSemis (v); return (s >= 0.0f ? "+" : "") + juce::String (s, 1) + " st"; }
             case Text::rateHz:  { const float hz = rateHz (v); return hz >= 1000.0f ? juce::String (hz / 1000.0f, 1) + " kHz" : juce::String (juce::roundToInt (hz)) + " Hz"; }
             case Text::choice:  { const int i = juce::jlimit (0, p.numChoices - 1, juce::roundToInt (v)); return p.choices[i]; }
+            case Text::akaiSemis: { const float st = akaiSemis (v); return (st >= 0.0f ? "+" : "") + juce::String (st, st == std::floor (st) ? 0 : 2) + " st"; }
+            case Text::cycleMs: return juce::String (cycleMs (v), 1) + " ms";
         }
         return {};
     }
@@ -122,7 +129,7 @@ namespace tb::fx
     }
 
     /** Default key modes: the "hit" effects are MOMENTARY, the rest LOCKED. */
-    inline constexpr uint32_t kDefaultLockedMask = 0xffffu & ~((1u << mute) | (1u << stutter) | (1u << repeat) | (1u << pitch) | (1u << reverse));
+    inline constexpr uint32_t kDefaultLockedMask = 0xffffu & ~((1u << mute) | (1u << akaizer) | (1u << repeat) | (1u << pitch) | (1u << reverse));
 
     /** MIDI: notes C3..D#4 (60..75) play FX 1..16 of the FX panel's selected group. */
     inline constexpr int kFirstMidiNote = 60;

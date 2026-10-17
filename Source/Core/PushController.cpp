@@ -40,7 +40,7 @@ namespace tb
 
         // FX page: which effect each encoder / lower key works on, and which of its settings.
         constexpr int kFxSlots[8][2] = { { fx::lpf, 0 }, { fx::hpf, 0 }, { fx::crush, 0 }, { fx::drive, 1 },
-                                         { fx::tape, 0 }, { fx::stutter, 0 }, { fx::delay, 2 }, { fx::reverb, 2 } };
+                                         { fx::tape, 0 }, { fx::akaizer, 0 }, { fx::delay, 2 }, { fx::reverb, 2 } };
     }
 
     //==========================================================================

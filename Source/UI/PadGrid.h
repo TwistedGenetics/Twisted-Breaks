@@ -40,6 +40,7 @@ namespace tb::ui
         /** The right-click COPY / PASTE / SWAP / CLEAR menu of a pad (A11). */
         void showPadMenu (int pad);
         void chooseLayerFile (int pad, int layer);      // layer -1: the first free one
+        void showAkaiDialog (int pad);                  // A12: RENDER AKAI
 
         /** Scenes: which 16 pads the tiles show (0 = A, 1 = B). */
         void setScene (int scene);
