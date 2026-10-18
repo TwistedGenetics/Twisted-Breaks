@@ -345,13 +345,13 @@ a { color: var(--amber-ink); }
   <p><span class="key">Gain</span> <span class="key">Pan</span> <span class="key">Pitch</span> (±12 semitones) <span class="key">Start</span> <span class="key">End</span> knobs, the <span class="key">Reverse</span> switch, and the <span class="key">Group</span> keys A–D that send the pad to a group bus.</p>
   <figure>
     <div class="bezel"><img src="img/play.jpg" alt="The PLAY page of the pad editor" width="1200" height="800" loading="lazy"></div>
-    <figcaption><span class="chip">Fig. 2</span>The PLAY page: mode, STRETCH (with the break's tempo above it), rate, choke, velocity, FIX, mute / solo and the MIDI note.</figcaption>
+    <figcaption><span class="chip">Fig. 2</span>The PLAY page: mode (with CONT), STRETCH (with the break's tempo above it), rate, choke, velocity, FIX, mute / solo and the MIDI note.</figcaption>
   </figure>
   <h3>Play page</h3>
   <div class="tablewrap"><table>
     <thead><tr><th>Control</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04). <b>SEQ1</b> / <b>SEQL</b> make it a sequence pad (§ 09).</td></tr>
+      <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04). <b>SEQ1</b> / <b>SEQL</b> make it a sequence pad (§ 09). <b>CONT</b> (loop continuous) is a loop you switch on and off: one hit starts it, the next hit stops it, letting go does nothing, and it <b>keeps playing when Live stops</b>, at Live's last tempo. When Live starts again it eases back onto the bar grid. The red Stop button, or changing its mode, stops it.</td></tr>
       <tr><td><span class="key">Stretch</span></td><td>How the pad follows Live's tempo: <b>OFF</b>, <b>PITCH</b>, <b>BEAT</b>, <b>TEX</b>, <b>AKAI</b> or <b>AK.R</b> (see <i>Stretch</i> below). It works on every mode. On a <b>LOOP</b> pad anything but OFF locks the loop to Live's tempo and bar grid: a hit mid-bar enters at the right point, and it re-locks after loop-brace jumps and tempo changes. PITCH is the old SYNC switch (the pitch moves with the tempo); BEAT, TEX and AKAI keep the loop's pitch. OFF runs a loop free. Double-click: OFF. The number above it is the break's own tempo (amber when you typed it in): click it, or right-click the selector, for <i>Double it</i>, <i>Halve it</i>, <i>Type it in</i>, the BEATS gap fill and the grain / cycle size.</td></tr>
       <tr><td><span class="key">Rate</span></td><td>Loop speed: 1/4, 1/2, 1x or 2x.</td></tr>
       <tr><td><span class="key">Choke</span></td><td>Groups 1–4: a hit stops the other pads in the same choke group (3 ms fade). Open and closed hats, for example.</td></tr>
@@ -722,7 +722,7 @@ a { color: var(--amber-ink); }
 <!-- ===================================================================== 15 MIDI -->
 <section class="plate" id="midi"><span class="rivets"></span>
   <header><h2 class="label">Controller, MIDI, Push &amp; Mikro</h2><span class="no">§ 15</span></header>
-  <div class="note"><p><b>Stop means stop</b> (0.22.1): when Live stops, every break stops with a 5 ms fade, whatever it is (loops, SWAP pads, slice sequences, sequence pads, note repeat); FX tails ring on. While Live is stopped, pads still sound so you can try them, but only while held: nothing latches or keeps running.</p></div>
+  <div class="note"><p><b>Stop means stop</b> (0.22.1): when Live stops, every break stops with a 5 ms fade, whatever it is (loops, SWAP pads, slice sequences, sequence pads, note repeat); FX tails ring on. While Live is stopped, pads still sound so you can try them, but only while held: nothing latches or keeps running. The exception is a pad on MODE <b>CONT</b> (0.27): it plays on through the stop, and with Live stopped a hit still starts it and the next hit stops it.</p></div>
   <h3>Recording your playing in Live</h3>
   <p>Everything you play on the pads (mouse, Push, the Mikro, note repeat, Mikro KEYBOARD slices) goes out as MIDI, so Live can record your jamming into a clip.</p>
   <p><b>On the plugin's own track</b> (the clip plays straight back into it):</p>

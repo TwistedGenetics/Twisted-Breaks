@@ -211,7 +211,7 @@ namespace tb
         s.regionStart = s0;
         s.regionEnd   = s1;
         s.reverse     = pp.reverse;
-        s.loop        = pp.mode == params::modeLoop;
+        s.loop        = params::isLoopMode (pp.mode);
         s.character   = juce::jlimit (0, PadVoice::kNumCharacters - 1, pp.character);
 
         const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
@@ -423,6 +423,10 @@ namespace tb
         for (int p = 0; p < kNumPads; ++p)
         {
             const auto& pp = bp.pads[(size_t) p];
+            // A14: a running LOOP CONT pad whose mode is changed (by hand, a snapshot, a kit) stops:
+            // nothing would ever let it go otherwise.
+            if (padMode[(size_t) p] == params::modeLoopCont && pp.mode != params::modeLoopCont)
+                for (auto& v : voices[(size_t) p]) if (v.isLooping()) v.release();
             padMode[(size_t) p]    = pp.mode;
             padChoke[(size_t) p]   = pp.choke;
             padStepsWhole[(size_t) p] = pp.stepsWhole;
@@ -514,6 +518,14 @@ namespace tb
         bridge.padTriggerCount[(size_t) pad].fetch_add (1, std::memory_order_relaxed);
         padFlash[(size_t) pad] = true;     // lamp blinks even on an empty pad
         lastVelocity[(size_t) pad] = velocity;
+
+        // A14 LOOP CONT: latched - a hit on the running loop stops it (a sequencer step retriggers it).
+        if (padMode[(size_t) pad] == params::modeLoopCont && ! fromSequencer && padSwap[(size_t) pad] == 0
+             && ! padSliceSeq[(size_t) pad] && isContRunning (pad))
+        {
+            for (auto& v : voices[(size_t) pad]) if (v.isLooping()) v.release();
+            return;
+        }
 
         chokeOthers (pad, padChoke[(size_t) pad]);
 
@@ -909,6 +921,9 @@ namespace tb
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
 
+        // A14: LOOP CONT ignores note-offs, Live playing or not (a hit stops it).
+        if (padMode[(size_t) pad] == params::modeLoopCont) return;
+
         // A12: with Live stopped nothing latches: loops, SWAP pads, slice sequences and
         // sequence pads play only while held (one-shots finish as usual).
         const bool stopped = transportNow == nullptr || ! transportNow->isPlaying;
@@ -1021,13 +1036,15 @@ namespace tb
 
     void AudioEngine::stopAllBreaks() noexcept
     {
-        // Live stopped: every break stops (5 ms fades), whatever its mode. FX tails ring on.
-        for (auto& padVoices : voices)
-            for (auto& v : padVoices)
-                v.release();
+        // Live stopped: every break stops (5 ms fades), whatever its mode - except LOOP CONT
+        // pads (A14), which play on at Live's last tempo. FX tails ring on.
+        for (int p = 0; p < kNumPads; ++p)
+            if (padMode[(size_t) p] != params::modeLoopCont)
+                for (auto& v : voices[(size_t) p]) v.release();
         for (auto& r : rollRun) r.active = false;
         pendingSwap.fill ({});
-        swapPlaying.fill (-1);
+        for (auto& sp : swapPlaying)
+            if (! (sp >= 0 && padMode[(size_t) sp] == params::modeLoopCont)) sp = -1;
         for (int p = 0; p < kNumPads; ++p)
         {
             if (sliceRun[(size_t) p].running) stopSliceSeq (p);
@@ -1855,8 +1872,13 @@ namespace tb
             }
         }
 
-        // ---- A12: Live stopped -> every break stops, whatever is playing.
+        // ---- A12: Live stopped -> every break stops, whatever is playing (not LOOP CONT).
         if (wasPlayingLast && ! transport.isPlaying) stopAllBreaks();
+        // ---- A14: Live starts -> a LOOP CONT loop that ran on eases back onto the bar grid.
+        if (! wasPlayingLast && transport.isPlaying)
+            for (int p = 0; p < kNumPads; ++p)
+                if (padMode[(size_t) p] == params::modeLoopCont)
+                    for (auto& v : voices[(size_t) p]) v.letOffGrid();
         wasPlayingLast = transport.isPlaying;
 
         // ---- Synced loops re-lock to the host's position at the block start.

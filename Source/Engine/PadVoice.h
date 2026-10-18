@@ -117,6 +117,8 @@ namespace tb
         bool   isActive()    const noexcept { return active; }
         bool   isReleasing() const noexcept { return releasing; }
         bool   isLooping()   const noexcept { return looping; }
+        /** A14: the next syncTo() eases onto the grid (a fade) instead of jumping. */
+        void   letOffGrid() noexcept { if (active && looping) offGrid = true; }
         double getPosition() const noexcept { return position; }
         double getIncrement() const noexcept { return increment.getCurrentValue(); }
         int    getRegionStart() const noexcept { return regionStart; }

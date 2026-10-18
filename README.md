@@ -60,7 +60,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.25 | AKAIZER: the Akai S-series cyclic pitch shift as a group FX in STUTTER's place (Classic / Revised, pitch, cycle); RENDER AKAI on a pad; reference renders in docs/audio/akaizer | **done** — 724/724 automated checks |
 | 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** |
 | 0.25.2 | Push 3 and the Mikro MK3 are found on their own when plugged in (no mode to switch on); LIGHTS is now **CONTROLLERS**, with each one's status | **done** |
-| 0.26 | STRETCH moves to the PLAY page in SYNC's place and works on loops too (Beats / Texture / Akai keep a locked loop's pitch); the tempo readout holds x2 / ÷2 / type / gaps / grain; out of the right-click menu | **done** — 745/745 automated checks |
+| 0.26 | STRETCH moves to the PLAY page in SYNC's place and works on loops too (Beats / Texture / Akai keep a locked loop's pitch); the tempo readout holds x2 / ÷2 / type / gaps / grain; out of the right-click menu | **done** |
+| 0.27 | MODE **CONT** (loop continuous): latched loops that keep playing when Live stops, at Live's last tempo, and ease back onto the bar when it starts | **done** — 756/756 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -84,7 +85,10 @@ Sections that aren't built yet are visibly marked offline on the panel
   48 kHz set), click-free starts, ends, retriggers and panic.
 * **PLAY page** per pad (the SOUND / PLAY keys switch pages):
   * **MODE**: ONE (plays once) or LOOP (repeats while the pad / note is
-    held, with a crossfaded loop point), or SLICE (see below).
+    held, with a crossfaded loop point), or SLICE (see below), or CONT
+    (0.27, loop continuous: a hit starts it, the next hit stops it, and it
+    keeps playing at Live's last tempo when Live stops; it eases back onto
+    the bar grid when Live starts).
   * **STRETCH** (0.26, in SYNC's old place): OFF / PITCH / BEAT / TEX /
     AKAI / AK.R for every mode. On a LOOP pad anything but OFF locks it to
     Ableton's tempo and bar grid (PITCH = the old SYNC; BEAT / TEX / AKAI

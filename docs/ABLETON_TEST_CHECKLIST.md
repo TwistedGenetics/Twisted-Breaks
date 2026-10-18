@@ -102,6 +102,16 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.27: LOOP CONT
+- [ ] PLAY page MODE has CONT after SEQL; old sets' modes unchanged; the tile says CONT
+- [ ] Live playing: hit a CONT pad - it loops; let go - it carries on; hit again - it stops
+- [ ] Stop Live: LOOP pads stop, the CONT pad keeps playing in time (STRETCH PITCH / BEAT / TEX / AKAI at Live's last tempo; OFF runs free)
+- [ ] With Live stopped: hit a CONT pad to start it, hit again to stop it
+- [ ] Press play: the CONT loop slides back onto the bar (a short fade, no click) and stays in time with the arrangement
+- [ ] Red STOP stops it; changing its MODE stops it; a choke group / SWAP group still works on it
+- [ ] Mikro / Push: CONT pads light as playing while latched, also with Live stopped
+- [ ] MIDI OUT recording: the clip replays the start and stop hits (the loop starts and stops on playback)
+
 ## 0.26: STRETCH on the PLAY page
 - [ ] An old set: loops that had SYNC on show STRETCH PITCH and sound the same; loops with SYNC off show OFF; one-shots with a stretch set show it
 - [ ] Right-click a pad: no Stretch submenu (Render Akai, Layers, TWIST, copy / paste still there)

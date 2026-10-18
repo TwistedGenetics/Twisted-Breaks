@@ -27,14 +27,14 @@ namespace tb::ui
         // PLAY page columns: x, width, caption
         struct Col { int x, w; const char* caption; };
         const Col kPlayCols[] = {
-            {   0, 84, "MODE"  },
-            {  86, 100, "STRETCH" },   // A13: in SYNC's old place (the tempo chip sits at its right)
-            { 188, 72, "RATE"  },
-            { 262, 72, "CHOKE" },
-            { 336, 58, "VEL"   },
-            { 396, 36, ""      },     // FIXED velocity key
-            { 434, 36, ""      },     // mute / solo keys
-            { 472, 68, "NOTE"  },
+            {   0, 92, "MODE"  },     // A14: six positions (CONT)
+            {  94, 100, "STRETCH" },   // A13: in SYNC's old place (the tempo chip sits at its right)
+            { 196, 70, "RATE"  },
+            { 268, 70, "CHOKE" },
+            { 340, 56, "VEL"   },
+            { 398, 36, ""      },     // FIXED velocity key
+            { 436, 36, ""      },     // mute / solo keys
+            { 474, 66, "NOTE"  },
         };
 
         File& lastFolder()
@@ -73,12 +73,14 @@ namespace tb::ui
         styleKnob (velKnob, 62);
         velKnob.setTooltip ("Velocity sensitivity: 0% = every hit at full level, 100% = level follows how hard you play");
         modeSel.setTooltip ("ONE: plays once.  LOOP: repeats while the pad / note is held (latched in a SWAP group).  SLICE: plays one slice (SLICE knob).  "
-                            "SEQ1 / SEQL: a hit plays the pad's sequencer lane once / looped (hit a looping one again to stop it).");
+                            "SEQ1 / SEQL: a hit plays the pad's sequencer lane once / looped (hit a looping one again to stop it).  "
+                            "CONT (loop continuous): a hit starts the loop, the next hit stops it, and it keeps playing when Live stops.");
         launchSel.setTooltip ("When a hit starts this pad's sequence: NOW, or the next 1/16, beat or bar");
         rateSel.setTooltip ("Loop speed: 1/4, 1/2, 1x or 2x");
         chokeSel.setTooltip ("Choke group: hitting a pad stops the other pads in the same group");
         // A13: STRETCH (click / drag / wheel; double-click: OFF; right-click or the tempo: the options).
         stretchSel.setGeometry (13.0f, 20.0f);
+        modeSel.setGeometry (14.0f, 21.0f);
         stretchSel.onChange      = [this] (int k) { stretch::setMode (processor, pad, k); };
         stretchSel.onDoubleClick = [this] { stretch::setMode (processor, pad, params::stretchOff); };
         stretchSel.onRightClick  = [this] { stretch::showTempoMenu (processor, pad, tempoChip); };
@@ -389,7 +391,7 @@ namespace tb::ui
         if (isSeqModeNow() != shownSeqMode) setPage (page);
 
         // Rate only matters for loops; dim it otherwise.
-        const bool loop = modeSel.getIndex() == params::modeLoop;
+        const bool loop = params::isLoopMode (modeSel.getIndex());
         rateSel.setAlpha (loop ? 1.0f : 0.45f);
 
         // A13: STRETCH and the break's own tempo.

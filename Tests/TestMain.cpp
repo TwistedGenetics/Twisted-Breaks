@@ -5566,6 +5566,118 @@ namespace
     }
 
     //  A13 (0.26): STRETCH in the pad settings, for loops too.
+    //  A14 (0.27): LOOP CONT - latched loops that play on when Live stops.
+    void testA14LoopCont()
+    {
+        std::cout << "\n== A14: LOOP CONT ==" << std::endl;
+        using namespace tb::params;
+        {
+            auto* mp = dynamic_cast<juce::AudioParameterChoice*> (TwistedBreaksProcessor().getParameters().getParameter (padId (0, padMode)));
+            check (mp != nullptr && mp->choices.size() == 6 && mp->choices[modeLoopCont] == "Loop Cont" && mp->choices[modeSeqLoop] == "Seq Loop",
+                   "MODE gets a sixth choice, Loop Cont, after the others (append only: old sets read the same)");
+        }
+        const double own = 170.0, live = 174.0;
+        const int total = (int) std::lround (8.0 * 60.0 / own * 48000.0);       // 2 bars
+        const int eighth = total / 16;
+        juce::AudioBuffer<float> clicks (1, total);
+        clicks.clear();
+        for (int k = 0; k < 16; ++k)
+            for (int i = 0; i < 240; ++i)
+                clicks.setSample (0, k * eighth + i, 0.8f * std::exp (-(float) i / 40.0f) * (i % 2 == 0 ? 1.0f : -1.0f));
+        Rig r;
+        r.host.bpm = live;
+        const auto file = writeAudio ("a14_clicks", clicks, 48000.0, Fmt::wavFloat);
+        r.load (0, file);
+        r.load (1, file);
+        for (int p : { 0, 1 }) setPadParam (r.p, p, padVelSens, 0.0f);
+        setPadParam (r.p, 0, padMode, (float) modeLoopCont);
+        setPadParam (r.p, 1, padMode, (float) modeLoop);
+        const int n0 = r.p.getEngine().getPadNote (0), n1 = r.p.getEngine().getPadNote (1);
+
+        juce::AudioBuffer<float> buf (2, kBlock);
+        juce::MidiBuffer midi;
+        std::vector<float> trace;          // the CONT pad alone where it matters
+        auto run = [&] (int blocks, std::initializer_list<juce::MidiMessage> at0 = {})
+        {
+            float peak = 0.0f;
+            for (int b = 0; b < blocks; ++b)
+            {
+                if (b == 0) for (const auto& m : at0) midi.addEvent (m, 0);
+                runBlock (r.p, r.host, buf, midi);
+                peak = juce::jmax (peak, buf.getMagnitude (0, 0, kBlock));
+                for (int i = 0; i < kBlock; ++i) trace.push_back (buf.getSample (0, i));
+            }
+            return peak;
+        };
+        auto on  = [] (int n) { return juce::MidiMessage::noteOn (1, n, (juce::uint8) 127); };
+        auto off = [] (int n) { return juce::MidiMessage::noteOff (1, n); };
+        const auto allocs = gAudioAllocs.load();
+
+        // Live playing: a hit starts it, the note-off is ignored, the next hit stops it.
+        r.host.playing = true; r.host.ppq = 0.0;
+        run (2, { on (n0) });
+        const float afterOff = run (40, { off (n0) });
+        const float stopped = (run (1, { on (n0) }), run (4));
+        check (afterOff > 0.3f && stopped < 1.0e-4f, "a hit starts a CONT loop, letting go doesn't stop it, the next hit does");
+
+        // Live stops: LOOP pads stop, CONT plays on.
+        run (2, { on (n0), on (n1) });
+        r.host.playing = false;
+        run (2);
+        setPadParam (r.p, 1, padMute, 1.0f);                     // (pad 2 should be silent anyway; mute guards the trace)
+        trace.clear();
+        const int stoppedBlocks = (int) (8.0 * 4.0 * 60.0 / live * 48000.0 / kBlock);     // 8 bars at Live's last tempo
+        const float onAfterStop = run (stoppedBlocks);
+        bool loopStopped = true;
+        for (const auto& v : r.p.getEngine().voicesForTesting (1)) loopStopped = loopStopped && ! v.isActive();
+        check (onAfterStop > 0.3f && loopStopped, "Live stops: the LOOP pad stops, the CONT pad keeps playing");
+        {
+            std::vector<int> hits; int last = -100000;
+            for (int i = 0; i < (int) trace.size(); ++i)
+                if (std::abs (trace[(size_t) i]) > 0.3f) { if (i - last > 2000) hits.push_back (i); last = i; }
+            const double grid = eighth * own / live;
+            double worst = 0.0;
+            for (auto h : hits) { const double k = std::round ((h - hits.front()) / grid); worst = juce::jmax (worst, std::abs (h - hits.front() - k * grid)); }
+            check (hits.size() >= 60 && worst < 48.0, "while Live is stopped it keeps Live's last tempo: 8 bars, no drift (" + juce::String ((int) hits.size())
+                                                        + " hits, worst " + juce::String (worst / 48.0, 2) + " ms)");
+        }
+        // Note-offs are ignored while stopped too.
+        check (run (24, { off (n0) }) > 0.3f, "with Live stopped a note-off doesn't stop it either");
+
+        // Live starts again: back on the bar grid.
+        r.host.ppq = 32.0;
+        r.host.playing = true;
+        trace.clear();
+        run ((int) (4.0 * 60.0 / live * 48000.0 / kBlock));
+        {
+            const double perSample = live / 60.0 / 48000.0;
+            std::vector<int> hits; int last = -100000;
+            for (int i = 2000; i < (int) trace.size(); ++i)
+                if (std::abs (trace[(size_t) i]) > 0.3f) { if (i - last > 2000) hits.push_back (i); last = i; }
+            double worst = 0.0;
+            for (auto h : hits) { const double q = 32.0 + h * perSample; worst = juce::jmax (worst, std::abs (q * 2.0 - std::round (q * 2.0)) / 2.0 / perSample); }
+            check (hits.size() >= 6 && worst < 48.0 * 2.0, "Live starts: it eases back onto the bar grid (" + juce::String ((int) hits.size())
+                                                             + " hits, worst " + juce::String (worst / 48.0, 2) + " ms off the 1/8 grid)");
+        }
+        check (gAudioAllocs.load() == allocs, "no allocation on the audio thread (LOOP CONT)");
+
+        // STOP / panic stop it; so does changing its mode.
+        r.p.requestPanic();
+        check ((run (1), run (4)) < 1.0e-4f, "the red STOP (panic) stops a CONT loop");
+        run (2, { on (n0) });
+        r.host.playing = false;
+        run (2);
+        setPadParam (r.p, 0, padMode, (float) modeLoop);
+        check ((run (1), run (4)) < 1.0e-4f, "switching a running CONT pad to another mode stops it");
+        setPadParam (r.p, 0, padMode, (float) modeLoopCont);
+        r.host.playing = false;
+        run (2, { on (n0) });
+        check (run (20, { off (n0) }) > 0.3f, "with Live stopped a hit starts it and it latches");
+        run (4, { on (n0) });
+        check (run (4) < 1.0e-4f, "... and the next hit stops it");
+        r.host.playing = false;
+    }
+
     void testA13StretchSelector()
     {
         std::cout << "\n== A13: STRETCH on the PLAY page (loops too) ==" << std::endl;
@@ -7517,6 +7629,7 @@ int main (int argc, char* argv[])
         testA12MidiStop();
         testA12Stretch();
         testA13StretchSelector();
+        testA14LoopCont();
         testA12Macros();
         testA12Akaizer();
         testEditorDrivesState();

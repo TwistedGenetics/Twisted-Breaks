@@ -26,7 +26,7 @@ namespace tb::ui::stretch
         return params::effectiveStretch (juce::roundToInt (rawOf (p, pad, params::padStretch)),
                                          rawOf (p, pad, params::padSync) > 0.5f,
                                          rawOf (p, pad, params::padFit) > 0.5f,
-                                         juce::roundToInt (rawOf (p, pad, params::padMode)) == params::modeLoop);
+                                         params::isLoopMode (juce::roundToInt (rawOf (p, pad, params::padMode))));
     }
 
     void setMode (TwistedBreaksProcessor& p, int pad, int mode)
@@ -47,7 +47,7 @@ namespace tb::ui::stretch
         if (isSet) return obpm;
         const auto info = p.getSamples().getInfo (pad);
         if (info.buffer == nullptr || info.buffer->getNumSamples() <= 0) return 0.0;
-        if (juce::roundToInt (rawOf (p, pad, params::padMode)) == params::modeLoop)
+        if (params::isLoopMode (juce::roundToInt (rawOf (p, pad, params::padMode))))
         {
             float a = juce::jlimit (0.0f, 1.0f, rawOf (p, pad, params::padStart));
             float b = juce::jlimit (0.0f, 1.0f, rawOf (p, pad, params::padEnd));

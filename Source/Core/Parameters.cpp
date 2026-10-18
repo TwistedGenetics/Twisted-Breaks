@@ -81,7 +81,7 @@ namespace tb::params
             // reorder or remove entries; only append.
             layout.add (std::make_unique<AudioParameterChoice> (
                 ParameterID { padId (pad, padMode), vh (kV3) }, prefix + "Mode",
-                StringArray { "One-shot", "Loop", "Slice", "Seq One", "Seq Loop" }, modeOneShot));
+                StringArray { "One-shot", "Loop", "Slice", "Seq One", "Seq Loop", "Loop Cont" }, modeOneShot));
 
             layout.add (std::make_unique<AudioParameterBool> (
                 ParameterID { padId (pad, padSync), vh (kV3) }, prefix + "Loop Sync", true));

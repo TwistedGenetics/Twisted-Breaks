@@ -683,8 +683,9 @@ namespace tb::ui
             else
             {
                 const int mode = roundToInt (paramValue (params::padMode));
-                if (mode == params::modeLoop)
+                if (params::isLoopMode (mode))
                 {
+                    const String loopName = mode == params::modeLoopCont ? "CONT" : "LOOP";
                     const String rate = String (params::loopRates[jlimit (0, 3, roundToInt (paramValue (params::padRate)))]) + "x";
                     const int sm = params::effectiveStretch (roundToInt (paramValue (params::padStretch)), paramValue (params::padSync) > 0.5f,
                                                              paramValue (params::padFit) > 0.5f, true);
@@ -695,12 +696,12 @@ namespace tb::ui
                         const float obpm = paramValue (params::padOrigBpm);
                         const double beats = obpm >= 1.0f ? jmax (0.25, secs * obpm / 60.0) : PadVoice::loopBeatsFor (secs);
                         const char* tag[] = { "", "PITCH", "BEATS", "TEXTURE", "AKAI", "AKAI R" };
-                        how = "LOOP  " + String (tag[sm]) + " " + String (beats, std::abs (beats - std::round (beats)) > 0.01 ? 2 : 0)
+                        how = loopName + "  " + String (tag[sm]) + " " + String (beats, std::abs (beats - std::round (beats)) > 0.01 ? 2 : 0)
                             + (beats < 1.5 && beats > 0.75 ? " BEAT  " : " BEATS  ") + rate;
                     }
                     else
                     {
-                        how = "LOOP  FREE  " + rate;
+                        how = loopName + "  FREE  " + rate;
                     }
                 }
                 if (editingSlices())

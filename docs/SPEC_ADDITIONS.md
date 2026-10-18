@@ -567,3 +567,18 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
 * No new parameters: `stretch`, `sync`, `fit` all kept; the selector writes
   them together as one undo step; old sets read the same.
 * The right-click Stretch submenu is gone.
+
+## A14. LOOP CONT (0.27)
+
+> When the transport is stopped, I want an option for looping pads to carry on
+> playing: an extra setting in the mode selector, loop continuous.
+
+* MODE gets a sixth position, CONT (appended: old sets unchanged). It loops like
+  LOOP (crossfade, RATE, STRETCH) but latches: a hit starts it, the next hit
+  stops it, note-offs do nothing. Sequencer steps retrigger it.
+* Live stopping leaves CONT pads playing, at Live's last tempo; with Live
+  stopped, hits still start / stop them. Live starting eases them back onto
+  the bar grid (short fade).
+* STOP / panic, changing the pad's mode, choke and SWAP groups stop it.
+* MIDI OUT records the hits as played, so a recorded clip starts and stops the
+  loop on playback.

@@ -186,6 +186,8 @@ namespace tb
         // ---- MIDI note map (pads default to notes 36..51) ---------------------
         void setPadNote (int pad, int note) noexcept;
         int  getPadNote (int pad) const noexcept;
+        /** Tests: a pad's voices (read only). */
+        const auto& voicesForTesting (int pad) const noexcept { return voices[(size_t) juce::jlimit (0, kNumPads - 1, pad)]; }
         int  padForNote (int note) const noexcept;   // -1 if unmapped; the scene on view wins a shared note
 
         // ---- Scenes (Phase 13) -------------------------------------------------
@@ -308,6 +310,11 @@ namespace tb
             bool     rollPlays = false;
         };
         bool   isSeqPad (int pad) const noexcept { return params::isSeqMode (padMode[(size_t) pad]); }
+        bool   isContRunning (int pad) const noexcept
+        {
+            for (const auto& v : voices[(size_t) pad]) if (v.isActive() && v.isLooping() && ! v.isReleasing()) return true;
+            return false;
+        }
         int    laneLength (int pad) const noexcept;
         double launchBoundary (int pad, int sampleOffset) const noexcept;
         void   launchLane (int pad, int sampleOffset, double anchor, double start, float hitVel) noexcept;

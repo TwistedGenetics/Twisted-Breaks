@@ -225,8 +225,10 @@ namespace tb::params
     inline constexpr float grpLevelMinDb = -60.0f;
     inline constexpr float grpLevelMaxDb =   6.0f;
 
-    enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2, modeSeqOne = 3, modeSeqLoop = 4 };   // append only
+    enum PadMode { modeOneShot = 0, modeLoop = 1, modeSlice = 2, modeSeqOne = 3, modeSeqLoop = 4,
+                   modeLoopCont = 5 };   // append only. A14 (0.27): LOOP CONT - latched, plays on when Live stops
     inline constexpr bool isSeqMode (int mode) noexcept { return mode == modeSeqOne || mode == modeSeqLoop; }
+    inline constexpr bool isLoopMode (int mode) noexcept { return mode == modeLoop || mode == modeLoopCont; }
     enum SwapAt  { swapAtSlice = 0, swapAtSixteenth = 1, swapAtBeat = 2, swapAtBar = 3 };
     inline constexpr float loopRates[] = { 0.25f, 0.5f, 1.0f, 2.0f };
 

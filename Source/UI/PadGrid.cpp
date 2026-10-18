@@ -228,13 +228,14 @@ namespace tb::ui
             const juce::String modeTag = mode == params::modeSeqOne  ? juce::String ("SEQ1")
                                        : mode == params::modeSeqLoop ? juce::String ("SEQL")
                                        : mode == params::modeLoop  ? juce::String ("LOOP")
+                                       : mode == params::modeLoopCont ? juce::String ("CONT")
                                        : mode == params::modeSlice ? "SL " + juce::String (juce::roundToInt (raw (params::padSlice)))
                                                                    : juce::String ("ONE");
             const juce::String tag = modeTag + (choke > 0 ? " C" + juce::String (choke) : juce::String())
                                              + (swap > 0 ? " SW" + juce::String (swap) : juce::String())
                                              + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String())
                                              + juce::String (std::array<const char*, 5> { "", " SP12", " MPC", " S950", " LOFI" }[(size_t) juce::jlimit (0, 4, juce::roundToInt (raw (params::padCharacter)))])
-                                             + [&] { const bool loop = mode == params::modeLoop;
+                                             + [&] { const bool loop = params::isLoopMode (mode);
                                                      const int sm = params::effectiveStretch (juce::roundToInt (raw (params::padStretch)), raw (params::padSync) > 0.5f,
                                                                                               raw (params::padFit) > 0.5f, loop);
                                                      const char* tags[] = { "", " RP", " BT", " TX", " AK", " AKR" };

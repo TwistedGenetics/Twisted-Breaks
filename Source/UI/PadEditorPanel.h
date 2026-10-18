@@ -66,7 +66,7 @@ namespace tb::ui
         ToggleSwitch reverseSwitch { "REVERSE", "Play this pad's region backwards" };
 
         // ---- PLAY page
-        RotarySelector modeSel  { { "ONE", "LOOP", "SLICE", "SEQ1", "SEQL" } };
+        RotarySelector modeSel  { { "ONE", "LOOP", "SLICE", "SEQ1", "SEQL", "CONT" } };   // A14: CONT = LOOP CONT
         // SEQ ONE / SEQ LOOP (A6): LAUNCH and LEN take SYNC / RATE's places.
         RotarySelector launchSel { { "NOW", "1/16", "BEAT", "BAR" } };
         DragReadout    seqLenRead { "LEN", "This pad's sequence length: GLOBAL (the sequencer's LEN) or 1-32 steps" };
