@@ -5572,7 +5572,8 @@ namespace
         std::cout << "\n== A14: LOOP CONT ==" << std::endl;
         using namespace tb::params;
         {
-            auto* mp = dynamic_cast<juce::AudioParameterChoice*> (TwistedBreaksProcessor().getParameters().getParameter (padId (0, padMode)));
+            TwistedBreaksProcessor fresh;     // (kept alive: the parameter belongs to it)
+            auto* mp = dynamic_cast<juce::AudioParameterChoice*> (fresh.getParameters().getParameter (padId (0, padMode)));
             check (mp != nullptr && mp->choices.size() == 6 && mp->choices[modeLoopCont] == "Loop Cont" && mp->choices[modeSeqLoop] == "Seq Loop",
                    "MODE gets a sixth choice, Loop Cont, after the others (append only: old sets read the same)");
         }
