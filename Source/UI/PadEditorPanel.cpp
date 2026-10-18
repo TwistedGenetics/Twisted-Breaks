@@ -2,6 +2,7 @@
 #include "UI/PanelPainter.h"
 #include "UI/Palette.h"
 #include "PluginProcessor.h"
+#include "UI/StretchMenu.h"
 
 namespace tb::ui
 {
@@ -14,7 +15,7 @@ namespace tb::ui
         const KnobDef kKnobs[] = {
             { "GAIN",  params::padGain,  0.0, "Pad level (double-click: 0 dB)" },
             { "PAN",   params::padPan,   0.0, "Pad pan (double-click: centre)" },
-            { "PITCH", params::padPitch, 0.0, "Pitch in semitones, +/-12 (double-click: 0). Synced loops follow the tempo instead." },
+            { "PITCH", params::padPitch, 0.0, "Pitch in semitones, +/-12 (double-click: 0). A loop on STRETCH PITCH follows the tempo instead." },
             { "START", params::padStart, 0.0, "Where playback starts (also the S marker on the screen)" },
             { "END",   params::padEnd,   1.0, "Where playback ends (also the E marker on the screen)" },
         };
@@ -27,13 +28,13 @@ namespace tb::ui
         struct Col { int x, w; const char* caption; };
         const Col kPlayCols[] = {
             {   0, 84, "MODE"  },
-            {  86, 52, "SYNC"  },
-            { 140, 84, "RATE"  },
-            { 226, 84, "CHOKE" },
-            { 312, 62, "VEL"   },
-            { 376, 38, ""      },     // FIXED velocity key
-            { 416, 38, ""      },     // mute / solo keys
-            { 458, 82, "NOTE"  },
+            {  86, 100, "STRETCH" },   // A13: in SYNC's old place (the tempo chip sits at its right)
+            { 188, 72, "RATE"  },
+            { 262, 72, "CHOKE" },
+            { 336, 58, "VEL"   },
+            { 396, 36, ""      },     // FIXED velocity key
+            { 434, 36, ""      },     // mute / solo keys
+            { 472, 68, "NOTE"  },
         };
 
         File& lastFolder()
@@ -76,11 +77,17 @@ namespace tb::ui
         launchSel.setTooltip ("When a hit starts this pad's sequence: NOW, or the next 1/16, beat or bar");
         rateSel.setTooltip ("Loop speed: 1/4, 1/2, 1x or 2x");
         chokeSel.setTooltip ("Choke group: hitting a pad stops the other pads in the same group");
+        // A13: STRETCH (click / drag / wheel; double-click: OFF; right-click or the tempo: the options).
+        stretchSel.setGeometry (13.0f, 20.0f);
+        stretchSel.onChange      = [this] (int k) { stretch::setMode (processor, pad, k); };
+        stretchSel.onDoubleClick = [this] { stretch::setMode (processor, pad, params::stretchOff); };
+        stretchSel.onRightClick  = [this] { stretch::showTempoMenu (processor, pad, tempoChip); };
+        tempoChip.onClick        = [this] { stretch::showTempoMenu (processor, pad, tempoChip); };
         muteKey.setClickingTogglesState (true);
         fixVelKey.setClickingTogglesState (true);
         soloKey.setClickingTogglesState (true);
 
-        for (Component* comp : std::initializer_list<Component*> { &modeSel, &syncSwitch, &rateSel, &chokeSel,
+        for (Component* comp : std::initializer_list<Component*> { &modeSel, &stretchSel, &tempoChip, &rateSel, &chokeSel,
                                                                     &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel, &launchSel, &seqLenRead })
             addChildComponent (comp);
 
@@ -186,7 +193,7 @@ namespace tb::ui
         // Attachments must go before the controls they point at.
         for (auto& a : knobAttachments) a.reset();
         velAttachment.reset(); sliceAttachment.reset();
-        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
+        reverseAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
         modeSel.attach (nullptr); rateSel.attach (nullptr); chokeSel.attach (nullptr);
         launchSel.attach (nullptr); seqLenRead.attach (nullptr); swapFromAttachment.reset();
         swapSel.attach (nullptr); swapAtSel.attach (nullptr);
@@ -251,7 +258,8 @@ namespace tb::ui
                                                                     &velKnob, &fixVelKey, &muteKey, &soloKey, &noteSel })
             comp->setVisible (play);
         shownSeqMode = isSeqModeNow();
-        syncSwitch.setVisible (play && ! shownSeqMode);
+        stretchSel.setVisible (play && ! shownSeqMode);
+        tempoChip.setVisible (play && ! shownSeqMode);
         rateSel.setVisible (play && ! shownSeqMode);
         launchSel.setVisible (play && shownSeqMode);
         seqLenRead.setVisible (play && shownSeqMode);
@@ -282,10 +290,9 @@ namespace tb::ui
         sliceAttachment = std::make_unique<SliderAttachment> (apvts, id (params::padSlice), sliceKnob);
         sliceKnob.setDoubleClickReturnValue (true, 1.0);
 
-        reverseAttachment.reset(); syncAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
+        reverseAttachment.reset(); muteAttachment.reset(); soloAttachment.reset(); fixVelAttachment.reset();
         fixVelAttachment  = std::make_unique<ButtonAttachment> (apvts, id (params::padFixVel),  fixVelKey);
         reverseAttachment = std::make_unique<ButtonAttachment> (apvts, id (params::padReverse), reverseSwitch);
-        syncAttachment    = std::make_unique<ButtonAttachment> (apvts, id (params::padSync),    syncSwitch);
         muteAttachment    = std::make_unique<ButtonAttachment> (apvts, id (params::padMute),    muteKey);
         soloAttachment    = std::make_unique<ButtonAttachment> (apvts, id (params::padSolo),    soloKey);
 
@@ -384,7 +391,32 @@ namespace tb::ui
         // Rate only matters for loops; dim it otherwise.
         const bool loop = modeSel.getIndex() == params::modeLoop;
         rateSel.setAlpha (loop ? 1.0f : 0.45f);
-        syncSwitch.setAlpha (loop ? 1.0f : 0.45f);
+
+        // A13: STRETCH and the break's own tempo.
+        const int em = stretch::effectiveMode (processor, pad);
+        stretchSel.setIndex (em);
+        {
+            const auto si = processor.getSamples().getInfo (pad);
+            auto rawP = [this] (const char* n) { return processor.getParameters().getRawParameterValue (params::padId (pad, n))->load(); };
+            const String key = String::toHexString ((pointer_sized_int) si.buffer.get()) + ":" + si.slices.toString()
+                             + ":" + String (rawP (params::padOrigBpm)) + ":" + String (rawP (params::padStart)) + ":" + String (rawP (params::padEnd))
+                             + ":" + String (modeSel.getIndex()) + ":" + String (pad);
+            if (key != shownTempoKey)
+            {
+                shownTempoKey = key;
+                bool set = false;
+                const double own = stretch::ownTempo (processor, pad, set);
+                tempoChip.text = own > 0.0 ? String (own, 1) : String ("--");
+                tempoChip.set = set;
+                tempoChip.setTooltip (own > 0.0 ? "The break's own tempo: " + String (own, 2) + " BPM, " + (set ? "typed in" : "worked out")
+                                                  + ". Click for x2, /2, type it in, BEATS gaps and the grain / cycle."
+                                                : String ("No sample"));
+                tempoChip.repaint();
+            }
+        }
+        stretchSel.setTooltip ("STRETCH - " + stretch::describe (em)
+                               + ".  OFF / PITCH / BEATS / TEXTURE / AKAI / AKAI REVISED, for one-shots, slices and loops (a loop stays on Live's bar grid unless OFF). "
+                                 "Double-click: OFF.  Right-click or the tempo above: options.");
     }
 
     //==========================================================================
@@ -443,7 +475,8 @@ namespace tb::ui
         const int h = getHeight() - kCtlTop;
         auto col = [&] (int i) { return Rectangle<int> (kPlayCols[i].x, kCtlTop, kPlayCols[i].w, h); };
         modeSel.setBounds   (col (0).withTrimmedTop (-6));
-        syncSwitch.setBounds (col (1).withTrimmedTop (-10));
+        stretchSel.setBounds (col (1).withTrimmedTop (-6));
+        tempoChip.setBounds (kPlayCols[1].x + kPlayCols[1].w - 46, kCtlTop - 21, 46, 17);
         rateSel.setBounds   (col (2).withTrimmedTop (-6));
         launchSel.setBounds (col (2).withTrimmedTop (-6));
         seqLenRead.setBounds (col (1).withTrimmedTop (-18).withHeight (44));
@@ -534,10 +567,31 @@ namespace tb::ui
         else
         {
             for (const auto& cdef : kPlayCols)
-                if (*cdef.caption != 0 && String (cdef.caption) != "SYNC")
-                    g.drawText (shownSeqMode && String (cdef.caption) == "RATE" ? String ("LAUNCH") : String (cdef.caption),
+            {
+                const String cap (cdef.caption);
+                if (cap == "STRETCH")
+                {
+                    if (! shownSeqMode)       // (LEN draws its own caption)
+                        g.drawText (cap, Rectangle<float> ((float) cdef.x, (float) kCtlTop - 18.0f, (float) cdef.w - 48.0f, 14.0f),
+                                    Justification::centred, false);
+                }
+                else if (cap.isNotEmpty())
+                    g.drawText (shownSeqMode && cap == "RATE" ? String ("LAUNCH") : cap,
                                 Rectangle<float> ((float) cdef.x, (float) kCtlTop - 18.0f, (float) cdef.w, 14.0f),
                                 Justification::centred, false);
+            }
         }
+    }
+}
+
+namespace tb::ui
+{
+    void PadEditorPanel::TempoChip::paint (Graphics& g)
+    {
+        auto b = getLocalBounds().toFloat();
+        paint::recess (g, b, 3.0f);
+        g.setColour (set ? c::amber : c::vfd);
+        g.setFont (monoFont (11.5f));
+        g.drawText (text, b, Justification::centred, false);
     }
 }

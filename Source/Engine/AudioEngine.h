@@ -100,7 +100,7 @@ namespace tb
             bool  stepsWhole = false; // A10: steps play the whole pad, never a slice
             bool  fit = false;        // A11: one-shots / slices follow Live's tempo
             int   layerMode = 0;      // A11: params::LayerMode
-            int   stretch = 0;        // A12: params::StretchMode (FIT folded in as Repitch)
+            int   stretch = 0;        // A12: params::StretchMode as set (see params::effectiveStretch for sync / FIT)
             float origBpm = 0.0f;     // A12: 0 = detect
             int   gap = 1;            // A12: BEATS gap fill
             float grainMs = 30.0f;    // A12: TEXTURE grain / AKAI cycle

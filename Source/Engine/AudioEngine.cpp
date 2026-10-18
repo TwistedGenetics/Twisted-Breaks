@@ -217,54 +217,62 @@ namespace tb
         const double rate     = (double) params::loopRates[juce::jlimit (0, 3, pp.rate)];
         const double fileRate = buf.sourceSampleRate / sampleRate;
 
-        if (s.loop && pp.sync)
-        {
-            // Tempo-synced loop: the region spans N beats (from its own
-            // length), played at the host tempo x rate. Pitch follows speed.
-            const double beats  = PadVoice::loopBeatsFor ((double) (s1 - s0) / buf.sourceSampleRate);
-            s.syncPeriodBeats   = beats / rate;
-            const double bpm    = transportNow != nullptr ? transportNow->bpm : 120.0;
-            s.increment         = (double) (s1 - s0) * (bpm / 60.0) / (s.syncPeriodBeats * sampleRate);
-        }
-        else
-        {
-            // Free-running: file-rate compensation x semitones (x loop rate).
-            s.syncPeriodBeats = 0.0;
-            s.increment = fileRate * std::pow (2.0, (double) pp.pitch / 12.0) * (s.loop ? rate : 1.0);
-        }
+        // A13: one STRETCH for every pad (a LOOP pad's OFF / REPITCH is the old SYNC off / on).
+        const int mode = params::effectiveStretch (pp.stretch, pp.sync, pp.fit, s.loop);
+        const double pitchMul = std::pow (2.0, (double) pp.pitch / 12.0);
+        const double bpm      = transportNow != nullptr ? transportNow->bpm : 120.0;
 
-
-        // STRETCH (A12; 0.21's FIT is Repitch): a one-shot / slice break plays at Live's tempo, from its own.
         padFitFactor[(size_t) pad] = 1.0;
         padStretchMode[(size_t) pad] = 0;
         padStretchRatio[(size_t) pad] = 1.0;
         s.stretch = 0;
-        if (pp.stretch != params::stretchOff && ! s.loop)
+
+        auto useHeads = [&] (double playInc)
         {
-            const double own = pp.origBpm >= 1.0f ? (double) pp.origBpm : detectTempo (buf, padSlices[(size_t) pad]);
-            const double bpm = transportNow != nullptr ? transportNow->bpm : 120.0;
-            if (own > 1.0 && bpm > 1.0)
+            // BEATS / TEXTURE / AKAI: the play head keeps Live's time, the heads read at the sound's own pitch.
+            padStretchMode[(size_t) pad]  = mode - 1;                         // 1 BEATS, 2 TEXTURE, 3 / 4 AKAI
+            padStretchRatio[(size_t) pad] = playInc / fileRate;
+            padGrainSamples[(size_t) pad] = juce::jmax (32, (int) (pp.grainMs * 0.001 * sampleRate));
+            padGapMode[(size_t) pad]      = pp.gap;
+            s.stretch      = mode - 1;
+            s.readInc      = fileRate * pitchMul;
+            s.increment    = playInc;
+            s.grainSamples = padGrainSamples[(size_t) pad];
+            s.gapMode      = pp.gap;
+            s.beatSlices   = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (len, 16) : padSlices[(size_t) pad];
+        };
+
+        if (s.loop && mode != params::stretchOff)
+        {
+            // Tempo-locked loop: the region spans N beats (its own length, or the break's
+            // own tempo when set), one cycle per N / RATE beats of Live's grid.
+            const double secs  = (double) (s1 - s0) / buf.sourceSampleRate;
+            const double beats = pp.origBpm >= 1.0f ? juce::jmax (0.25, secs * (double) pp.origBpm / 60.0)
+                                                    : PadVoice::loopBeatsFor (secs);
+            s.syncPeriodBeats  = beats / rate;
+            const double playInc = (double) (s1 - s0) * (bpm / 60.0) / (s.syncPeriodBeats * sampleRate);
+            if (mode == params::stretchRepitch) s.increment = playInc;        // pitch follows speed (the old SYNC)
+            else                                useHeads (playInc);
+            return;
+        }
+
+        // Free-running: file-rate compensation x semitones (x loop rate).
+        s.syncPeriodBeats = 0.0;
+        s.increment = fileRate * pitchMul * (s.loop ? rate : 1.0);
+        if (s.loop || mode == params::stretchOff) return;
+
+        // A one-shot / slice break plays at Live's tempo, from its own.
+        const double own = pp.origBpm >= 1.0f ? (double) pp.origBpm : detectTempo (buf, padSlices[(size_t) pad]);
+        if (own > 1.0 && bpm > 1.0)
+        {
+            const double ratio = juce::jlimit (0.25, 4.0, bpm / own);
+            padStretchRatio[(size_t) pad] = ratio;
+            if (mode == params::stretchRepitch || s.reverse)
             {
-                const double ratio = juce::jlimit (0.25, 4.0, bpm / own);
-                padStretchRatio[(size_t) pad] = ratio;
-                if (pp.stretch == params::stretchRepitch || s.reverse)
-                {
-                    padFitFactor[(size_t) pad] = ratio;
-                    s.increment *= ratio;
-                }
-                else
-                {
-                    padStretchMode[(size_t) pad]  = pp.stretch - 1;          // 1 BEATS, 2 TEXTURE, 3 / 4 AKAI
-                    padGrainSamples[(size_t) pad] = juce::jmax (32, (int) (pp.grainMs * 0.001 * sampleRate));
-                    padGapMode[(size_t) pad]      = pp.gap;
-                    s.stretch      = pp.stretch - 1;
-                    s.readInc      = s.increment;                             // the sound keeps its pitch
-                    s.increment    = buf.sourceSampleRate / sampleRate * ratio;   // the play head keeps Live's time
-                    s.grainSamples = padGrainSamples[(size_t) pad];
-                    s.gapMode      = pp.gap;
-                    s.beatSlices   = padSlices[(size_t) pad].isEmpty() ? SliceTable::equal (len, 16) : padSlices[(size_t) pad];
-                }
+                padFitFactor[(size_t) pad] = ratio;
+                s.increment *= ratio;
             }
+            else useHeads (fileRate * ratio);
         }
     }
 

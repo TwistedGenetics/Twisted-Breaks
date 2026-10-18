@@ -80,56 +80,7 @@ namespace tb::ui
             if (auto* r = processor.getParameters().getParameter (id)) { r->beginChangeGesture(); r->setValueNotifyingHost (r->convertTo0to1 (v)); r->endChangeGesture(); }
         };
         const auto info = processor.getSamples().getInfo (pad);
-        const double bpm = info.buffer != nullptr ? AudioEngine::tempoOf (*info.buffer) : 0.0;
-        // A12: STRETCH (0.21's FIT is Repitch now).
-        {
-            const auto rawOf = [&apvts, pad] (const char* n) { return apvts.getRawParameterValue (params::padId (pad, n))->load(); };
-            int mode = juce::roundToInt (rawOf (params::padStretch));
-            if (mode == params::stretchOff && rawOf (params::padFit) > 0.5f) mode = params::stretchRepitch;
-            const float obpm = rawOf (params::padOrigBpm);
-            const double detected = info.buffer != nullptr ? AudioEngine::detectTempo (*info.buffer, info.slices) : 0.0;
-            const double own = obpm >= 1.0f ? (double) obpm : detected;
-            juce::PopupMenu st;
-            const char* tips[] = { "plays at its own speed", "speed follows Live, pitch moves with it", "each slice on Live's grid, pitch kept",
-                                   "grains: pitch kept, smooth", "the 90s S950 / S1000 cyclic stretch, metallic", "cyclic, in-phase splices: cleaner" };
-            for (int k = 0; k < 6; ++k)
-                st.addItem (juce::String (params::kStretchNames[k]) + "  -  " + tips[k], true, mode == k, [toggle, pad, k]
-                {
-                    toggle (params::padId (pad, params::padStretch), (float) k);
-                    toggle (params::padId (pad, params::padFit), 0.0f);
-                });
-            st.addSeparator();
-            st.addSectionHeader ("THE BREAK'S OWN TEMPO: " + (own > 0.0 ? juce::String (own, 2) + " BPM" : juce::String ("-"))
-                                 + (obpm >= 1.0f ? " (SET)" : " (DETECTED)"));
-            st.addItem ("Double it (x2)", own > 0.0, false, [toggle, pad, own] { toggle (params::padId (pad, params::padOrigBpm), (float) juce::jmin (300.0, own * 2.0)); });
-            st.addItem ("Halve it (/2)", own > 0.0, false, [toggle, pad, own] { toggle (params::padId (pad, params::padOrigBpm), (float) juce::jmax (40.0, own / 2.0)); });
-            st.addItem ("Type it in...", [this, pad, own]
-            {
-                auto* w = new juce::AlertWindow ("Original tempo", "The tempo this break was played at (BPM)", juce::MessageBoxIconType::NoIcon, this);
-                w->addTextEditor ("bpm", own > 0.0 ? juce::String (own, 2) : juce::String());
-                w->addButton ("SET", 1, juce::KeyPress (juce::KeyPress::returnKey));
-                w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-                w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, pad] (int r)
-                {
-                    const double v = w->getTextEditorContents ("bpm").getDoubleValue();
-                    if (r != 0 && v >= 40.0 && v <= 300.0)
-                        if (auto* p = processor.getParameters().getParameter (params::padId (pad, params::padOrigBpm)))
-                        { p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 ((float) v)); p->endChangeGesture(); }
-                }), true);
-            });
-            st.addItem ("Detect it (" + juce::String (detected, 2) + " BPM)", obpm >= 1.0f, false, [toggle, pad] { toggle (params::padId (pad, params::padOrigBpm), 0.0f); });
-            st.addSeparator();
-            juce::PopupMenu gaps, grains;
-            const int gap = juce::roundToInt (rawOf (params::padGap));
-            for (int k = 0; k < 3; ++k) gaps.addItem (params::kGapNames[k], true, gap == k, [toggle, pad, k] { toggle (params::padId (pad, params::padGap), (float) k); });
-            st.addSubMenu ("BEATS: fill the gaps", gaps);
-            const float gr = rawOf (params::padGrain);
-            for (float ms : { 8.0f, 12.0f, 18.0f, 25.0f, 30.0f, 40.0f, 60.0f, 90.0f, 140.0f })
-                grains.addItem (juce::String (ms, 0) + " ms", true, std::abs (gr - ms) < 0.5f, [toggle, pad, ms] { toggle (params::padId (pad, params::padGrain), ms); });
-            st.addSubMenu ("TEXTURE grain / AKAI cycle (" + juce::String (gr, 0) + " ms)", grains);
-            m.addSubMenu ("Stretch: " + juce::String (params::kStretchNames[juce::jlimit (0, 5, mode)])
-                          + (own > 0.0 ? "  (" + juce::String (own, 1) + " BPM)" : juce::String()), st);
-        }
+        // (A13, 0.26: STRETCH lives on the PLAY page now, in SYNC's old place.)
         m.addItem ("Render Akai... (the cyclic stretch, into a new pad)", info.buffer != nullptr, false, [this, pad] { showAkaiDialog (pad); });
         juce::PopupMenu layers;
         const int lm = juce::roundToInt (apvts.getRawParameterValue (params::padId (pad, params::padLayers))->load());
@@ -283,9 +234,11 @@ namespace tb::ui
                                              + (swap > 0 ? " SW" + juce::String (swap) : juce::String())
                                              + (raw (params::padFollowBank) > 0.5f ? juce::String (" BK") : juce::String())
                                              + juce::String (std::array<const char*, 5> { "", " SP12", " MPC", " S950", " LOFI" }[(size_t) juce::jlimit (0, 4, juce::roundToInt (raw (params::padCharacter)))])
-                                             + [&] { int sm = juce::roundToInt (raw (params::padStretch));
-                                                     if (sm == params::stretchOff && raw (params::padFit) > 0.5f) sm = params::stretchRepitch;
+                                             + [&] { const bool loop = mode == params::modeLoop;
+                                                     const int sm = params::effectiveStretch (juce::roundToInt (raw (params::padStretch)), raw (params::padSync) > 0.5f,
+                                                                                              raw (params::padFit) > 0.5f, loop);
                                                      const char* tags[] = { "", " RP", " BT", " TX", " AK", " AKR" };
+                                                     if (loop) return juce::String (sm == params::stretchOff ? " FREE" : sm == params::stretchRepitch ? "" : tags[sm]);
                                                      return juce::String (tags[juce::jlimit (0, 5, sm)]); }()
                                              + [&] { const int n = samples.getInfo (i).layerCount();
                                                      const int lm = juce::roundToInt (raw (params::padLayers));

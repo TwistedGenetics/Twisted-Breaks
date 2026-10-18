@@ -345,14 +345,14 @@ a { color: var(--amber-ink); }
   <p><span class="key">Gain</span> <span class="key">Pan</span> <span class="key">Pitch</span> (±12 semitones) <span class="key">Start</span> <span class="key">End</span> knobs, the <span class="key">Reverse</span> switch, and the <span class="key">Group</span> keys A–D that send the pad to a group bus.</p>
   <figure>
     <div class="bezel"><img src="img/play.jpg" alt="The PLAY page of the pad editor" width="1200" height="800" loading="lazy"></div>
-    <figcaption><span class="chip">Fig. 2</span>The PLAY page: mode, sync, rate, choke, velocity, FIX, mute / solo and the MIDI note.</figcaption>
+    <figcaption><span class="chip">Fig. 2</span>The PLAY page: mode, STRETCH (with the break's tempo above it), rate, choke, velocity, FIX, mute / solo and the MIDI note.</figcaption>
   </figure>
   <h3>Play page</h3>
   <div class="tablewrap"><table>
     <thead><tr><th>Control</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><span class="key">Mode</span></td><td><b>ONE</b> plays the sample once. <b>LOOP</b> repeats while the pad or note is held, with a crossfaded loop point. <b>SLICE</b> plays one slice (§ 04). <b>SEQ1</b> / <b>SEQL</b> make it a sequence pad (§ 09).</td></tr>
-      <tr><td><span class="key">Sync</span></td><td>Loops lock to Live's tempo and bar grid. The length in beats is worked out from the audio, a pad hit mid-bar enters at the right point, and it re-locks after loop-brace jumps and tempo changes.</td></tr>
+      <tr><td><span class="key">Stretch</span></td><td>How the pad follows Live's tempo: <b>OFF</b>, <b>PITCH</b>, <b>BEAT</b>, <b>TEX</b>, <b>AKAI</b> or <b>AK.R</b> (see <i>Stretch</i> below). It works on every mode. On a <b>LOOP</b> pad anything but OFF locks the loop to Live's tempo and bar grid: a hit mid-bar enters at the right point, and it re-locks after loop-brace jumps and tempo changes. PITCH is the old SYNC switch (the pitch moves with the tempo); BEAT, TEX and AKAI keep the loop's pitch. OFF runs a loop free. Double-click: OFF. The number above it is the break's own tempo (amber when you typed it in): click it, or right-click the selector, for <i>Double it</i>, <i>Halve it</i>, <i>Type it in</i>, the BEATS gap fill and the grain / cycle size.</td></tr>
       <tr><td><span class="key">Rate</span></td><td>Loop speed: 1/4, 1/2, 1x or 2x.</td></tr>
       <tr><td><span class="key">Choke</span></td><td>Groups 1–4: a hit stops the other pads in the same choke group (3 ms fade). Open and closed hats, for example.</td></tr>
       <tr><td><span class="key">Vel</span></td><td>Velocity sensitivity, from 0 % (always full) to 100 %.</td></tr>
@@ -362,7 +362,7 @@ a { color: var(--amber-ink); }
     </tbody>
   </table></div>
   <h3>Copy, paste, swap &amp; undo</h3>
-  <p><b>Right-click</b> a pad for <span class="key plain">Copy</span>, <span class="key plain">Paste</span>, <span class="key plain">Paste special</span>, <span class="key plain">Copy to</span>, <span class="key plain">Swap with</span> and <span class="key plain">Clear pad</span>. A copy takes everything about the pad: the sample (shared, so nothing reloads), its slice markers, every setting on the SOUND / PLAY / SLICE / SWAP / SEQ pages, its sequencer lane and its slice sequence. It leaves the MIDI note, mute and solo where they are. Paste special pastes just the <b>sound</b> (sample, slices, settings), just the <b>steps</b> or just the <b>settings</b>.</p>
+  <p><b>Right-click</b> a pad for <span class="key plain">Copy</span>, <span class="key plain">Paste</span>, <span class="key plain">Paste special</span>, <span class="key plain">Copy to</span>, <span class="key plain">Swap with</span>, <span class="key plain">Clear pad</span>, TWIST, Layers and Render Akai. A copy takes everything about the pad: the sample (shared, so nothing reloads), its slice markers, every setting on the SOUND / PLAY / SLICE / SWAP / SEQ pages, its sequencer lane and its slice sequence. It leaves the MIDI note, mute and solo where they are. Paste special pastes just the <b>sound</b> (sample, slices, settings), just the <b>steps</b> or just the <b>settings</b>.</p>
   <ul>
     <li><b>Alt-drag</b> a pad onto another to copy it there; <b>Shift-drag</b> to swap them. Neither makes a sound.</li>
     <li><b>Cmd-C</b> / <b>Cmd-V</b> copy the selected pad and paste onto it.</li>
@@ -373,14 +373,14 @@ a { color: var(--amber-ink); }
   <ul>
     <li><span class="key plain">Twist</span> (above the pad matrix, or right-click a pad) shakes up the selected pad's sound around how you left it: pitch, start, pan, reverse, character, slice and gain. Press it again for another take on the same starting point; change something yourself and that becomes the new starting point. <span class="key plain">...</span> next to it sets the amount (10–100 %) and locks the settings you want left alone. Each TWIST is one undo step. It's also a parameter (<code>Twist</code>) you can MIDI-map, and <b>Events</b> on the Mikro (Shift + Events: undo).</li>
     <li><b>Layers</b> (right-click a pad &gt; Layers): up to 4 extra samples per pad. <b>Round robin</b> plays them in turn, <b>Velocity</b> picks by how hard you hit (soft = the pad's own sample, hardest = the last layer), <b>Random</b> picks one. They follow the pad's START / END, pitch, gain and pan; a SLICE pad, SLICE SEQ or a pad following the bank plays only its own sample. The tile shows <code>RR3</code>, <code>VL2</code> and so on. Layers are copied, saved with the set and carried by presets.</li>
-    <li><b>Stretch</b> (right-click a pad &gt; Stretch): play a one-shot or SLICE break in time with Live without LOOP. It works for pad hits, sequencer steps, slice sequences and Mikro KEYBOARD slices.
+    <li><b>Stretch</b> (the PLAY page, in SYNC's old place): play a one-shot, a SLICE break or a loop in time with Live. It works for pad hits, sequencer steps, slice sequences and Mikro KEYBOARD slices.
       <ul>
         <li><b>Repitch</b>: speed follows Live's tempo and the pitch moves with it (0.21's FIT).</li>
         <li><b>Beats</b>: each slice starts on its own spot on Live's grid at its own pitch, like Live's Beats warp. When Live is slower than the break, <i>Fill the gaps</i> chooses <b>None</b> (silence), <b>Loop</b> (the end of the slice repeats) or <b>Back &amp; forth</b>. A pad without markers uses 16 equal slices.</li>
         <li><b>Texture</b>: overlapping grains, smooth and pitch-true, for pads and atmospheres. <i>Grain / cycle</i> sets the grain size.</li>
         <li><b>Akai Classic</b> and <b>Akai Revised</b>: the cyclic stretch of the S950 / S1000 samplers, the metallic sound of 90s jungle. <i>Grain / cycle</i> sets the cycle length (try 20–30 ms). Classic splices the cycles nearly hard; Revised joins them in phase, so it's cleaner.</li>
       </ul>
-      The break's own tempo is worked out from its markers (where they sit on a 1/16 grid), or from its length; the menu and the screen show it. If it guesses wrong, <i>Double it</i>, <i>Halve it</i> or <i>Type it in</i>, and <i>Detect it</i> goes back to automatic. The pad's PITCH changes only the pitch in Beats, Texture and Akai. A reversed hit falls back to Repitch. Loops with SYNC keep their own tempo lock.</li>
+      The break's own tempo is worked out from its markers (where they sit on a 1/16 grid), or for a LOOP pad from its length (taken to be 90–180 BPM); the readout above STRETCH and the screen show it. If it guesses wrong, <i>Double it</i>, <i>Halve it</i> or <i>Type it in</i> (this fixes a loop playing at half or double speed too), and <i>Work it out again</i> goes back to automatic. The pad's PITCH changes only the pitch in Beats, Texture and Akai, loops included. A reversed hit or loop falls back to Pitch.</li>
   </ul>
 </section>
 
@@ -585,7 +585,7 @@ a { color: var(--amber-ink); }
   <ul>
     <li>A sequence always plays <b>in time with Live's playhead</b>: it joins on the step under it, as if it had been running all along, so it sits on the bar and its lane playhead is on the same column as the sequencer's.</li>
     <li><span class="key">Launch</span> (in RATE's place): when it comes in: NOW or on the next 1/16, BEAT or BAR, exactly on that sample.</li>
-    <li><span class="key">Len</span> (in SYNC's place): GLOBAL (the sequencer's LEN) or its own 1–32 steps, so a fill and a groove can live on different pads.</li>
+    <li><span class="key">Len</span> (in STRETCH's place): GLOBAL (the sequencer's LEN) or its own 1–32 steps, so a fill and a groove can live on different pads.</li>
     <li>Hit a SEQ LOOP pad again to stop it at the next LAUNCH boundary (it flashes while it waits; hit once more to cancel). SEQ ONE plays one full pass from its launch; hit it again for another pass from the next boundary.</li>
     <li>In a <b>SWAP</b> group, sequence pads cut each other like breaks do: on the next <b>STEP</b> (AT SLICE), 1/16, BEAT or BAR. The incoming sequence plays the step under the playhead, or starts from the top with <span class="key">From step 1</span> (SWAP page). Sequence and break pads can share a group.</li>
     <li>FIRST plays only on its first time round after the launch. Choke groups stop a sequence; stopping or starting Live ends it; at a loop brace wrap it follows the playhead round. With Live stopped, the first hit starts it from step 1.</li>
@@ -685,7 +685,7 @@ a { color: var(--amber-ink); }
     <li><div>With <span class="key">As loop</span> on, the pad is set up as a tempo-synced loop; with <span class="key">Auto slice</span>, it's sliced at its hits. Mangle a break, resample it, chop it again.</div></li>
   </ol>
   <p><span class="key plain">Cancel</span> drops a take that's waiting or recording. REC is also the MIDI-mappable <code>Resample</code> parameter. The set refers to the WAV like any other sample, so keep that folder.</p>
-  <div class="note"><p>AS LOOP reads a loop's tempo as being between 90 and 180 BPM. A resample made below 90 BPM may play back at half speed: switch SYNC off for that pad, or resample at jungle tempo.</p></div>
+  <div class="note"><p>AS LOOP reads a loop's tempo as being between 90 and 180 BPM. A resample made below 90 BPM may play back at half speed: click the tempo above STRETCH and <i>Double it</i>, or resample at jungle tempo.</p></div>
   <h3>Character</h3>
   <p>A vintage sampler mode per pad. The sample is read as if the machine had stored it at its own rate and bit depth, so pitching a pad down gets grittier, as on the hardware. <span class="key plain">All pads</span> copies the selected pad's character to the whole kit.</p>
   <div class="tablewrap"><table>
@@ -898,7 +898,7 @@ a { color: var(--amber-ink); }
       <tr><td>Pads say MISSING</td><td><span class="key plain">Find missing</span> in the SNAPSHOTS view, pick the folder the samples are in.</td></tr>
       <tr><td>Nothing plays from the controller</td><td>Arm the MIDI track or set Monitor to In; check the pad's note on the PLAY page; check which scene is on view.</td></tr>
       <tr><td>Scene B is silent</td><td>Check the crossfader isn't fully on A and that no CUT key is held.</td></tr>
-      <tr><td>A synced loop plays at half or double speed</td><td>Its tempo reads outside 90–180 BPM. Trim START / END to whole bars, or switch SYNC off for it.</td></tr>
+      <tr><td>A synced loop plays at half or double speed</td><td>Its tempo reads outside 90–180 BPM. Click the tempo above STRETCH and <i>Double it</i> or <i>Halve it</i> (or type it in), or set STRETCH to OFF.</td></tr>
       <tr><td>Sound keeps ringing</td><td>The red <span class="key red">Stop</span> button (or CC 120) stops every voice and tail and switches the effects off.</td></tr>
       <tr><td>Push pads play twice in User mode</td><td>Turn <b>Track</b> off for Push's User Port in Live's MIDI settings (§ 15).</td></tr>
       <tr><td>Push stays dark after USER</td><td><span class="key">Controllers</span> shows what the plugin sees: Push must be found, and that plugin window must be the last one clicked.</td></tr>
@@ -914,7 +914,7 @@ a { color: var(--amber-ink); }
   <div class="card">
     <div><h4>Load a break</h4><p>Drag the file onto a pad, or <span class="key plain">Load</span>.</p></div>
     <div><h4>Chop it</h4><p><span class="key">Slicer</span> → <span class="key">Auto slice</span> → <span class="key">Spread</span>.</p></div>
-    <div><h4>Loop it in time</h4><p>PLAY page: MODE <b>LOOP</b>, <span class="key">Sync</span> on.</p></div>
+    <div><h4>Loop it in time</h4><p>PLAY page: MODE <b>LOOP</b>, <span class="key">Stretch</span> PITCH (or BEAT / TEX / AKAI to keep its pitch).</p></div>
     <div><h4>Switch breaks on the snare</h4><p>Same <span class="key">Swap</span> group, AT <b>SLICE</b>, hit the other pad.</p></div>
     <div><h4>Program a beat</h4><p><span class="key">Sequencer</span>, click cells, press play in Live.</p></div>
     <div><h4>Fire a chopped pattern</h4><p>MODE <b>SEQL</b>, program its lane, hit the pad.</p></div>

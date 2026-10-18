@@ -53,6 +53,10 @@ namespace tb::ui
         /** Use without a parameter: setIndex() shows a value, onChange reports clicks. */
         void setIndex (int i) { i = juce::jlimit (0, labels.size() - 1, i); if (i != index) { index = i; repaint(); } }
         std::function<void (int)> onChange;
+        std::function<void()> onDoubleClick, onRightClick;     // optional (A13)
+        /** A smaller knob with its labels further out (for many positions). */
+        void setGeometry (float maxKnobRadius, float labelDistance) { maxRadius = maxKnobRadius; labelGap = labelDistance; repaint(); }
+        void mouseDoubleClick (const juce::MouseEvent&) override { if (onDoubleClick) onDoubleClick(); }
 
         void paint (juce::Graphics&) override;
         void mouseDown (const juce::MouseEvent&) override;
@@ -69,6 +73,7 @@ namespace tb::ui
 
         juce::StringArray labels;
         int index = 0;
+        float maxRadius = 1.0e6f, labelGap = 15.0f;
         int dragStartIndex = 0;
         bool dragging = false;
         std::unique_ptr<juce::ParameterAttachment> attachment;

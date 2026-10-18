@@ -111,7 +111,7 @@ namespace tb::ui
 
     float RotarySelector::knobRadius() const
     {
-        return jmin (getWidth() * 0.2f, getHeight() * 0.24f);
+        return jmin (getWidth() * 0.2f, getHeight() * 0.24f, maxRadius);
     }
 
     float RotarySelector::angleFor (int i) const
@@ -124,7 +124,7 @@ namespace tb::ui
 
     Rectangle<float> RotarySelector::labelBounds (int i) const
     {
-        const auto p = knobCentre().getPointOnCircumference (knobRadius() + 15.0f, angleFor (i));
+        const auto p = knobCentre().getPointOnCircumference (knobRadius() + labelGap, angleFor (i));
         return Rectangle<float> (34.0f, 13.0f).withCentre (p);
     }
 
@@ -178,6 +178,7 @@ namespace tb::ui
 
     void RotarySelector::mouseDown (const MouseEvent& e)
     {
+        if (e.mods.isPopupMenu() && onRightClick) { onRightClick(); return; }
         if (attachment != nullptr) attachment->beginGesture();
         dragging = false;
         dragStartIndex = index;

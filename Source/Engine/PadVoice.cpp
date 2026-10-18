@@ -212,7 +212,7 @@ namespace tb
 
         // A12 STRETCH: heads start at the play head.
         for (auto& h : heads) h = {};
-        stretchMode = (! looping && ! reverse && ! forced) ? s.stretch : 0;
+        stretchMode = (! reverse && ! forced) ? s.stretch : 0;     // A13: loops too (a SWAP hand-off repitches)
         readInc     = s.readInc;
         grainLen    = juce::jmax (32, s.grainSamples);
         gapMode     = s.gapMode;
@@ -223,17 +223,29 @@ namespace tb
         if (stretchMode != 0)
         {
             const int fin = needsFade ? 16 : 1;
-            if (stretchMode == 1)
-            {
-                beatIdx = beats.isEmpty() ? 0 : beats.sliceAt ((int) position);
-                const int nxt = beatIdx + 1;
-                sliceEnd = (! beats.isEmpty() && nxt < beats.count) ? (double) beats.starts[(size_t) nxt] : (double) regionEnd;
-                beatHead = spawn (position, fin);
-            }
-            else if (stretchMode == 2) spawn (position, 0, true, grainLen);
-            else                       spawn (position, fin);
+            startHeads (fin);
             fadeIn = 1.0f;                        // the heads fade themselves
         }
+    }
+
+    void PadVoice::startHeads (int fin) noexcept
+    {
+        if (stretchMode == 1)
+        {
+            setBeat (beats.isEmpty() ? 0 : beats.sliceAt ((int) position));
+            beatHead = spawn (position, fin);
+        }
+        else if (stretchMode == 2) spawn (position, 0, true, grainLen);
+        else                       spawn (position, fin);
+    }
+
+    void PadVoice::setBeat (int idx) noexcept
+    {
+        beatIdx = idx;
+        const int nxt = beatIdx + 1;
+        sliceStart = (! beats.isEmpty() && beatIdx < beats.count) ? (double) beats.starts[(size_t) beatIdx] : (double) regionStart;
+        sliceEnd = (! beats.isEmpty() && nxt < beats.count) ? (double) beats.starts[(size_t) nxt] : (double) regionEnd;
+        if (looping) sliceEnd = juce::jmin (sliceEnd, (double) regionEnd);
     }
 
     int PadVoice::spawn (double pos, int fadeInSamples, bool hann, int len, double dir) noexcept
@@ -287,7 +299,18 @@ namespace tb
     void PadVoice::renderStretched (const float* srcL, const float* srcR, bool stereo, int len, float& l, float& r) noexcept
     {
         // Schedule: the play head (position) runs at Live's tempo; heads read at the sound's own pitch.
-        if (! stretchEnding && position >= (double) regionEnd)
+        bool wrapped = false;
+        if (looping)
+        {
+            // A13: a stretched loop - the play head wraps on Live's grid, the heads follow it.
+            const double span = (double) (regionEnd - regionStart);
+            if (span >= 2.0)
+            {
+                while (position >= (double) regionEnd)  { position -= span; wrapped = true; }
+                while (position <  (double) regionStart) position += span;
+            }
+        }
+        else if (! stretchEnding && position >= (double) regionEnd)
         {
             stretchEnding = true;
             fadeAll ((int) edgeFadeSamples);
@@ -297,22 +320,24 @@ namespace tb
         {
             if (stretchMode == 1)
             {
-                // BEATS: each slice starts on its own spot on Live's grid.
-                if (position >= sliceEnd && ! beats.isEmpty() && beatIdx + 1 < beats.count)
+                // BEATS: each slice starts on its own spot on Live's grid. The play head
+                // moved into another slice (the next one, a loop wrap, a jump back onto the grid).
+                int bi = beatIdx;
+                if (! beats.isEmpty() && (wrapped || position >= sliceEnd || position < sliceStart))
+                    bi = beats.sliceAt ((int) position);
+                if (bi != beatIdx || wrapped)
                 {
-                    ++beatIdx;
-                    const double s0 = (double) beats.starts[(size_t) beatIdx];
-                    const int nxt = beatIdx + 1;
-                    sliceEnd = nxt < beats.count ? (double) beats.starts[(size_t) nxt] : (double) regionEnd;
+                    setBeat (bi);
                     fadeAll (64);
-                    beatHead = spawn (s0 + (position - s0) * 0.0, 16);
+                    // Just past the slice's own spot: play it from its attack; otherwise from the play head.
+                    beatHead = spawn (position - sliceStart < 512.0 ? sliceStart : position, 16);
                     gapFading = false;
                 }
                 else if (beatHead >= 0 && heads[(size_t) beatHead].on)
                 {
                     // The slice ran out before its next grid spot: fill the gap.
                     auto& h = heads[(size_t) beatHead];
-                    const double segStart = (double) (beatIdx < beats.count && ! beats.isEmpty() ? beats.starts[(size_t) beatIdx] : regionStart);
+                    const double segStart = sliceStart;
                     const double seg = juce::jmin ((sliceEnd - segStart) / 3.0, (buffer != nullptr ? buffer->sourceSampleRate : hostRate) * 0.04);
                     if (h.pos >= sliceEnd && h.dir > 0.0)
                     {
@@ -384,7 +409,12 @@ namespace tb
         if (! active) return;
         setCharacter (s.character);
         increment.setTargetValue (s.increment);
-        if (stretchMode != 0 && s.stretch != 0) readInc = s.readInc;
+        if (stretchMode != 0 && s.stretch != 0)
+        {
+            readInc  = s.readInc;
+            grainLen = juce::jmax (32, s.grainSamples);
+            gapMode  = s.gapMode;
+        }
         gainL.setTargetValue (s.gainLeft);
         gainR.setTargetValue (s.gainRight);
 
@@ -396,6 +426,25 @@ namespace tb
             regionEnd   = s.regionEnd;
             if (position < (double) regionStart || position >= (double) regionEnd)
                 position = reverse ? (double) regionEnd - 1.0 : (double) regionStart;
+
+            // A13: STRETCH changed while the loop plays - swap engines in place, on the same grid.
+            const int want = reverse ? 0 : s.stretch;
+            if (want != stretchMode)
+            {
+                if (stretchMode != 0)
+                {
+                    for (auto& h : heads) h.on = false;
+                    fadeIn = 0.0f;                     // the plain loop fades in
+                }
+                stretchMode = want;
+                if (want != 0)
+                {
+                    readInc = s.readInc; grainLen = juce::jmax (32, s.grainSamples); gapMode = s.gapMode;
+                    beats = s.beatSlices; grainClock = 0; gapFading = false; beatHead = -1;
+                    startHeads (64);
+                    fadeIn = 1.0f;
+                }
+            }
         }
         else
         {
@@ -533,7 +582,12 @@ namespace tb
 
             float l, r;
 
-            if (looping && span >= 2.0)
+            if (stretchMode != 0)
+            {
+                renderStretched (srcL, srcR, stereo, len, l, r);
+                if (! active) break;
+            }
+            else if (looping && span >= 2.0)
             {
                 // Wrap first (handles big increments and live region edits).
                 while (position >= (double) hi) position -= span;
@@ -558,11 +612,6 @@ namespace tb
                         r = r + (ar - r) * t;
                     }
                 }
-            }
-            else if (stretchMode != 0)
-            {
-                renderStretched (srcL, srcR, stereo, len, l, r);
-                if (! active) break;
             }
             else
             {

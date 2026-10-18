@@ -72,7 +72,17 @@ namespace tb::ui
         DragReadout    seqLenRead { "LEN", "This pad's sequence length: GLOBAL (the sequencer's LEN) or 1-32 steps" };
         bool shownSeqMode = false;
         bool isSeqModeNow() const;
-        ToggleSwitch   syncSwitch { "SYNC", "Loops follow Ableton's tempo and stay locked to the bar grid" };
+        // A13 (0.26): STRETCH in SYNC's old place (a LOOP pad's OFF / PITCH = the old SYNC off / on).
+        RotarySelector stretchSel { { "OFF", "PITCH", "BEAT", "TEX", "AKAI", "AK.R" } };
+        struct TempoChip final : public juce::Component, public juce::SettableTooltipClient
+        {
+            juce::String text { "--" };
+            bool set = false;
+            std::function<void()> onClick;
+            void paint (juce::Graphics&) override;
+            void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+        } tempoChip;
+        juce::String shownTempoKey;
         RotarySelector rateSel  { { "1/4", "1/2", "1x", "2x" } };
         RotarySelector chokeSel { { "OFF", "1", "2", "3", "4" } };
         juce::Slider   velKnob;
@@ -117,7 +127,7 @@ namespace tb::ui
 
         // ---- Header
         PushKey soundTab { "SOUND", "Level, pan, pitch, start / end, reverse" };
-        PushKey playTab  { "PLAY",  "Mode, loop sync and rate, choke group, velocity, mute / solo, MIDI note" };
+        PushKey playTab  { "PLAY",  "Mode, stretch, loop rate, choke group, velocity, mute / solo, MIDI note" };
         PushKey sliceTab { "SLICE", "Find hits, edit slice markers, spread slices onto pads" };
         PushKey swapTab  { "SWAP",  "Swap between breaks at their slice points while they play" };
         PushKey seqTab   { "SEQ",   "Slice sequencer: rearrange this pad's slices into a new pattern" };
@@ -128,7 +138,7 @@ namespace tb::ui
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
         std::array<std::unique_ptr<SliderAttachment>, kNumKnobs> knobAttachments;
         std::unique_ptr<SliderAttachment> velAttachment, sliceAttachment;
-        std::unique_ptr<ButtonAttachment> reverseAttachment, syncAttachment, muteAttachment, soloAttachment, fixVelAttachment;
+        std::unique_ptr<ButtonAttachment> reverseAttachment, muteAttachment, soloAttachment, fixVelAttachment;
 
         std::unique_ptr<juce::FileChooser> chooser;
 

@@ -26,6 +26,7 @@
 #include "Core/MikroController.h"
 #include "Core/RemotePort.h"
 #include "Engine/PadVoice.h"
+#include "UI/StretchMenu.h"
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -5564,6 +5565,141 @@ namespace
         tb::NotesPort::setSinkForTesting (nullptr);
     }
 
+    //  A13 (0.26): STRETCH in the pad settings, for loops too.
+    void testA13StretchSelector()
+    {
+        std::cout << "\n== A13: STRETCH on the PLAY page (loops too) ==" << std::endl;
+        using namespace tb::params;
+        check (effectiveStretch (stretchOff, true, false, true) == stretchRepitch && effectiveStretch (stretchOff, false, false, true) == stretchOff
+                 && effectiveStretch (stretchOff, true, true, false) == stretchRepitch && effectiveStretch (stretchOff, true, false, false) == stretchOff
+                 && effectiveStretch (stretchBeats, false, false, true) == stretchBeats,
+               "old settings read the same: a loop's SYNC on = PITCH, off = OFF; 0.21 FIT on a one-shot = PITCH");
+
+        const double own = 170.0, live = 174.0;
+        const int total = (int) std::lround (8.0 * 60.0 / own * 48000.0);       // 2 bars
+        const int eighth = total / 16;
+        juce::AudioBuffer<float> clicks (1, total);
+        clicks.clear();
+        for (int k = 0; k < 16; ++k)
+            for (int i = 0; i < 240; ++i)
+                clicks.setSample (0, k * eighth + i, 0.8f * std::exp (-(float) i / 40.0f) * (i % 2 == 0 ? 1.0f : -1.0f));
+        Rig r;
+        r.host.bpm = live;
+        r.load (0, writeAudio ("a13_clicks", clicks, 48000.0, Fmt::wavFloat));
+        r.p.getSamples().equalSlice (0);
+        setPadParam (r.p, 0, padVelSens, 0.0f);
+        setPadParam (r.p, 0, padMode, (float) modeLoop);
+        const int note = r.p.getEngine().getPadNote (0);
+
+        // The selector: one undo step writes STRETCH, SYNC and FIT together.
+        check (tb::ui::stretch::effectiveMode (r.p, 0) == stretchRepitch, "a LOOP pad with SYNC on (the default) shows PITCH");
+        setPadParam (r.p, 0, padFit, 1.0f);
+        auto& ops = r.p.getPadOps();
+        const int before = ops.position();
+        tb::ui::stretch::setMode (r.p, 0, stretchBeats);
+        check (juce::roundToInt (rawOfPad (r.p, 0, padStretch)) == stretchBeats && rawOfPad (r.p, 0, padSync) > 0.5f && rawOfPad (r.p, 0, padFit) < 0.5f
+                 && ops.position() == before + 1,
+               "choosing BEATS writes STRETCH, SYNC on and FIT off as one undo step");
+        ops.undo();
+        check (juce::roundToInt (rawOfPad (r.p, 0, padStretch)) == stretchOff && rawOfPad (r.p, 0, padFit) > 0.5f
+                 && tb::ui::stretch::effectiveMode (r.p, 0) == stretchRepitch, "one UNDO puts it all back");
+        setPadParam (r.p, 0, padFit, 0.0f);
+        tb::ui::stretch::setMode (r.p, 0, stretchOff);
+        check (rawOfPad (r.p, 0, padSync) < 0.5f && tb::ui::stretch::effectiveMode (r.p, 0) == stretchOff, "OFF on a LOOP pad = the old SYNC off");
+
+        auto render = [&] (int mode, int blocks)
+        {
+            tb::ui::stretch::setMode (r.p, 0, mode);
+            r.settle();
+            r.host.playing = true; r.host.ppq = 0.0;
+            const auto allocs = gAudioAllocs.load();
+            auto b = renderNote (r.p, r.host, note, 127, blocks);
+            r.host.playing = false;
+            r.settle();
+            check (gAudioAllocs.load() == allocs, juce::String ("no allocation on the audio thread (loop, ") + kStretchNames[mode] + ")");
+            return b;
+        };
+        auto onsets = [] (const juce::AudioBuffer<float>& b)
+        {
+            std::vector<int> v; int last = -100000;
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                if (std::abs (b.getSample (0, i)) > 0.3f) { if (i - last > 2000) v.push_back (i); last = i; }
+            return v;
+        };
+        const double grid = eighth * own / live;
+        const int blocks = (int) (grid * 26 / kBlock);           // 1.6 times round the loop
+        for (int mode : { (int) stretchBeats, (int) stretchAkaiRevised })
+        {
+            const auto on = onsets (render (mode, blocks));
+            double worst = 0.0;
+            for (size_t k = 0; k < on.size(); ++k) worst = juce::jmax (worst, std::abs (on[k] - std::round (on[k] / grid) * grid));
+            const double tol = mode == stretchBeats ? 48.0 * 2.0 : 48.0 * 35.0;
+            check (on.size() >= 24 && worst < tol,
+                   juce::String ("LOOP + ") + kStretchNames[mode] + ": every hit lands on Live's 1/8 grid, round the loop and back (" + juce::String ((int) on.size())
+                     + " hits, worst " + juce::String (worst / 48.0, 2) + " ms)");
+        }
+        // PITCH on a loop is exactly the old SYNC.
+        {
+            const auto a = render (stretchRepitch, 120);
+            setPadParam (r.p, 0, padStretch, (float) stretchOff);
+            setPadParam (r.p, 0, padSync, 1.0f);
+            r.settle();
+            r.host.playing = true; r.host.ppq = 0.0;
+            const auto b = renderNote (r.p, r.host, note, 127, 120);
+            r.host.playing = false;
+            r.settle();
+            float diff = 0.0f;
+            for (int i = 0; i < a.getNumSamples(); ++i) diff = juce::jmax (diff, std::abs (a.getSample (0, i) - b.getSample (0, i)));
+            check (diff < 1.0e-6f, "LOOP + PITCH sounds exactly like the old SYNC on (max diff " + juce::String (diff, 8) + ")");
+        }
+        // Changing STRETCH while the loop plays swaps the engine in place.
+        {
+            tb::ui::stretch::setMode (r.p, 0, stretchRepitch);
+            r.settle();
+            r.host.playing = true; r.host.ppq = 0.0;
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 127), 0);
+            float peak = 0.0f;
+            for (int b = 0; b < 200; ++b)
+            {
+                if (b == 60)  tb::ui::stretch::setMode (r.p, 0, stretchTexture);
+                if (b == 120) tb::ui::stretch::setMode (r.p, 0, stretchOff);
+                runBlock (r.p, r.host, buf, midi);
+                if (b > 140) peak = juce::jmax (peak, buf.getMagnitude (0, 0, kBlock));
+            }
+            r.host.playing = false;
+            r.settle();
+            check (peak > 0.2f, "changing STRETCH while a loop plays keeps it playing (PITCH -> TEXTURE -> OFF)");
+        }
+
+        // Pitch: a TEXTURE loop keeps it, a PITCH loop follows the tempo.
+        Rig t;
+        t.host.bpm = 90.0;
+        juce::AudioBuffer<float> sine (1, 96000);
+        for (int i = 0; i < 96000; ++i) sine.setSample (0, i, 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / 48000.0));
+        t.load (1, writeAudio ("a13_sine", sine, 48000.0, Fmt::wavFloat));
+        setPadParam (t.p, 1, padOrigBpm, 120.0f);                // 2 s = 4 beats
+        setPadParam (t.p, 1, padVelSens, 0.0f);
+        setPadParam (t.p, 1, padMode, (float) modeLoop);
+        const int n2 = t.p.getEngine().getPadNote (1);
+        auto freq = [&] (int mode)
+        {
+            tb::ui::stretch::setMode (t.p, 1, mode);
+            t.settle();
+            const auto b = renderNote (t.p, t.host, n2, 127, 60);
+            t.settle();
+            int zc = 0;
+            for (int i = 4800 + 1; i < 4800 + 19200; ++i) if (b.getSample (0, i - 1) < 0.0f && b.getSample (0, i) >= 0.0f) ++zc;
+            return zc / 0.4;
+        };
+        const double fRe = freq (stretchRepitch), fTx = freq (stretchTexture);
+        check (std::abs (fRe - 750.0) < 15.0 && std::abs (fTx - 1000.0) < 30.0,
+               "a LOOP at the break's own tempo (typed in): PITCH follows Live (" + juce::String (fRe, 0) + " Hz), TEXTURE keeps it (" + juce::String (fTx, 0) + " Hz)");
+        bool set = false;
+        check (std::abs (tb::ui::stretch::ownTempo (t.p, 1, set) - 120.0) < 0.01 && set, "the tempo readout shows the typed-in tempo");
+    }
+
     void testA12Stretch()
     {
         std::cout << "\n== A12: STRETCH modes ==" << std::endl;
@@ -7380,6 +7516,7 @@ int main (int argc, char* argv[])
         testA11ExportSong();
         testA12MidiStop();
         testA12Stretch();
+        testA13StretchSelector();
         testA12Macros();
         testA12Akaizer();
         testEditorDrivesState();

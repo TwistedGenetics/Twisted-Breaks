@@ -59,7 +59,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.24 | Macro editor: every effect setting of each macro (MILD / HARD or leave), add / remove effects, rename, hold to hear, reset, .tbmacro files | **done** — 720/720 automated checks |
 | 0.25 | AKAIZER: the Akai S-series cyclic pitch shift as a group FX in STUTTER's place (Classic / Revised, pitch, cycle); RENDER AKAI on a pad; reference renders in docs/audio/akaizer | **done** — 724/724 automated checks |
 | 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** |
-| 0.25.2 | Push 3 and the Mikro MK3 are found on their own when plugged in (no mode to switch on); LIGHTS is now **CONTROLLERS**, with each one's status | **done** — 731/731 automated checks |
+| 0.25.2 | Push 3 and the Mikro MK3 are found on their own when plugged in (no mode to switch on); LIGHTS is now **CONTROLLERS**, with each one's status | **done** |
+| 0.26 | STRETCH moves to the PLAY page in SYNC's place and works on loops too (Beats / Texture / Akai keep a locked loop's pitch); the tempo readout holds x2 / ÷2 / type / gaps / grain; out of the right-click menu | **done** — 745/745 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -84,9 +85,13 @@ Sections that aren't built yet are visibly marked offline on the panel
 * **PLAY page** per pad (the SOUND / PLAY keys switch pages):
   * **MODE**: ONE (plays once) or LOOP (repeats while the pad / note is
     held, with a crossfaded loop point), or SLICE (see below).
-  * **SYNC**: loops lock to Ableton's tempo and bar grid. The loop length
-    in beats is worked out from the audio (a 4-beat break stays 4 beats),
-    triggering mid-bar enters at the right point, and it re-locks after
+  * **STRETCH** (0.26, in SYNC's old place): OFF / PITCH / BEAT / TEX /
+    AKAI / AK.R for every mode. On a LOOP pad anything but OFF locks it to
+    Ableton's tempo and bar grid (PITCH = the old SYNC; BEAT / TEX / AKAI
+    keep its pitch). The loop length in beats is worked out from the audio
+    (a 4-beat break stays 4 beats) or from the break's own tempo, shown
+    above the selector (click it: x2, /2, type in, gaps, grain / cycle).
+    Triggering mid-bar enters at the right point, and it re-locks after
     loop-brace jumps and tempo changes.
   * **RATE**: 1/4, 1/2, 1x, 2x loop speed.
   * **CHOKE** 1-4: a hit stops the other pads in the same group (3 ms fade).

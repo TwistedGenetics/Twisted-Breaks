@@ -102,6 +102,17 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.26: STRETCH on the PLAY page
+- [ ] An old set: loops that had SYNC on show STRETCH PITCH and sound the same; loops with SYNC off show OFF; one-shots with a stretch set show it
+- [ ] Right-click a pad: no Stretch submenu (Render Akai, Layers, TWIST, copy / paste still there)
+- [ ] A LOOP break, STRETCH BEAT: change Live's tempo 160 -> 175: it stays on the bar, the pitch stays put; PITCH: the pitch follows the tempo
+- [ ] TEX and AKAI / AK.R on a loop: in time, pitch kept, the Akai buzz on AKAI; PITCH knob changes only the pitch
+- [ ] Hit the loop mid-bar: it enters in place; Live loop brace jumps: it re-locks
+- [ ] Change STRETCH while the loop plays: it switches without stopping
+- [ ] The number above STRETCH: amber once typed in; click it: Double it on a loop playing at half speed fixes it; gaps / grain submenus work
+- [ ] Double-click the selector: OFF; Cmd-Z after choosing a mode puts the old one back
+- [ ] One-shot / SLICE pads: all modes behave as in 0.23-0.25
+
 ## 0.25.2: controllers found on their own
 - [ ] Open a set that had Push 3 / Mikro mode off: the key at the bottom left now says CONTROLLERS; its menu has no Push 3 mode / Mikro MK3 mode items, just a status line for each
 - [ ] Mikro plugged in, Maschine app closed: within ~2 s the pads light and the screen shows PADS A (no menu needed); CONTROLLERS says Playing

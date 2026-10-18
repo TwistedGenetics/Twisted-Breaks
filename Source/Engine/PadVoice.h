@@ -197,11 +197,13 @@ namespace tb
         double readInc = 1.0;
         SliceTable beats;
         int    beatIdx = 0, beatHead = -1;
-        double sliceEnd = 0.0;
+        double sliceStart = 0.0, sliceEnd = 0.0;
         bool   gapFading = false, stretchEnding = false;
         uint32_t jitterSeed = 1;
         int    spawn (double pos, int fadeIn, bool hann = false, int len = 0, double dir = 1.0) noexcept;
         void   fadeAll (int samples) noexcept;
+        void   startHeads (int fadeIn) noexcept;
+        void   setBeat (int idx) noexcept;
         double bestCycleStart (double around, int fadeLen) const noexcept;
         void   renderStretched (const float* srcL, const float* srcR, bool stereo, int len, float& l, float& r) noexcept;
 

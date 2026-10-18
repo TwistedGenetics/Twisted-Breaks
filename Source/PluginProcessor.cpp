@@ -312,7 +312,6 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
         dst.fit        = ld (src.fit) > 0.5f;
         dst.layerMode  = juce::jlimit (0, 3, juce::roundToInt (ld (src.layers)));
         dst.stretch    = juce::jlimit (0, 5, juce::roundToInt (ld (src.stretch)));
-        if (dst.stretch == tb::params::stretchOff && dst.fit) dst.stretch = tb::params::stretchRepitch;   // 0.21 FIT = Repitch
         dst.origBpm    = ld (src.origBpm);
         dst.gap        = juce::jlimit (0, 2, juce::roundToInt (ld (src.gap)));
         dst.grainMs    = ld (src.grain);

@@ -537,7 +537,7 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
 
 **0.25.1**: the Notes port can be the plugin track's own MIDI input (echo guard).
 
-## A13. Controllers found on their own (0.25.2)
+## A13a. Controllers found on their own (0.25.2)
 
 > Can the plugin detect the Maschine Mikro or Push when plugged in without me
 > having to select it? Then the manual option can go and LIGHTS can get a
@@ -551,3 +551,19 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
 * LIGHTS is renamed **CONTROLLERS**: a status line for Push and the Mikro,
   pad pressure, the Mikro test (pauses the Mikro while it runs), the iRig pad
   lights and MIDI OUT.
+
+## A13. STRETCH in the pad settings (0.26)
+
+> I want the time stretch to be in the pad settings menu rather than a right
+> click on the pad; maybe it could replace the loop switch.
+
+* A STRETCH selector (OFF / PITCH / BEAT / TEX / AKAI / AK.R) on the PLAY page
+  in SYNC's place, for one-shots, slices and loops; the break's own tempo above
+  it (amber when typed in). Click it or right-click the selector: x2, /2, type
+  in, work out again, BEATS gaps, grain / cycle. Double-click: OFF.
+* Loops: OFF = free running (old SYNC off), PITCH = the old SYNC (identical),
+  BEAT / TEX / AKAI = locked to the bar grid with the pitch kept. A typed-in
+  tempo sets a loop's length in beats.
+* No new parameters: `stretch`, `sync`, `fit` all kept; the selector writes
+  them together as one undo step; old sets read the same.
+* The right-click Stretch submenu is gone.

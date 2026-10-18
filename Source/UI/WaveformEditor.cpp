@@ -112,7 +112,8 @@ namespace tb::ui
 
             auto moved = [] (float a, float b) { return std::abs (a - b) > 1.0e-6f; };
             const int how = roundToInt (paramValue (params::padSlice)) * 1000 + roundToInt (paramValue (params::padMode)) * 100
-                          + roundToInt (paramValue (params::padRate)) * 10 + (paramValue (params::padSync) > 0.5f ? 1 : 0);
+                          + roundToInt (paramValue (params::padRate)) * 10 + (paramValue (params::padSync) > 0.5f ? 1 : 0)
+                          + roundToInt (paramValue (params::padStretch)) * 10000 + roundToInt (paramValue (params::padOrigBpm) * 100.0f) * 100000;
             if (moved (s, lastStart) || moved (e, lastEnd) || r != lastReverse || moved (h, lastHead) || how != lastHow)
             {
                 lastStart = s; lastEnd = e; lastReverse = r; lastHead = h; lastHow = how;
@@ -685,10 +686,17 @@ namespace tb::ui
                 if (mode == params::modeLoop)
                 {
                     const String rate = String (params::loopRates[jlimit (0, 3, roundToInt (paramValue (params::padRate)))]) + "x";
-                    if (paramValue (params::padSync) > 0.5f)
+                    const int sm = params::effectiveStretch (roundToInt (paramValue (params::padStretch)), paramValue (params::padSync) > 0.5f,
+                                                             paramValue (params::padFit) > 0.5f, true);
+                    if (sm != params::stretchOff)
                     {
-                        const double beats = PadVoice::loopBeatsFor ((e - s) * buf.getLengthSeconds());
-                        how = "LOOP  SYNC " + String (beats, beats < 1.0 ? 2 : 0) + (beats < 1.5 && beats > 0.75 ? " BEAT  " : " BEATS  ") + rate;
+                        // A13: locked to Live's grid; the break's own tempo (typed in) sets the length in beats.
+                        const double secs = (e - s) * buf.getLengthSeconds();
+                        const float obpm = paramValue (params::padOrigBpm);
+                        const double beats = obpm >= 1.0f ? jmax (0.25, secs * obpm / 60.0) : PadVoice::loopBeatsFor (secs);
+                        const char* tag[] = { "", "PITCH", "BEATS", "TEXTURE", "AKAI", "AKAI R" };
+                        how = "LOOP  " + String (tag[sm]) + " " + String (beats, std::abs (beats - std::round (beats)) > 0.01 ? 2 : 0)
+                            + (beats < 1.5 && beats > 0.75 ? " BEAT  " : " BEATS  ") + rate;
                     }
                     else
                     {

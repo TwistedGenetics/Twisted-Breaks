@@ -42,6 +42,7 @@ set(TB_PLUGIN_SOURCES
     ${TB_SRC}/UI/PanelPainter.cpp
     ${TB_SRC}/UI/PadComponent.cpp
     ${TB_SRC}/UI/PadGrid.cpp
+    ${TB_SRC}/UI/StretchMenu.cpp
     ${TB_SRC}/UI/TransportDisplay.cpp
     ${TB_SRC}/UI/NeedleMeter.cpp
     ${TB_SRC}/UI/WaveformEditor.cpp

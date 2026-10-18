@@ -197,6 +197,15 @@ namespace tb::params
     inline constexpr const char* padStretch = "stretch";  // choice: how a one-shot / slice follows Live's tempo
     enum StretchMode { stretchOff = 0, stretchRepitch, stretchBeats, stretchTexture, stretchAkaiClassic, stretchAkaiRevised };   // append only
     inline const char* const kStretchNames[] = { "Off", "Repitch", "Beats", "Texture", "Akai Classic", "Akai Revised" };
+
+    /** A13 (0.26): the STRETCH a pad actually plays with. `stretch` wins when set; otherwise
+        a LOOP pad follows the old SYNC switch (on = Repitch) and a one-shot / slice the old
+        0.21 FIT (on = Repitch), so old sets sound the same. The selector writes all three. */
+    constexpr int effectiveStretch (int stretch, bool sync, bool fit, bool loop) noexcept
+    {
+        if (stretch > stretchOff && stretch <= stretchAkaiRevised) return stretch;
+        return (loop ? sync : fit) ? stretchRepitch : stretchOff;
+    }
     inline constexpr const char* padOrigBpm = "obpm";     // float 0 (detect) or 40..300: the break's own tempo
     inline constexpr const char* padGap     = "sgap";     // choice: BEATS gap fill
     inline const char* const kGapNames[] = { "None", "Loop", "Back & Forth" };
