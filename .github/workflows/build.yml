@@ -100,22 +100,6 @@ jobs:
           name: TwistedBreaks-macOS
           path: TwistedBreaks-macOS.zip
 
-      # Every green build of main becomes a downloadable Release
-      # (repo front page -> Releases), so there's no digging in Actions.
-      - name: Publish release
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION=$(sed -n 's/^project(TwistedBreaks VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
-          TAG="v${VERSION}-build.${{ github.run_number }}"
-          gh release create "$TAG" TwistedBreaks-macOS.zip \
-            --target "${{ github.sha }}" \
-            --title "Twisted Breaks ${VERSION} (build ${{ github.run_number }})" \
-            --latest \
-            --notes "$(git log -1 --pretty=%B)
-
-          Install: unzip, then follow INSTALL.txt (copy the .vst3 and .component into your plug-in folders, clear quarantine, rescan in Ableton)."
 
   linux-tests:
     name: Linux (VST3 build + tests)
@@ -133,3 +117,111 @@ jobs:
         run: cmake --build build -j 4
       - name: Run tests
         run: xvfb-run -a ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests
+
+  windows:
+    name: Windows x64 (VST3)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache JUCE download
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-8.0.4-${{ runner.os }}
+
+      - name: Configure
+        run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Run tests
+        run: |
+          set +e
+          ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests.exe > tests.log 2>&1
+          code=$?
+          cat tests.log
+          grep -F "[FAIL]" tests.log | while IFS= read -r line; do echo "::error title=Unit test (Windows)::$line"; done
+          tail -1 tests.log | sed 's/^/::notice title=Unit tests (Windows)::/'
+          exit $code
+
+      - name: Render UI snapshot
+        run: ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests.exe --snapshot ui-snapshot-windows.png
+
+      - name: Host round trip (VST3, as Ableton does it)
+        run: |
+          set +e
+          ./build/TwistedBreaksHostTest_artefacts/Release/TwistedBreaksHostTest.exe "build/TwistedBreaks_artefacts/Release/VST3/TwistedBreaks.vst3" > host.log 2>&1
+          code=$?
+          cat host.log
+          while IFS= read -r line; do
+            case "$line" in
+              *"[FAIL]"*) echo "::error title=HostTest (Windows)::$line" ;;
+              *) [ -n "$line" ] && echo "::notice title=HostTest (Windows)::$line" ;;
+            esac
+          done < host.log
+          exit $code
+
+      - name: Validate VST3 (pluginval)
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          unzip -q pluginval.zip
+          ./pluginval.exe --strictness-level 7 --validate-in-process \
+            --validate build/TwistedBreaks_artefacts/Release/VST3/TwistedBreaks.vst3
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -R build/TwistedBreaks_artefacts/Release/VST3/TwistedBreaks.vst3 dist/
+          cp ui-snapshot-windows.png dist/
+          cat > dist/INSTALL.txt <<'EOF'
+          Twisted Breaks for Windows (64-bit VST3)
+
+          1. Copy the whole TwistedBreaks.vst3 folder to
+               C:\Program Files\Common Files\VST3\
+          2. Ableton Live: Options > Preferences > Plug-Ins, turn on
+             "Use VST3 Plug-in System Folders", then Rescan.
+          3. Twisted Breaks appears under Plug-Ins > Twisted Genetics.
+
+          If Windows says the files are blocked: right-click the zip > Properties >
+          Unblock, before unzipping.
+          EOF
+          sed -i 's/^          //' dist/INSTALL.txt
+          cd dist && 7z a -tzip ../TwistedBreaks-Windows.zip . > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwistedBreaks-Windows
+          path: TwistedBreaks-Windows.zip
+
+  # Every green build of main becomes a downloadable Release
+  # (repo front page -> Releases), so there's no digging in Actions.
+  release:
+    name: Publish release
+    needs: [macos, windows, linux-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^project(TwistedBreaks VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          TAG="v${VERSION}-build.${{ github.run_number }}"
+          gh release create "$TAG" dist/TwistedBreaks-macOS.zip dist/TwistedBreaks-Windows.zip \
+            --target "${{ github.sha }}" \
+            --title "Twisted Breaks ${VERSION} (build ${{ github.run_number }})" \
+            --latest \
+            --notes "$(git log -1 --pretty=%B)
+
+          Mac: TwistedBreaks-macOS.zip - unzip, then follow INSTALL.txt (copy the .vst3 and .component into your plug-in folders, clear quarantine, rescan in Ableton).
+          Windows: TwistedBreaks-Windows.zip - unzip, copy TwistedBreaks.vst3 into C:\Program Files\Common Files\VST3, rescan in Ableton."
