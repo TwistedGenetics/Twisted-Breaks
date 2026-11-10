@@ -14,9 +14,20 @@ CRT and a red emergency-stop panic button.
 ## Install (no building needed)
 
 Every green build publishes a release. Open **Releases** on the right of the
-repo page, download **TwistedBreaks-macOS.zip** from the newest one, and
-follow the `INSTALL.txt` inside: copy the `.vst3` and `.component` into your
-plug-in folders, clear macOS quarantine, rescan in Ableton.
+repo page and download the zip for your computer from the newest one:
+
+* **Mac: TwistedBreaks-macOS.zip** (VST3 + AU, Apple Silicon and Intel).
+  Follow the `INSTALL.txt` inside: copy the `.vst3` and `.component` into your
+  plug-in folders, clear macOS quarantine, rescan in Ableton.
+* **Windows: TwistedBreaks-Windows.zip** (64-bit VST3, 0.28 on). Copy the
+  `TwistedBreaks.vst3` folder into `C:\Program Files\Common Files\VST3`, then
+  in Live: Preferences > Plug-Ins > Use VST3 Plug-in System Folders, Rescan.
+  * Push 3, the iRig pad lights, MIDI OUT to Live and the Mikro MK3 (over USB,
+    with NI's software closed) all work. Windows can't create MIDI ports from
+    a plugin, so the "Twisted Breaks Remote" (Mikro PLAY / STOP / REC) and
+    "Twisted Breaks Notes" ports need a free [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+    port of that exact name, made before you open Live. Recording your jamming
+    works without it (VST3 MIDI out: MIDI From = the Twisted Breaks track).
 
 **Operator's manual:** [docs/manual/index.html](docs/manual/index.html) (open it in a browser).
 
@@ -61,7 +72,8 @@ plug-in folders, clear macOS quarantine, rescan in Ableton.
 | 0.25.1 | Record your jamming on the plugin's own track (Notes port as the track's input; the plugin skips its own notes coming back) | **done** |
 | 0.25.2 | Push 3 and the Mikro MK3 are found on their own when plugged in (no mode to switch on); LIGHTS is now **CONTROLLERS**, with each one's status | **done** |
 | 0.26 | STRETCH moves to the PLAY page in SYNC's place and works on loops too (Beats / Texture / Akai keep a locked loop's pitch); the tempo readout holds x2 / ÷2 / type / gaps / grain; out of the right-click menu | **done** |
-| 0.27 | MODE **CONT** (loop continuous): latched loops that keep playing when Live stops, at Live's last tempo, and ease back onto the bar when it starts | **done** — 756/756 automated checks |
+| 0.27 | MODE **CONT** (loop continuous): latched loops that keep playing when Live stops, at Live's last tempo, and ease back onto the bar when it starts | **done** |
+| 0.28 | **Windows**: a 64-bit VST3 built and tested on Windows with every release; the Mikro MK3 over USB on Windows too; loopMIDI ports for Remote / Notes | **done** — 756/756 on Mac, Windows and Linux |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -317,10 +329,11 @@ Use a local JUCE checkout instead of downloading:
 
 ### Automatic builds (GitHub Actions)
 
-Every push builds universal VST3 + AU on a macOS runner, runs the test suite,
-validates the AU with `auval` and the VST3 with `pluginval`, and uploads
-**TwistedBreaks-macOS.zip** as a workflow artifact (Actions tab → latest run →
-Artifacts).
+Every push builds universal VST3 + AU on a macOS runner and a 64-bit VST3 on
+a Windows runner (MSVC), runs the test suite on both (and Linux), validates
+the AU with `auval` and the VST3s with `pluginval`, and uploads
+**TwistedBreaks-macOS.zip** and **TwistedBreaks-Windows.zip**; a green build
+of main publishes both as a release.
 
 ### Signing notes
 

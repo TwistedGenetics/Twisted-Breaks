@@ -118,7 +118,9 @@ if(TB_BUILD_TESTS)
     if(MSVC)
         # /Zi + /DEBUG: a crash on the Windows runner prints a readable stack.
         target_compile_options(TwistedBreaksTests PRIVATE /utf-8 /Zi)
-        target_link_options(TwistedBreaksTests PRIVATE /DEBUG)
+        # The tests keep whole processors on the stack (hosts put them on the heap): give the
+        # main thread the 8 MB macOS / Linux give it, not Windows' 1 MB default.
+        target_link_options(TwistedBreaksTests PRIVATE /DEBUG /STACK:16777216)
     endif()
     target_link_libraries(TwistedBreaksTests PRIVATE
         juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
