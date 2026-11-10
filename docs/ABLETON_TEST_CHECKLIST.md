@@ -102,6 +102,15 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.28: Windows
+- [ ] Unzip TwistedBreaks-Windows.zip, copy TwistedBreaks.vst3 into C:\Program Files\Common Files\VST3, rescan: it appears under Twisted Genetics and opens
+- [ ] Load samples (drag from Explorer), play pads, save and reopen the set; open a set made on the Mac (samples relinked or from a kit preset)
+- [ ] Push 3: press USER, the grid plays the plugin
+- [ ] Mikro MK3 with NI's software closed: found within ~2 s; with NI's software open: the status says it's held
+- [ ] loopMIDI port "Twisted Breaks Remote": Mikro PLAY / STOP / REC run Live
+- [ ] Record your jamming on a second track (MIDI From = the Twisted Breaks track)
+- [ ] Export a WAV and drag it into Live
+
 ## 0.27: LOOP CONT
 - [ ] PLAY page MODE has CONT after SEQL; old sets' modes unchanged; the tile says CONT
 - [ ] Live playing: hit a CONT pad - it loops; let go - it carries on; hit again - it stops

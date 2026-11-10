@@ -298,6 +298,13 @@ a { color: var(--amber-ink); }
     <li><div>In the browser: <b>Plug-Ins → Twisted Genetics → TwistedBreaks</b>. It is an instrument; drop it on a MIDI track. Arm the track (or set Monitor to In) so your controller reaches it.</div></li>
   </ol>
   <div class="note"><p>If the AU doesn't show up after installing a new version, run <code>killall -9 AudioComponentRegistrar</code> in Terminal and rescan. Use either the AU or the VST3 in a set, not both.</p></div>
+  <h3>On Windows (0.28 on)</h3>
+  <ol class="steps">
+    <li><div>Download <code>TwistedBreaks-Windows.zip</code> from the same release. If Windows marks it as blocked: right-click it › <b>Properties</b> › <b>Unblock</b>, then unzip.</div></li>
+    <li><div>Copy the whole <code>TwistedBreaks.vst3</code> folder to <code>C:\Program Files\Common Files\VST3\</code>.</div></li>
+    <li><div>In Live: <b>Options › Preferences › Plug-Ins</b>, turn on <b>Use VST3 Plug-in System Folders</b>, then <b>Rescan</b>. It appears under <b>Plug-Ins → Twisted Genetics</b>.</div></li>
+  </ol>
+  <div class="note"><p>Everything works on Windows, Push 3 and the Mikro MK3 included (close NI's software so the plugin can have the Mikro). Windows can't create MIDI ports from inside a plugin, so for the Mikro's PLAY / STOP / REC to run Live, make a <a href="https://www.tobias-erichsen.de/software/loopmidi.html" target="_blank" rel="noopener">loopMIDI</a> port named exactly <b>Twisted Breaks Remote</b> (and <b>Twisted Breaks Notes</b> for the notes port) before opening Live. Recording your jamming doesn't need it: set a MIDI track's <i>MIDI From</i> to the Twisted Breaks track.</p></div>
   <p>The plugin window can be resized from 75 % to 150 % by dragging its corner. Latency is zero: nothing needs compensating.</p>
 </section>
 
@@ -894,7 +901,7 @@ a { color: var(--amber-ink); }
   <div class="tablewrap"><table>
     <thead><tr><th>If…</th><th>Then</th></tr></thead>
     <tbody>
-      <tr><td>The plugin doesn't appear in Live</td><td>Clear the quarantine (§ 01), rescan; for the AU, <code>killall -9 AudioComponentRegistrar</code> first.</td></tr>
+      <tr><td>The plugin doesn't appear in Live</td><td>Mac: clear the quarantine (§ 01), rescan; for the AU, <code>killall -9 AudioComponentRegistrar</code> first. Windows: check the whole <code>TwistedBreaks.vst3</code> folder is in <code>Common Files\VST3</code> and VST3 system folders are on.</td></tr>
       <tr><td>Pads say MISSING</td><td><span class="key plain">Find missing</span> in the SNAPSHOTS view, pick the folder the samples are in.</td></tr>
       <tr><td>Nothing plays from the controller</td><td>Arm the MIDI track or set Monitor to In; check the pad's note on the PLAY page; check which scene is on view.</td></tr>
       <tr><td>Scene B is silent</td><td>Check the crossfader isn't fully on A and that no CUT key is held.</td></tr>
