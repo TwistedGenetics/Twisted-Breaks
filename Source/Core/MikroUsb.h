@@ -11,7 +11,8 @@ namespace tb
         MikroUsb
         --------
         Raw USB HID access to a Maschine Mikro MK3 (no NI software). macOS
-        only (IOKit); elsewhere open() reports that it isn't supported.
+        (IOKit) and Windows (SetupAPI + HID); elsewhere open() reports that
+        it isn't supported.
 
         Input reports arrive on the device's own thread (a CFRunLoop) through
         onReport; write() sends an output report (first byte = report id)

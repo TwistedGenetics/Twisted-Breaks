@@ -116,7 +116,9 @@ if(TB_BUILD_TESTS)
         JUCE_MODAL_LOOPS_PERMITTED=1
         TB_TEST_BUILD=1)
     if(MSVC)
-        target_compile_options(TwistedBreaksTests PRIVATE /utf-8)
+        # /Zi + /DEBUG: a crash on the Windows runner prints a readable stack.
+        target_compile_options(TwistedBreaksTests PRIVATE /utf-8 /Zi)
+        target_link_options(TwistedBreaksTests PRIVATE /DEBUG)
     endif()
     target_link_libraries(TwistedBreaksTests PRIVATE
         juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp

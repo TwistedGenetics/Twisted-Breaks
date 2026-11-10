@@ -2,6 +2,21 @@
 #include "Core/MikroProtocol.h"
 #include <atomic>
 
+#if JUCE_WINDOWS
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #include <windows.h>
+ #include <setupapi.h>
+ #include <hidsdi.h>
+ #include <hidpi.h>
+ #pragma comment (lib, "hid.lib")
+ #pragma comment (lib, "setupapi.lib")
+#endif
+
 #if JUCE_MAC
  #include <IOKit/hid/IOHIDManager.h>
  #include <IOKit/hid/IOHIDKeys.h>
@@ -283,6 +298,239 @@ namespace tb
                + " [NI HID: " + impl->hidSeen + "]";
     }
 
+#elif JUCE_WINDOWS
+    /*
+        Windows: the Mikro is a plain USB HID device. SetupAPI finds it, a
+        shared CreateFile opens it (NI's service may hold it: that shows as a
+        sharing violation), an overlapped ReadFile loop on our own thread
+        takes the input reports (Windows always puts the report id first),
+        and WriteFile sends output reports padded to the device's report size.
+    */
+    namespace
+    {
+        juce::String winError (DWORD e)
+        {
+            juce::String what;
+            switch (e)
+            {
+                case ERROR_SHARING_VIOLATION:   what = "held by another app (Native Instruments' background service or Maschine?)"; break;
+                case ERROR_ACCESS_DENIED:       what = "access denied (held by another app?)"; break;
+                case ERROR_DEVICE_NOT_CONNECTED:
+                case ERROR_BAD_COMMAND:
+                case ERROR_GEN_FAILURE:         what = "device gone"; break;
+                case ERROR_INVALID_PARAMETER:
+                case ERROR_INVALID_USER_BUFFER: what = "bad argument (report size?)"; break;
+                case WAIT_TIMEOUT:              what = "timed out"; break;
+                default:                        what = "error"; break;
+            }
+            return what + " (" + juce::String ((int) e) + ")";
+        }
+
+        struct HidInfo
+        {
+            juce::String path, product;
+            int vid = 0, pid = 0, usagePage = 0, inLen = 0, outLen = 0;
+        };
+
+        /** Every HID interface Windows lists from Native Instruments. */
+        std::vector<HidInfo> niHidDevices()
+        {
+            std::vector<HidInfo> found;
+            GUID guid;
+            HidD_GetHidGuid (&guid);
+            HDEVINFO set = SetupDiGetClassDevsW (&guid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+            if (set == INVALID_HANDLE_VALUE) return found;
+
+            SP_DEVICE_INTERFACE_DATA ifd {};
+            ifd.cbSize = sizeof (ifd);
+            for (DWORD i = 0; SetupDiEnumDeviceInterfaces (set, nullptr, &guid, i, &ifd); ++i)
+            {
+                DWORD need = 0;
+                SetupDiGetDeviceInterfaceDetailW (set, &ifd, nullptr, 0, &need, nullptr);
+                if (need == 0) continue;
+                juce::HeapBlock<char> mem (need, true);
+                auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*> (mem.get());
+                detail->cbSize = sizeof (SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+                if (! SetupDiGetDeviceInterfaceDetailW (set, &ifd, detail, need, nullptr, nullptr)) continue;
+
+                // No access rights needed just to read the ids and report sizes.
+                HANDLE h = CreateFileW (detail->DevicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+                if (h == INVALID_HANDLE_VALUE) continue;
+                HIDD_ATTRIBUTES attr {};
+                attr.Size = sizeof (attr);
+                if (HidD_GetAttributes (h, &attr) && attr.VendorID == mikro::kVendorId)
+                {
+                    HidInfo info;
+                    info.path = juce::String (detail->DevicePath);
+                    info.vid = attr.VendorID;
+                    info.pid = attr.ProductID;
+                    PHIDP_PREPARSED_DATA pp = nullptr;
+                    if (HidD_GetPreparsedData (h, &pp))
+                    {
+                        HIDP_CAPS caps {};
+                        if (HidP_GetCaps (pp, &caps) == HIDP_STATUS_SUCCESS)
+                        {
+                            info.usagePage = caps.UsagePage;
+                            info.inLen = caps.InputReportByteLength;
+                            info.outLen = caps.OutputReportByteLength;
+                        }
+                        HidD_FreePreparsedData (pp);
+                    }
+                    wchar_t name[128] = {};
+                    if (HidD_GetProductString (h, name, sizeof (name))) info.product = juce::String (name);
+                    found.push_back (info);
+                }
+                CloseHandle (h);
+            }
+            SetupDiDestroyDeviceInfoList (set);
+            return found;
+        }
+    }
+
+    struct MikroUsb::Impl final : juce::Thread
+    {
+        explicit Impl (MikroUsb& o) : juce::Thread ("Mikro MK3 USB"), owner (o) {}
+        ~Impl() override { close(); }
+
+        void run() override
+        {
+            OVERLAPPED ov {};
+            ov.hEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+            std::vector<uint8_t> buf ((size_t) juce::jmax (64, maxIn), 0);
+            while (! threadShouldExit() && handle != INVALID_HANDLE_VALUE)
+            {
+                ResetEvent (ov.hEvent);
+                DWORD got = 0;
+                if (! ReadFile (handle, buf.data(), (DWORD) buf.size(), &got, &ov))
+                {
+                    const DWORD e = GetLastError();
+                    if (e != ERROR_IO_PENDING) { lostDevice (e); break; }
+                    HANDLE waits[] = { ov.hEvent, stopEvent };
+                    const DWORD w = WaitForMultipleObjects (2, waits, FALSE, INFINITE);
+                    if (w != WAIT_OBJECT_0) { CancelIo (handle); WaitForSingleObject (ov.hEvent, 500); break; }
+                    if (! GetOverlappedResult (handle, &ov, &got, FALSE)) { lostDevice (GetLastError()); break; }
+                }
+                if (got > 0 && owner.onReport) owner.onReport (buf.data(), (int) got);
+            }
+            CloseHandle (ov.hEvent);
+        }
+
+        void lostDevice (DWORD e)
+        {
+            if (threadShouldExit()) return;
+            error = "lost the Mikro: " + winError (e);
+            removed = true;
+            if (owner.onRemoved) owner.onRemoved();
+        }
+
+        bool open()
+        {
+            const auto devs = niHidDevices();
+            juce::StringArray seen;
+            const HidInfo* best = nullptr;
+            for (const auto& d : devs)
+            {
+                seen.add (d.product + " (0x" + juce::String::toHexString (d.pid).paddedLeft ('0', 4)
+                          + ", usage page 0x" + juce::String::toHexString (d.usagePage)
+                          + ", in " + juce::String (d.inLen) + " / out " + juce::String (d.outLen) + ")");
+                if (d.pid == mikro::kProductId && (best == nullptr || d.outLen > best->outLen)) best = &d;
+            }
+            hidSeen = seen.joinIntoString ("; ");
+            if (best == nullptr)
+            {
+                error = "no Maschine Mikro MK3 found. HID: " + (seen.isEmpty() ? juce::String ("none from NI") : hidSeen);
+                return false;
+            }
+            handle = CreateFileW (best->path.toWideCharPointer(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+            if (handle == INVALID_HANDLE_VALUE)
+            {
+                error = "found the Mikro, but couldn't open it: " + winError (GetLastError());
+                return false;
+            }
+            maxIn = best->inLen;
+            maxOut = best->outLen;
+            product = best->product;
+            removed = false;
+            stopEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+            writeEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+            startThread (juce::Thread::Priority::high);
+            error = {};
+            return true;
+        }
+
+        void close()
+        {
+            if (stopEvent != nullptr) SetEvent (stopEvent);
+            signalThreadShouldExit();
+            stopThread (1000);
+            if (handle != INVALID_HANDLE_VALUE) { CloseHandle (handle); handle = INVALID_HANDLE_VALUE; }
+            if (stopEvent != nullptr)  { CloseHandle (stopEvent);  stopEvent = nullptr; }
+            if (writeEvent != nullptr) { CloseHandle (writeEvent); writeEvent = nullptr; }
+        }
+
+        bool write (const std::vector<uint8_t>& rep)
+        {
+            if (handle == INVALID_HANDLE_VALUE || removed || rep.empty()) { error = "not open"; return false; }
+            // Windows wants the full output report length (the longest the device declares).
+            std::vector<uint8_t> out (rep);
+            if (maxOut > 0 && (int) out.size() < maxOut) out.resize ((size_t) maxOut, 0);
+
+            const juce::ScopedLock sl (writeLock);
+            OVERLAPPED ov {};
+            ov.hEvent = writeEvent;
+            ResetEvent (writeEvent);
+            DWORD done = 0;
+            BOOL ok = WriteFile (handle, out.data(), (DWORD) out.size(), &done, &ov);
+            DWORD e = ok ? ERROR_SUCCESS : GetLastError();
+            if (! ok && e == ERROR_IO_PENDING)
+            {
+                if (WaitForSingleObject (writeEvent, 1000) != WAIT_OBJECT_0) { CancelIo (handle); e = WAIT_TIMEOUT; }
+                else if (GetOverlappedResult (handle, &ov, &done, FALSE)) e = ERROR_SUCCESS;
+                else e = GetLastError();
+            }
+            if (e != ERROR_SUCCESS)
+            {
+                // Some HID stacks take output reports only as a SET_REPORT control transfer.
+                if (HidD_SetOutputReport (handle, out.data(), (ULONG) out.size())) return true;
+                error = "write of report 0x" + juce::String::toHexString ((int) rep[0]) + " (" + juce::String ((int) rep.size())
+                        + " bytes) refused: " + winError (e);
+                return false;
+            }
+            return true;
+        }
+
+        MikroUsb& owner;
+        HANDLE handle = INVALID_HANDLE_VALUE, stopEvent = nullptr, writeEvent = nullptr;
+        juce::CriticalSection writeLock;
+        std::atomic<bool> removed { false };
+        int maxIn = 0, maxOut = 0;
+        juce::String product, error, hidSeen;
+    };
+
+    MikroUsb::MikroUsb() : impl (std::make_unique<Impl> (*this)) {}
+    MikroUsb::~MikroUsb() { close(); }
+    bool MikroUsb::isSupported() noexcept { return true; }
+    bool MikroUsb::open()
+    {
+        if (isOpen()) return true;
+        if (impl->open()) return true;
+        const auto e = impl->error;
+        impl->close();
+        impl->error = e;
+        return false;
+    }
+    void MikroUsb::close() { impl->close(); }
+    bool MikroUsb::isOpen() const noexcept { return impl->handle != INVALID_HANDLE_VALUE && ! impl->removed; }
+    bool MikroUsb::write (const std::vector<uint8_t>& r) { return impl->write (r); }
+    juce::String MikroUsb::getLastError() const { return impl->error; }
+    juce::String MikroUsb::describe() const
+    {
+        return (impl->product.isNotEmpty() ? impl->product : juce::String ("Maschine Mikro MK3"))
+               + ", reports in " + juce::String (impl->maxIn) + " / out " + juce::String (impl->maxOut) + " bytes"
+               + " [NI HID: " + impl->hidSeen + "]";
+    }
+
 #else
     struct MikroUsb::Impl {};
     MikroUsb::MikroUsb() {}
@@ -292,7 +540,7 @@ namespace tb
     void MikroUsb::close() {}
     bool MikroUsb::isOpen() const noexcept { return false; }
     bool MikroUsb::write (const std::vector<uint8_t>&) { return false; }
-    juce::String MikroUsb::getLastError() const { return "the Mikro MK3 USB connection is Mac only"; }
+    juce::String MikroUsb::getLastError() const { return "the Mikro MK3 USB connection is Mac and Windows only"; }
     juce::String MikroUsb::describe() const { return {}; }
 #endif
 }

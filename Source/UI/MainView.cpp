@@ -578,7 +578,7 @@ namespace tb::ui
     juce::String MainView::mikroStatus() const
     {
         auto& mm = processor.getMikroMode();
-        if (! MikroUsb::isSupported())       return "Mac only";
+        if (! MikroUsb::isSupported())       return "Not available on this system";
         if (processor.getMikro().isRunning()) return "Paused while the test runs";
         if (! mm.isEnabled())                return "Off";
         if (! mm.isConnected())              return "Not found - " + mm.getHubStatus();

@@ -4289,12 +4289,12 @@ namespace
                "buttons light while held; the copyable report logs events and the raw first reports");
         t.stop();
         check (! t.isRunning() && t.getLights().state[39] == 0, "stopping switches the Mikro's lights off");
-       #if JUCE_MAC
-        const bool isMac = true;
+       #if JUCE_MAC || JUCE_WINDOWS
+        const bool hasUsb = true;
        #else
-        const bool isMac = false;
+        const bool hasUsb = false;
        #endif
-        check (tb::MikroUsb::isSupported() == isMac, "USB access is built on the Mac (elsewhere it says it's Mac only)");
+        check (tb::MikroUsb::isSupported() == hasUsb, "USB access is built on the Mac and Windows (elsewhere it says it can't)");
     }
 
 

@@ -20,7 +20,10 @@ namespace tb
        #if JUCE_MAC || JUCE_LINUX
         if (createDevice) output = juce::MidiOutput::createNewDevice (kName);
        #else
-        juce::ignoreUnused (createDevice);
+        // Windows can't make a MIDI port from a plugin: use a loopMIDI port of this name if there is one.
+        if (createDevice)
+            for (const auto& d : juce::MidiOutput::getAvailableDevices())
+                if (d.name.containsIgnoreCase (kName)) { output = juce::MidiOutput::openDevice (d.identifier); break; }
        #endif
         if (createDevice) startThread (juce::Thread::Priority::high);
     }

@@ -11,7 +11,7 @@ permissions:
 jobs:
   macos:
     name: macOS universal (VST3 + AU)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -147,7 +147,22 @@ jobs:
           cat tests.log
           grep -F "[FAIL]" tests.log | while IFS= read -r line; do echo "::error title=Unit test (Windows)::$line"; done
           tail -1 tests.log | sed 's/^/::notice title=Unit tests (Windows)::/'
+          if [ $code -ne 0 ]; then
+            echo "::error title=Unit tests (Windows)::exit code $code"
+            tail -12 tests.log | while IFS= read -r line; do echo "::notice title=Last test lines::$line"; done
+          fi
           exit $code
+
+      - name: Crash stack (if the tests crashed)
+        if: failure()
+        run: |
+          CDB="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          [ -x "$CDB" ] || { echo "::warning title=cdb::not found"; exit 0; }
+          "$CDB" -G -lines -y "build/TwistedBreaksTests_artefacts/Release" \
+            -c "sxd av; sxe -c \".ecxr;kp 25;q\" av; sxe -c \".ecxr;kp 25;q\" c0000409; sxe -c \".ecxr;kp 25;q\" c0000374; g; kp 25; q" \
+            ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests.exe > cdb.log 2>&1 || true
+          grep -E "^[0-9a-f]{2} |ExceptionCode|Access violation|FAILURE_BUCKET|^\(.*\):" cdb.log | head -40 | while IFS= read -r line; do echo "::notice title=Crash stack::$line"; done
+          tail -25 cdb.log | while IFS= read -r line; do echo "::notice title=cdb tail::$line"; done
 
       - name: Render UI snapshot
         run: ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests.exe --snapshot ui-snapshot-windows.png

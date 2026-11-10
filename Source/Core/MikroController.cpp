@@ -56,7 +56,7 @@ namespace tb
         else
         {
             const juce::ScopedLock sl (lock);
-            status = MikroUsb::isSupported() ? "test" : "the Mikro MK3 connection is Mac only";
+            status = MikroUsb::isSupported() ? "test" : "the Mikro MK3 connection is Mac and Windows only";
         }
     }
 
