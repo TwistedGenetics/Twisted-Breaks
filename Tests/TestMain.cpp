@@ -3735,12 +3735,17 @@ namespace
         if (editor == nullptr) { check (false, "found the pad editor"); return; }
         editor->setPage (tb::ui::PadEditorPanel::Page::play);
         setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeSeqLoop);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
         bool launchShown = false, syncHidden = true;
-        for (auto* ch : editor->getChildren())
+        // (The editor's timer picks the mode up; give a slow runner up to 2 s.)
+        for (int tries = 0; tries < 40 && ! (launchShown && syncHidden); ++tries)
         {
-            if (auto* rs = dynamic_cast<tb::ui::RotarySelector*> (ch)) launchShown = launchShown || (rs->isVisible() && rs->getTooltip().contains ("starts this pad's sequence"));
-            if (auto* ts = dynamic_cast<tb::ui::ToggleSwitch*> (ch)) if (ts->getName().contains ("SYNC") || ts->getTooltip().contains ("tempo")) syncHidden = syncHidden && ! ts->isVisible();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+            launchShown = false; syncHidden = true;
+            for (auto* ch : editor->getChildren())
+            {
+                if (auto* rs = dynamic_cast<tb::ui::RotarySelector*> (ch)) launchShown = launchShown || (rs->isVisible() && rs->getTooltip().contains ("starts this pad's sequence"));
+                if (auto* ts = dynamic_cast<tb::ui::ToggleSwitch*> (ch)) if (ts->getName().contains ("SYNC") || ts->getTooltip().contains ("tempo")) syncHidden = syncHidden && ! ts->isVisible();
+            }
         }
         check (launchShown && syncHidden, "PLAY page in SEQ LOOP: LAUNCH and LEN take the places of SYNC and RATE");
         editor->setPage (tb::ui::PadEditorPanel::Page::swap);
@@ -5805,6 +5810,7 @@ namespace
             check (rawP (tb::params::mglMix) < mix0, "the encoder turns MANGLE MIX");
             press (variation);
             check (ops.isBusy(), "VARIATION = RANDOMIZE (it listens first)");
+            hub->setSinkForTesting (nullptr);           // (the recorder goes before the plugin does)
         }
         {
             using namespace tb::push;
@@ -5837,6 +5843,7 @@ namespace
             const bool held = r.p.getParameters().getRawParameterValue (tb::params::mglHold)->load() > 0.5f;
             in (juce::MidiMessage::controllerEvent (1, tb::push::sceneTop - 5, 0)); step();
             check (held && r.p.getParameters().getRawParameterValue (tb::params::mglHold)->load() < 0.5f, "the 6th scene button is MANGLE HOLD");
+            hub->setSinkForTesting (nullptr);
         }
     }
 

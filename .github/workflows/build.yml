@@ -35,7 +35,17 @@ jobs:
           cat tests.log
           grep -F "[FAIL]" tests.log | while IFS= read -r line; do echo "::error title=Unit test::$line"; done
           tail -1 tests.log | sed 's/^/::notice title=Unit tests::/'
+          if [ $code -ne 0 ]; then
+            echo "::error title=Unit tests::exit code $code"
+            tail -8 tests.log | while IFS= read -r line; do echo "::notice title=Last test lines::$line"; done
+          fi
           exit $code
+
+      - name: Crash stack (if the tests crashed)
+        if: failure()
+        run: |
+          lldb --batch -o run -k "bt 25" -k quit -- ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests > lldb.log 2>&1 || true
+          grep -E "frame #|stop reason" lldb.log | head -30 | while IFS= read -r line; do echo "::notice title=Crash stack::$line"; done
 
       - name: Render UI snapshot
         run: ./build/TwistedBreaksTests_artefacts/Release/TwistedBreaksTests --snapshot ui-snapshot.png
