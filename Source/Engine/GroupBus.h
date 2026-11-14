@@ -48,7 +48,7 @@ namespace tb
         /** `mangler` (optional, A15): MANGLE targets this group and runs after its FX. */
         float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock&,
                        juce::AudioBuffer<float>* tap = nullptr, class Mangler* mangler = nullptr,
-                       const mangle::Pattern* pattern = nullptr, const void* gate = nullptr) noexcept;
+                       const mangle::Slots* pattern = nullptr, const void* gate = nullptr) noexcept;
 
         /** PANIC: silence the effects (tails, repeats) too. */
         void panicFx() noexcept { chain.reset(); }

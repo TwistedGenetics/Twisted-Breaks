@@ -377,6 +377,29 @@ namespace tb::params
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglFillNext, kV23 }, "Mangle Fill Next", false));
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglStyle, kV23 }, "Mangle Style",
                                                             StringArray { "Gentle", "Medium", "Wild" }, 1));
+        // ---- 0.30: MANGLE variations, TEXTURE, SPACE ----
+        {
+            const auto pct = AudioParameterIntAttributes().withLabel ("%");
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglSlot, kV24 }, "Mangle Slot", StringArray { "A", "B", "C", "D" }, 0));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglChain, kV24 }, "Mangle Chain", false));
+            StringArray tex, space, times;
+            for (auto* t : kMglTexModes) tex.add (t);
+            for (auto* t : kMglSpaceModes) space.add (t);
+            for (auto* t : kMglSpaceTimeNames) times.add (t);
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglTexMode, kV24 }, "Mangle Texture", tex, 0));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglTexAmount, kV24 }, "Mangle Texture Amount", 0, 100, 50, pct));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglTexSize, kV24 }, "Mangle Texture Size", 10, 250, 40,
+                                                             AudioParameterIntAttributes().withLabel ("ms")));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglTexDensity, kV24 }, "Mangle Texture Density", 2, 60, 16,
+                                                             AudioParameterIntAttributes().withLabel ("/s")));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglTexScatter, kV24 }, "Mangle Texture Scatter", 0, 100, 30, pct));
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglSpaceMode, kV24 }, "Mangle Space", space, 0));
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglSpaceTime, kV24 }, "Mangle Space Time", times, 6));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglSpaceFb, kV24 }, "Mangle Space Feedback", 0, 90, 45, pct));
+            layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglSpaceAmount, kV24 }, "Mangle Space Amount", 0, 100, 35, pct));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglLockTex, kV24 }, "Mangle Lock Texture", false));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglLockSpace, kV24 }, "Mangle Lock Space", false));
+        }
 
         return layout;
     }

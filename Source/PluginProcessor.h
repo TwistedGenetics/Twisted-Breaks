@@ -219,7 +219,10 @@ private:
     std::atomic<float>* macroLatchParam  = nullptr;
     std::atomic<float>* mglOnParam = nullptr, *mglTargetParam = nullptr, *mglStepsParam = nullptr, *mglMixParam = nullptr,
                        *mglAmountParam = nullptr, *mglFillEveryParam = nullptr, *mglFillLenParam = nullptr,
-                       *mglHoldParam = nullptr, *mglFillNextParam = nullptr;
+                       *mglHoldParam = nullptr, *mglFillNextParam = nullptr,
+                       *mglSlotParam = nullptr, *mglChainParam = nullptr, *mglTexModeParam = nullptr, *mglTexAmountParam = nullptr,
+                       *mglTexSizeParam = nullptr, *mglTexDensityParam = nullptr, *mglTexScatterParam = nullptr, *mglSpaceModeParam = nullptr,
+                       *mglSpaceTimeParam = nullptr, *mglSpaceFbParam = nullptr, *mglSpaceAmountParam = nullptr;
     std::atomic<float>* bankActiveParam = nullptr;
     std::atomic<float>* bankAtParam = nullptr;
 

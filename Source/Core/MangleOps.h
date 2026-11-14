@@ -30,8 +30,13 @@ namespace tb
         explicit MangleOps (TwistedBreaksProcessor&);
         ~MangleOps() override;
 
+        /** The variation being edited (the SLOT parameter, A-D). */
+        int     slot() const;
         Pattern get() const;
+        Pattern get (int slot) const;
         void    set (const Pattern&, bool recordHistory = false);
+        void    setSlot (int slot, const Pattern&, bool recordHistory = false);
+        void    copySlot (int from, int to);
 
         // ---- Hand edits -------------------------------------------------------------
         void paint (int a, int b, int move, bool join);
@@ -73,6 +78,23 @@ namespace tb
         /** Synchronous RANDOMIZE / MUTATE over the given audio (tests; the async path ends here too). */
         void applyChosen (bool mutateOnly, const juce::AudioBuffer<float>& in, int length, double sampleRate, double bpm, double ppqPerBar);
 
+        // ---- 0.30: presets ------------------------------------------------------------
+        struct Preset
+        {
+            juce::String group, name;
+            mangle::Slots slots {};
+            std::vector<std::pair<juce::String, float>> params;     // plain values of mgl_* settings
+        };
+        static const std::vector<Preset>& factoryPresets();
+        /** The bar(s) and sound settings now (STEPS, CHAIN, MIX, AMOUNT, TEXTURE, SPACE) as a preset. */
+        Preset capturePreset (const juce::String& name) const;
+        void   applyPreset (const Preset&);
+        static juce::ValueTree presetToTree (const Preset&);
+        static Preset presetFromTree (const juce::ValueTree&);
+        static juce::File userPresetFolder();
+        /** Randomize's TEXTURE / SPACE (skipping locked ones): a few parameters to set. */
+        static std::vector<std::pair<juce::String, float>> randomSound (int style, bool lockTex, bool lockSpace, juce::Random&);
+
         juce::ValueTree toValueTree() const;
         void fromValueTree (const juce::ValueTree&);
         static inline const juce::Identifier mangleId { "MANGLE" };
@@ -82,11 +104,13 @@ namespace tb
 
     private:
         void start (bool mutateOnly);
+        void finish (int slot, const Pattern&, bool mutateOnly);
+        void setPlain (const juce::String& id, float value);
         void timerCallback() override;
         void changed();
 
         TwistedBreaksProcessor& processor;
-        std::deque<Pattern> history;      // newest at the back, at most 3
+        std::deque<std::pair<int, Pattern>> history;      // (slot, the bar before): newest at the back, at most 3
         juce::Random rng;
         bool busy = false, pendingMutate = false;
         uint32_t captureSeen = 0;

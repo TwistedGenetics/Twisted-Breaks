@@ -52,7 +52,7 @@ namespace tb
     }
 
     float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock& clock,
-                             juce::AudioBuffer<float>* tap, Mangler* mangler, const mangle::Pattern* pattern, const void* gate) noexcept
+                             juce::AudioBuffer<float>* tap, Mangler* mangler, const mangle::Slots* pattern, const void* gate) noexcept
     {
         numSamples = juce::jmin (numSamples, spanLength);
 

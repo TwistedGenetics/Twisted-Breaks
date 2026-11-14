@@ -11,10 +11,11 @@ namespace tb::ui
 
     namespace
     {
-        const Rectangle<float> kGrid { 16.0f, 44.0f, 540.0f, 110.0f };
-        constexpr float kMovesY = 164.0f, kMovesH = 28.0f;     // two rows: 5 + 4 moves
-        constexpr float kReadY = 234.0f, kReadH = 40.0f;
-        constexpr float kBottomY = 284.0f;
+        const Rectangle<float> kGrid { 16.0f, 44.0f, 540.0f, 86.0f };
+        constexpr float kMovesY = 146.0f, kMovesH = 26.0f;     // two rows: 5 + 4 moves
+        constexpr float kReadY = 206.0f, kReadH = 36.0f;       // the bar's settings
+        constexpr float kTexY = 248.0f, kSpaceY = 290.0f;      // TEXTURE, SPACE rows (0.30)
+        constexpr float kBottomY = 340.0f;
     }
 
     Colour ManglePanel::moveColour (int m)
@@ -69,6 +70,35 @@ namespace tb::ui
         styleRead.attach (apvts.getParameter (params::mglStyle));
         for (auto* r : { &stepsRead, &targetRead, &mixRead, &amountRead, &everyRead, &lenRead, &styleRead }) addAndMakeVisible (r);
 
+        // 0.30
+        for (int k = 0; k < mangle::kSlots; ++k)
+        {
+            slotKeys[(size_t) k] = std::make_unique<PushKey> (String::charToString ((juce_wchar) ('A' + k)),
+                                                              "Variation " + String::charToString ((juce_wchar) ('A' + k))
+                                                                + ": edit it (it plays from the next bar). Right-click: copy here / clear",
+                                                              Colour (0xff6f8dff));
+            slotKeys[(size_t) k]->setClickingTogglesState (false);
+            slotKeys[(size_t) k]->onClick = [this, k] { setParam (params::mglSlot, (float) k); repaint(); };
+            slotKeys[(size_t) k]->addMouseListener (this, false);
+            addAndMakeVisible (*slotKeys[(size_t) k]);
+        }
+        for (auto* k : { &chainKey, &texLock, &spaceLock }) k->setClickingTogglesState (true);
+        if (auto* prm = apvts.getParameter (params::mglChain))     chainAtt = std::make_unique<ButtonParameterAttachment> (*prm, chainKey);
+        if (auto* prm = apvts.getParameter (params::mglLockTex))   texLockAtt = std::make_unique<ButtonParameterAttachment> (*prm, texLock);
+        if (auto* prm = apvts.getParameter (params::mglLockSpace)) spaceLockAtt = std::make_unique<ButtonParameterAttachment> (*prm, spaceLock);
+        presetKey.onClick = [this] { showPresetMenu(); };
+        for (auto* k : { &chainKey, &texLock, &spaceLock, &presetKey }) addAndMakeVisible (k);
+        texMode.attach (apvts.getParameter (params::mglTexMode));
+        texAmount.attach (apvts.getParameter (params::mglTexAmount));
+        texSize.attach (apvts.getParameter (params::mglTexSize));
+        texDensity.attach (apvts.getParameter (params::mglTexDensity));
+        texScatter.attach (apvts.getParameter (params::mglTexScatter));
+        spMode.attach (apvts.getParameter (params::mglSpaceMode));
+        spTime.attach (apvts.getParameter (params::mglSpaceTime));
+        spFb.attach (apvts.getParameter (params::mglSpaceFb));
+        spAmount.attach (apvts.getParameter (params::mglSpaceAmount));
+        for (auto* r : { &texMode, &texAmount, &texSize, &texDensity, &texScatter, &spMode, &spTime, &spFb, &spAmount }) addAndMakeVisible (r);
+
         processor.getMangleOps().onChange = [sp = Component::SafePointer<ManglePanel> (this)] { if (sp != nullptr) sp->repaint(); };
         startTimerHz (30);
     }
@@ -97,10 +127,12 @@ namespace tb::ui
     void ManglePanel::resized()
     {
         background = {};
-        onKey.setBounds (126, 8, 54, 26);
-        holdKey.setBounds (184, 8, 62, 26);
-        fillKey.setBounds (250, 8, 90, 26);
-        backKey.setBounds (496, 8, 60, 26);
+        onKey.setBounds (124, 8, 48, 26);
+        holdKey.setBounds (176, 8, 58, 26);
+        fillKey.setBounds (238, 8, 84, 26);
+        for (int k = 0; k < mangle::kSlots; ++k) slotKeys[(size_t) k]->setBounds (330 + k * 32, 8, 30, 26);
+        chainKey.setBounds (460, 8, 58, 26);
+        backKey.setBounds (522, 8, 40, 26);
         const float mw = kGrid.getWidth() / 5.0f;
         for (int m = 0; m < kNumMoves; ++m)
         {
@@ -112,10 +144,22 @@ namespace tb::ui
         int i = 0;
         for (auto* r : { &stepsRead, &targetRead, &mixRead, &amountRead, &everyRead, &lenRead })
             r->setBounds (Rectangle<float> (kGrid.getX() + (i++) * rw + 4.0f, kReadY, rw - 8.0f, kReadH).toNearestInt());
-        randKey.setBounds (16, (int) kBottomY + 10, 112, 30);
-        mutKey.setBounds (132, (int) kBottomY + 10, 92, 30);
-        revertKey.setBounds (228, (int) kBottomY + 10, 92, 30);
-        styleRead.setBounds (328, (int) kBottomY, 92, 40);
+        // TEXTURE and SPACE rows: the lock key as the row's name, then its settings.
+        const float cw = (kGrid.getWidth() - 92.0f) / 5.0f;
+        texLock.setBounds (16, (int) kTexY + 8, 86, 28);
+        i = 0;
+        for (auto* r : { &texMode, &texAmount, &texSize, &texDensity, &texScatter })
+            r->setBounds (Rectangle<float> (108.0f + (i++) * cw, kTexY, cw - 6.0f, kReadH).toNearestInt());
+        spaceLock.setBounds (16, (int) kSpaceY + 8, 86, 28);
+        i = 0;
+        for (auto* r : { &spMode, &spTime, &spFb, &spAmount })
+            r->setBounds (Rectangle<float> (108.0f + (i++) * cw, kSpaceY, cw - 6.0f, kReadH).toNearestInt());
+        presetKey.setBounds ((int) (108.0f + 4 * cw), (int) kSpaceY + 8, (int) cw - 6, 28);
+
+        randKey.setBounds (16, (int) kBottomY + 8, 108, 30);
+        mutKey.setBounds (128, (int) kBottomY + 8, 86, 30);
+        revertKey.setBounds (218, (int) kBottomY + 8, 86, 30);
+        styleRead.setBounds (310, (int) kBottomY, 86, 38);
     }
 
     int ManglePanel::stepAt (Point<float> pt) const
@@ -213,23 +257,18 @@ namespace tb::ui
             }
         }
 
-        // Status and hints.
-        g.setFont (monoFont (13.0f).boldened());
+        // Status (and the last RANDOMIZE / preset), bottom right.
         const bool on = processor.getParameters().getRawParameterValue (params::mglOn)->load() > 0.5f;
-        const String status = playing < 0 ? String ("LIVE STOPPED") : active ? String ("MANGLING") : on ? String ("WAITING FOR THE FILL") : String ("THRU");
+        const int playingSlot = processor.getBridge().mangleSlot.load (std::memory_order_relaxed);
+        const String status = playing < 0 ? String ("LIVE STOPPED") : active ? "MANGLING " + String::charToString ((juce_wchar) ('A' + playingSlot))
+                            : on ? String ("WAITING FOR THE FILL") : String ("THRU");
         g.setColour (active ? c::red : c::vfd);
-        g.drawText (status, Rectangle<float> (346.0f, 8.0f, 146.0f, 26.0f), Justification::centredLeft, false);
-
+        g.setFont (monoFont (13.5f).boldened());
+        g.drawText (status, Rectangle<float> (404.0f, kBottomY + 2.0f, 152.0f, 18.0f), Justification::centredLeft, false);
         g.setColour (c::vfd);
-        g.setFont (monoFont (12.5f));
+        g.setFont (monoFont (12.0f));
         const String report = ops.isBusy() ? String ("LISTENING...") : ops.getLastReport().toUpperCase();
-        g.drawFittedText (report, Rectangle<int> (428, (int) kBottomY + 10, 128, 30), Justification::centredLeft, 2);
-        g.setColour (c::bakelite.withAlpha (0.85f));
-        g.setFont (monoFont (11.5f));
-        g.drawFittedText ("PICK A MOVE, THEN CLICK OR DRAG ACROSS STEPS (A DRAG JOINS THEM; ALT-DRAG: ONE BY ONE).\n"
-                          "RIGHT-CLICK A STEP: THRU / SPLIT / SLICES.  WHEEL: REPEAT SLICES OR SHUFFLE SOURCE.\n"
-                          "HOLD AND FILL NEXT ARE PARAMETERS TOO: MIDI-MAP THEM TO PADS FOR LIVE TURNAROUNDS.",
-                          Rectangle<int> (18, (int) kBottomY + 50, 538, 50), Justification::topLeft, 4, 0.9f);
+        g.drawFittedText (report, Rectangle<int> (404, (int) kBottomY + 20, 152, 18), Justification::centredLeft, 1);
     }
 
     void ManglePanel::timerCallback()
@@ -242,6 +281,14 @@ namespace tb::ui
         const bool hold = processor.getParameters().getRawParameterValue (params::mglHold)->load() > 0.5f;
         holdKey.setToggleState (hold, dontSendNotification);
         fillKey.setToggleState (fillOffTicks > 0, dontSendNotification);
+        const int edit = processor.getMangleOps().slot();
+        for (int k = 0; k < mangle::kSlots; ++k)
+        {
+            slotKeys[(size_t) k]->setToggleState (k == edit, dontSendNotification);
+            slotKeys[(size_t) k]->setBlinking (ac && k == b.mangleSlot.load (std::memory_order_relaxed) && k != edit);
+            slotKeys[(size_t) k]->tick();
+        }
+        if (edit != shownSlot) { shownSlot = edit; repaint(); }
         if (st != shownStep || ac != shownActive || v != shownVersion || processor.getMangleOps().isBusy())
         {
             shownStep = st; shownActive = ac; shownVersion = v;
@@ -252,6 +299,8 @@ namespace tb::ui
     void ManglePanel::mouseDown (const MouseEvent& e)
     {
         if (e.eventComponent == &holdKey) { setParam (params::mglHold, 1.0f); return; }
+        for (int k = 0; k < mangle::kSlots; ++k)
+            if (e.eventComponent == slotKeys[(size_t) k].get() && e.mods.isPopupMenu()) { showSlotMenu (k); return; }
         if (e.eventComponent != this) return;
         const int s = stepAt (e.position);
         if (s < 0) return;
@@ -317,5 +366,58 @@ namespace tb::ui
         m.addSeparator();
         m.addItem ("Clear the whole bar", [&ops] { ops.set ({}, true); });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (runRect (s0).toNearestInt())));
+    }
+
+    void ManglePanel::showSlotMenu (int k)
+    {
+        auto& ops = processor.getMangleOps();
+        const int cur = ops.slot();
+        const String name = String::charToString ((juce_wchar) ('A' + k));
+        PopupMenu m;
+        m.addSectionHeader ("VARIATION " + name);
+        m.addItem ("Copy " + String::charToString ((juce_wchar) ('A' + cur)) + " here", k != cur, false, [&ops, cur, k] { ops.copySlot (cur, k); });
+        m.addItem ("Clear " + name, [&ops, k] { ops.setSlot (k, {}, true); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (slotKeys[(size_t) k].get()));
+    }
+
+    void ManglePanel::showPresetMenu()
+    {
+        auto& ops = processor.getMangleOps();
+        PopupMenu m;
+        StringArray groups;
+        for (auto& p : MangleOps::factoryPresets()) groups.addIfNotAlreadyThere (p.group);
+        for (const auto& grp : groups)
+        {
+            PopupMenu sub;
+            const auto& list = MangleOps::factoryPresets();
+            for (size_t i = 0; i < list.size(); ++i)
+                if (list[i].group == grp) sub.addItem (list[i].name, [&ops, i] { ops.applyPreset (MangleOps::factoryPresets()[i]); });
+            m.addSubMenu (grp.toUpperCase(), sub);
+        }
+        m.addSeparator();
+        m.addItem ("Save as .tbmangle...", [this]
+        {
+            const auto dir = MangleOps::userPresetFolder();
+            dir.createDirectory();
+            chooser = std::make_unique<FileChooser> ("Save MANGLE preset", dir.getChildFile ("My Mangle.tbmangle"), "*.tbmangle");
+            chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::warnAboutOverwriting, [this] (const FileChooser& fc)
+            {
+                const auto f = fc.getResult();
+                if (f == File()) return;
+                const auto file = f.withFileExtension ("tbmangle");
+                if (auto xml = MangleOps::presetToTree (processor.getMangleOps().capturePreset (file.getFileNameWithoutExtension())).createXml())
+                    xml->writeTo (file);
+            });
+        });
+        m.addItem ("Load .tbmangle...", [this]
+        {
+            chooser = std::make_unique<FileChooser> ("Load MANGLE preset", MangleOps::userPresetFolder(), "*.tbmangle");
+            chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
+            {
+                if (auto xml = parseXML (fc.getResult()))
+                    processor.getMangleOps().applyPreset (MangleOps::presetFromTree (ValueTree::fromXml (*xml)));
+            });
+        });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetKey));
     }
 }

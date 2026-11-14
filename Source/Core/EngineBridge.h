@@ -98,6 +98,7 @@ namespace tb
         MangleData mangle;                 // A15: the MANGLE bar (editable)
         std::atomic<int>  mangleStep { -1 };       // audio -> UI: the step playing (-1 stopped)
         std::atomic<bool> mangleActive { false };  // audio -> UI: steps are being mangled now
+        std::atomic<int>  mangleSlot { 0 };        // audio -> UI: the variation playing (0.30)
         SpscQueue<PadUiEvent, 256> padEvents;
         /** A7: pads played from a controller's own port (Push 3 User mode). Producer: that port's MIDI thread. */
         SpscQueue<PadUiEvent, 256> controllerPadEvents;

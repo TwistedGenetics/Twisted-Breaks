@@ -872,6 +872,8 @@ namespace tb
             case 3: ops.revert(); break;
             case 4: setParamPlain (params::mglFillNext, 1.0f); fillNextTicks = 4; break;
             case 5: setParamPlain (params::mglSteps, (float) ((juce::roundToInt (raw (params::mglSteps)) + 1) % 3)); break;
+            case 6: setParamPlain (params::mglSlot, (float) ((juce::roundToInt (raw (params::mglSlot)) + 1) % mangle::kSlots)); break;   // 0.30
+            case 7: setParamPlain (params::mglChain, raw (params::mglChain) > 0.5f ? 0.0f : 1.0f); break;
             default: break;
         }
     }
@@ -884,7 +886,7 @@ namespace tb
         {
             const int st = (3 - row) * 8 + col;
             if (st >= S) return push::off;
-            const auto p = bridge.mangle.get();
+            const auto p = processor.getMangleOps().get();
             const int ph = bridge.mangleStep.load (std::memory_order_relaxed);
             if (st == mangleHeldStep) return blinkOn ? push::white : push::off;
             if (st == ph) return bridge.mangleActive.load (std::memory_order_relaxed) ? push::red : push::white;
@@ -899,6 +901,8 @@ namespace tb
             case 3: return ops.historySize() > 0 ? push::amber : push::amberDim;
             case 4: return fillNextTicks > 0 ? push::white : push::red;
             case 5: return push::blue;
+            case 6: return juce::roundToInt (raw (params::mglSlot)) == 0 ? push::white : push::ice;
+            case 7: return raw (params::mglChain) > 0.5f ? push::magenta : push::dark;
             default: return push::off;
         }
     }

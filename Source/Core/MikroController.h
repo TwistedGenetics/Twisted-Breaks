@@ -93,7 +93,8 @@ namespace tb
           MANGLE     (CHORDS, A15) pads 1-16 are the MANGLE steps: a pad paints
                      the chosen move (again: THRU), hold one pad and hit another
                      to join them; SHIFT + pad 1-9 picks the move; ERASE + pad
-                     clears it. Encoder = MIX, VARIATION = RANDOMIZE (SHIFT:
+                     clears it; SHIFT + pad 12 = CHAIN, 13-16 = variation A-D.
+                     Encoder = MIX, VARIATION = RANDOMIZE (SHIFT:
                      MUTATE), EVENTS = REVERT. PATTERN (any mode) = MANGLE HOLD,
                      SHIFT + PATTERN = FILL NEXT.
           Encoder    PLUG-IN = PAD page, SWING = SEQ page, VOLUME = MIX page

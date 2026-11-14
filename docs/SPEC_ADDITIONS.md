@@ -598,5 +598,8 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
   step), FILL NEXT (one bar). MIX, AMOUNT.
 * Mikro: CHORDS = MANGLE pads, PATTERN = HOLD. Push: LAYOUT -> MANGLE, scene
   button 6 = HOLD.
-* Left for 0.30: TEXTURE (grains), SPACE (synced echo), 4 slots + chain,
-  factory presets / .tbmangle files. Formant is left out (it's for voices).
+* 0.30: four variations A-D (next bar) with CHAIN (A, B ... up to the last
+  filled one, a bar each), TEXTURE (TIGHT / SCATTER / CLOUD / REVERSE grains),
+  SPACE (synced ECHO / PING-PONG / DIFFUSE, feedback capped), LOCK keys for
+  RANDOMIZE, 16 factory presets in six groups, .tbmangle files. Formant is
+  left out (it's for voices).

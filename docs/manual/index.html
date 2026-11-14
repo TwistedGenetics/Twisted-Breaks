@@ -531,7 +531,7 @@ a { color: var(--amber-ink); }
   <p class="lead">A bar chopper after the style of quiver mangler: MANGLE plays back what it just heard, one step at a time in time with Live, each step one of nine moves. It's for turnarounds, fills and edits, played live or written by RANDOMIZE. Open it with <span class="key red">Mangle</span> on the FX view (top right of the FX editor).</p>
   <figure>
     <div class="bezel crop right"><img src="img/mangle.jpg" alt="The MANGLE page: an 8-step bar with REPEAT, a joined REVERSE, SHUFFLE and a joined STOP" width="1200" height="800" loading="lazy"></div>
-    <figcaption><span class="chip">Fig. 16</span>The MANGLE page: REPEAT ×4 on step 2, REVERSE over steps 4–5, SHUFFLE from step 3 on step 6, and a two-step STOP.</figcaption>
+    <figcaption><span class="chip">Fig. 16</span>The MANGLE page, variation A: REPEAT ×4 on step 2, REVERSE over steps 4–5, SHUFFLE from step 3 on step 6, and a two-step STOP. CHAIN is on, with SCATTER grains and PING-PONG repeats.</figcaption>
   </figure>
   <div class="tablewrap"><table>
     <thead><tr><th>Move</th><th>What the step plays</th></tr></thead>
@@ -554,8 +554,21 @@ a { color: var(--amber-ink); }
     <li><span class="key red">Hold</span> mangles from the next step for as long as you hold it; <span class="key red">Fill next</span> mangles exactly one bar from the next bar line. Both are parameters too: MIDI-map them to pads.</li>
     <li><span class="key">Randomize</span> writes a whole new bar; <span class="key">Mutate</span> changes a little of it; <span class="key plain">&lt; Revert</span> steps back through the last three. <span class="key plain">Style</span> GENTLE uses a few REPEAT / REVERSE steps, MEDIUM more moves, WILD everything. Each press listens to your last two bars, tries 8 bars over them, throws out any that click, go silent or run away, and matches the level of the one it keeps. With Live stopped it writes a bar without listening.</li>
     <li>MANGLE has no latency: every move plays audio that has already been heard. With Live stopped it passes the sound through.</li>
-    <li>The bar and its settings are saved with the Live set and in kit presets.</li>
   </ul>
+  <h3>Variations and chain</h3>
+  <ul>
+    <li>Four variations, <span class="key">A</span>–<span class="key">D</span>, each a whole bar. Click one to edit it; it starts playing at the next bar line. Right-click a slot to copy the one you're editing onto it, or clear it.</li>
+    <li><span class="key">Chain</span> plays A, B, C … up to the last slot with anything in it, one bar each, counted on Live's bars. An empty slot in between is a clean bar, so filling only D gives three clean bars and a turnaround in the fourth.</li>
+    <li>The slot letters blink while another variation is playing than the one you're editing. Snapshots keep the slot, so the SONG chain can switch variations.</li>
+  </ul>
+  <h3>Texture and space</h3>
+  <ul>
+    <li><b>TEXTURE</b> plays the mangled sound back as grains: <b>TIGHT</b> (just behind the beat), <b>SCATTER</b> (spread back in time and across the stereo field), <b>CLOUD</b> (long, slightly detuned grains), <b>REVERSE</b> (each grain backwards). AMOUNT, SIZE, DENSITY and SCATTER shape it.</li>
+    <li><b>SPACE</b> repeats the mangled sound in time with Live: <b>ECHO</b>, <b>PING-PONG</b> (left, then right) or <b>DIFFUSE</b> (smeared and darker), from 1/32 to 1/2 including dotted and triplet times, with FEEDBACK (capped, so it can't run away) and AMOUNT. Its tail rings on after a fill ends.</li>
+    <li>Both work while MANGLE is mangling, THRU steps included. RANDOMIZE writes new TEXTURE and SPACE settings with each new bar; light the <span class="key plain">Texture</span> or <span class="key plain">Space</span> key to lock it.</li>
+  </ul>
+  <h3>Presets</h3>
+  <p><span class="key">Presets</span> has 16 factory bars and phrases: <b>Start</b> (Clean, Off-beat stutter), <b>Chop</b> (Half-bar roll, Machine gun, Amen re-chop), <b>Tape</b> (Brake, Half-time drop, Reverse swell, Double-time, Scratch break), <b>Texture</b> (Grain shimmer, Backwards dust), <b>Space</b> (Dub stutter) and <b>Chain</b> (Four-bar turnaround, Build-up, Rewind). <i>Save as .tbmangle</i> / <i>Load .tbmangle</i> trade your own (all four slots, STEPS, CHAIN, MIX, AMOUNT, TEXTURE and SPACE) via <code>~/Music/Twisted Breaks/Mangle</code>. All four slots and the settings are saved with the Live set and in kit presets.</p>
   <p><b>On the Mikro</b>, <span class="key plain">Chords</span> switches to MANGLE (§ 16). <b>On Push</b>, <span class="key plain">Layout</span> cycles to the MANGLE layout.</p>
 </section>
 
@@ -824,7 +837,7 @@ a { color: var(--amber-ink); }
       <tr><td>Master encoder</td><td>Master level</td></tr>
       <tr><td>Touch strip</td><td>The A / B crossfader, while you touch it</td></tr>
       <tr><td>Column right of the pads, from the top</td><td><b>MUTATE</b> · <b>FILL</b> (hold) · <b>RESAMPLE</b> (again to cancel) · <b>VIEW</b> A / B · <b>LAYOUT</b> · <b>MANGLE HOLD</b> (hold; Shift: FILL NEXT)</td></tr>
-      <tr><td>Layout (again) = MANGLE</td><td>The two rows under the pads are the 16 MANGLE steps (1–8, then 9–16): tap paints the chosen move (again: THRU), hold one and tap another to join them, Delete + tap = THRU. The row below picks the move (REPEAT … SHUFFLE). The bottom row: ON, RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS 4 / 8 / 16 (§ 09).</td></tr>
+      <tr><td>Layout (again) = MANGLE</td><td>The two rows under the pads are the 16 MANGLE steps (1–8, then 9–16): tap paints the chosen move (again: THRU), hold one and tap another to join them, Delete + tap = THRU. The row below picks the move (REPEAT … SHUFFLE). The bottom row: ON, RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS 4 / 8 / 16, SLOT (A → D), CHAIN (§ 09).</td></tr>
       <tr><td>Mute / Solo + pad</td><td>Mute / solo that pad</td></tr>
       <tr><td>Duplicate + pad, pad</td><td>Hold Duplicate, hit the pad to copy, then the pad to copy it onto (everything: sample, slices, settings, steps). Shift + Duplicate swaps the two. Shift + Delete + pad clears the pad.</td></tr>
       <tr><td>Delete + pad / step</td><td>Clear that lane / step</td></tr>
@@ -854,7 +867,7 @@ a { color: var(--amber-ink); }
       <tr><td>Keyboard</td><td>The selected pad's 16 slices, one per pad (slice 1 on pad 1, bottom left), each in its own colour. Hitting one plays it and makes it the <b>chosen slice</b> (screen: S07). Shift + Keyboard clears it.</td></tr>
       <tr><td>Perform</td><td>The 16 performance FX of the selected pad's group; the encoder edits the last one you hit</td></tr>
       <tr><td>Scene</td><td>Pads 1–8 recall snapshots 1–8 (Shift + pad stores)</td></tr>
-      <tr><td>Chords = MANGLE</td><td>Pads 1–16 are the MANGLE steps (step 1 bottom left), each lit in its move's colour. A pad paints the chosen move (again: THRU); hold one and hit another to join them; Shift + pad 1–9 picks the move (THRU, REPEAT … SHUFFLE); Erase + pad clears it. Encoder: MIX. Variation: RANDOMIZE (Shift: MUTATE). Events: REVERT (§ 09).</td></tr>
+      <tr><td>Chords = MANGLE</td><td>Pads 1–16 are the MANGLE steps (step 1 bottom left), each lit in its move's colour. A pad paints the chosen move (again: THRU); hold one and hit another to join them; Shift + pad 1–9 picks the move (THRU, REPEAT … SHUFFLE), Shift + pad 12 switches CHAIN, Shift + pads 13–16 pick variation A–D; Erase + pad clears it. Encoder: MIX. Variation: RANDOMIZE (Shift: MUTATE). Events: REVERT (§ 09).</td></tr>
       <tr><td>Pattern (hold)</td><td>MANGLE HOLD, in any mode; Shift + Pattern: FILL NEXT</td></tr>
       <tr><td>Plug-In / Swing / Volume</td><td>Encoder page: PAD (gain, pan, pitch, start, end, slice, character, pressure …) · SEQ (step, LEN, launch, mutate …) · MIX (groups, crossfader, curve, macro, master). Turn: value. Push, or Shift + turn: next setting. The screen shows name and value.</td></tr>
       <tr><td>Touch strip</td><td>Crossfader (Shift: macro amount)</td></tr>

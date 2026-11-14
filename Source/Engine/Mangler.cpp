@@ -15,6 +15,14 @@ namespace tb
         capture.setSize (2, ringSize, false, true, false);
         xfLen = juce::jmax (16, (int) (0.004 * sr));
         mixSm.reset (sr, 0.02);
+        activeSm.reset (sr, 0.01);
+        texSize = (int) std::ceil (sr * 2.0);
+        texRing.setSize (2, texSize, false, true, false);
+        dlySize = (int) std::ceil (sr * 4.5);
+        dly.setSize (2, dlySize, false, true, false);
+        dlyTime.reset (sr, 0.15);
+        static const int apLen[8] = { 113, 337, 541, 797, 149, 389, 577, 863 };     // L 0-3, R 4-7
+        for (int k = 0; k < 8; ++k) diff[(size_t) k].b.assign ((size_t) juce::jmax (8, (int) (apLen[k] * sr / 48000.0)), 0.0f);
         reset();
     }
 
@@ -28,7 +36,137 @@ namespace tb
         active = false;
         fillBar = -2; fillPending = false;
         fireMask = 0xffffffffu;
+        slotNow = 0;
+        texRing.clear(); texWritten = 0; for (auto& g : grains) g = {}; grainClock = 0.0;
+        dly.clear(); dlyPos = 0; dampL = dampR = 0.0f;
+        for (auto& a : diff) { std::fill (a.b.begin(), a.b.end(), 0.0f); a.i = 0; }
+        activeSm.setCurrentAndTargetValue (0.0f);
         uiStep.store (-1); uiActive.store (false);
+    }
+
+    // ---- TEXTURE --------------------------------------------------------------------------
+    void Mangler::texture (float& l, float& r, const Gate& g, float act) noexcept
+    {
+        const int ti = (int) (texWritten % texSize);
+        texRing.setSample (0, ti, l);
+        texRing.setSample (1, ti, r);
+        ++texWritten;
+        if (g.texMode <= 0 || act <= 0.0f)
+        {
+            // Off: let any grains die away quietly.
+            bool any = false;
+            for (auto& gr : grains) any = any || gr.on;
+            if (! any) return;
+        }
+
+        const int mode = g.texMode;
+        const double lenS = juce::jlimit (8.0, sr * 0.5, (double) g.texSizeMs * 0.001 * sr * (mode == 3 ? 2.0 : 1.0));
+        const float scat = juce::jlimit (0.0f, 1.0f, g.texScatter);
+        if (mode > 0 && act > 0.0f)
+        {
+            grainClock -= 1.0;
+            if (grainClock <= 0.0)
+            {
+                const double interval = sr / juce::jlimit (1.0, 120.0, (double) g.texDensity);
+                grainClock = interval * (mode == 1 ? 1.0 : 0.5 + texRng.nextDouble() * (0.5 + scat));
+                for (auto& gr : grains)
+                {
+                    if (gr.on) continue;
+                    gr.on = true; gr.age = 0; gr.len = (int) lenS;
+                    double back = lenS;                                             // TIGHT: just behind the input
+                    if (mode == 2) back += texRng.nextDouble() * scat * 0.5 * sr;
+                    if (mode == 3) back += texRng.nextDouble() * scat * 1.0 * sr;
+                    if (mode == 4) back += texRng.nextDouble() * scat * 0.25 * sr;
+                    back = juce::jmin (back, (double) texSize - lenS - 4.0);
+                    gr.rate = mode == 4 ? -1.0 : 1.0;
+                    if (mode == 3) gr.rate = std::pow (2.0, (texRng.nextDouble() * 2.0 - 1.0) * scat * 0.25);
+                    gr.pos = (double) texWritten - back + (mode == 4 ? lenS : 0.0);
+                    const float pan = (mode == 2 || mode == 3) ? (texRng.nextFloat() * 2.0f - 1.0f) * scat : 0.0f;
+                    gr.gl = pan > 0.0f ? 1.0f - pan : 1.0f;
+                    gr.gr = pan < 0.0f ? 1.0f + pan : 1.0f;
+                    break;
+                }
+            }
+        }
+
+        float sl = 0.0f, sr2 = 0.0f;
+        for (auto& gr : grains)
+        {
+            if (! gr.on) continue;
+            const float w = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) gr.age / (float) gr.len);
+            const auto i = (int64_t) std::floor (gr.pos);
+            const float f = (float) (gr.pos - (double) i);
+            auto at = [&] (int ch, int64_t k) -> float
+            {
+                if (k < 0 || k >= texWritten || texWritten - k >= (int64_t) texSize) return 0.0f;
+                return texRing.getSample (ch, (int) (k % texSize));
+            };
+            const float a = at (0, i) + (at (0, i + 1) - at (0, i)) * f;
+            const float b = at (1, i) + (at (1, i + 1) - at (1, i)) * f;
+            sl += a * w * gr.gl;
+            sr2 += b * w * gr.gr;
+            gr.pos += gr.rate;
+            if (++gr.age >= gr.len) gr.on = false;
+        }
+        // Hann grains overlapping o times sum to about o / 2: bring them back to the input's level.
+        const double overlap = juce::jmax (0.5, (double) g.texDensity * lenS / sr);
+        const float norm = (float) (1.0 / juce::jmax (0.5, overlap * 0.5));
+        const float amt = juce::jlimit (0.0f, 1.0f, g.texAmount) * act;
+        l += (sl * norm - l) * amt;
+        r += (sr2 * norm - r) * amt;
+    }
+
+    // ---- SPACE ----------------------------------------------------------------------------
+    void Mangler::space (float inL, float inR, float& outL, float& outR, const Gate& g, double bpm) noexcept
+    {
+        outL = outR = 0.0f;
+        dlyPos = (dlyPos + 1) % dlySize;             // the slot for this sample (read d behind it, write it last)
+        if (g.spaceMode <= 0) { dly.setSample (0, dlyPos, 0.0f); dly.setSample (1, dlyPos, 0.0f); return; }
+        const double want = juce::jlimit (16.0, (double) dlySize - 4.0, g.spaceBeats * 60.0 / juce::jmax (20.0, bpm) * sr);
+        dlyTime.setTargetValue (want);
+        const double d = dlyTime.getNextValue();
+        auto tap = [&] (int ch)
+        {
+            double p = (double) dlyPos - d;
+            while (p < 0.0) p += dlySize;
+            const int i0 = (int) p;
+            const float f = (float) (p - i0);
+            const float a = dly.getSample (ch, i0), b = dly.getSample (ch, (i0 + 1) % dlySize);
+            return a + (b - a) * f;
+        };
+        float yl = tap (0), yr = tap (1);
+        const float fb = juce::jlimit (0.0f, 0.9f, g.spaceFb);
+        float wl, wr;
+        if (g.spaceMode == 2)          // PING-PONG: the input goes in on the left, the repeats cross over
+        {
+            wl = 0.5f * (inL + inR) + yr * fb;
+            wr = yl * fb;
+        }
+        else if (g.spaceMode == 3)     // DIFFUSE: the repeats smear through all-passes, darkening
+        {
+            float dl = yl, dr = yr;
+            for (int k = 0; k < 4; ++k) { dl = diff[(size_t) k].process (dl, 0.6f); dr = diff[(size_t) k + 4].process (dr, 0.6f); }
+            dampL += (dl - dampL) * 0.35f;
+            dampR += (dr - dampR) * 0.35f;
+            yl = dampL; yr = dampR;
+            wl = inL + dampL * fb;
+            wr = inR + dampR * fb;
+        }
+        else
+        {
+            wl = inL + yl * fb;
+            wr = inR + yr * fb;
+        }
+        // A soft ceiling inside the loop: it can never run away.
+        wl = std::tanh (wl);
+        wr = std::tanh (wr);
+        if (std::abs (wl) < 1.0e-20f) wl = 0.0f;
+        if (std::abs (wr) < 1.0e-20f) wr = 0.0f;
+        dly.setSample (0, dlyPos, wl);
+        dly.setSample (1, dlyPos, wr);
+        const float amt = juce::jlimit (0.0f, 1.0f, g.spaceAmount);
+        outL = yl * amt;
+        outR = yr * amt;
     }
 
     float Mangler::readAt (int ch, double pos, int64_t now) const noexcept
@@ -124,13 +262,22 @@ namespace tb
     }
 
     void Mangler::onStep (double ppq, double pps, double ppqPerBar, int64_t now, int64_t bar, int step,
-                          const mangle::Pattern& pat, const Gate& gate) noexcept
+                          const mangle::Slots& slots, const Gate& gate) noexcept
     {
         const int S = gate.steps;
         const double stepPpq = ppqPerBar / (double) S;
 
         if (bar != lastBar)
         {
+            // The variation for this bar: the chosen one, or (CHAIN) the filled ones in turn on Live's bars.
+            slotNow = juce::jlimit (0, mangle::kSlots - 1, gate.slot);
+            if (gate.chain)
+            {
+                // A, B, C ... up to the last slot with anything in it (an empty slot between = a clean bar).
+                int n = 0;
+                for (int k = 0; k < mangle::kSlots; ++k) if (! mangle::isEmpty (slots[(size_t) k], S)) n = k + 1;
+                if (n > 0) slotNow = (int) (((bar % n) + n) % n);
+            }
             // AMOUNT: which steps fire this bar.
             fireMask = 0;
             for (int s = 0; s < S; ++s)
@@ -143,6 +290,7 @@ namespace tb
             inWindow = (bar % gate.fillEvery) == gate.fillEvery - 1 && (! gate.fillHalf || step >= S / 2);
         active = gate.hold || bar == fillBar || (gate.on && inWindow);
 
+        const auto& pat = slots[(size_t) slotNow];
         Map m;
         const int rs = pat.runStart (juce::jmin (step, S - 1));
         const int rl = pat.runLength (rs, S);
@@ -173,7 +321,7 @@ namespace tb
     }
 
     void Mangler::process (float* left, float* right, int n, const FxClock& clock,
-                           const mangle::Pattern& pat, const Gate& gate) noexcept
+                           const mangle::Slots& pat, const Gate& gate) noexcept
     {
         if (ringSize <= 1 || n <= 0) return;
         const int S = juce::jlimit (1, mangle::Pattern::kSteps, gate.steps);
@@ -245,11 +393,18 @@ namespace tb
                 wr = orr + (wr - orr) * g;
                 ++xfPos;
             }
+            // TEXTURE over the mangled sound while mangling; SPACE echoes it (and rings on after).
+            activeSm.setTargetValue (playing && active ? 1.0f : 0.0f);
+            const float act = activeSm.getNextValue();
+            texture (wl, wr, gate, act);
+            float sl, sr2;
+            space (wl * act, wr * act, sl, sr2, gate, clock.bpm);
             const float mx = mixSm.getNextValue();
-            left[i] = dl + (wl - dl) * mx;
-            if (right != nullptr) right[i] = dr + (wr - dr) * mx;
+            left[i] = dl + (wl - dl) * mx + sl * mx;
+            if (right != nullptr) right[i] = dr + (wr - dr) * mx + sr2 * mx;
         }
 
+        uiSlot.store (slotNow, std::memory_order_relaxed);
         uiStep.store (playing ? lastStep : -1, std::memory_order_relaxed);
         uiActive.store (playing && active, std::memory_order_relaxed);
     }
@@ -257,14 +412,22 @@ namespace tb
     void Mangler::renderOffline (const mangle::Pattern& pat, int steps, const juce::AudioBuffer<float>& in, int length,
                                  double sampleRate, double bpm, double ppqPerBar, juce::AudioBuffer<float>& out)
     {
+        Gate g;
+        g.on = true; g.steps = steps; g.amount = 1.0f; g.mix = 1.0f;
+        mangle::Slots s {};
+        s[0] = pat;
+        renderOffline (s, g, in, length, sampleRate, bpm, ppqPerBar, out);
+    }
+
+    void Mangler::renderOffline (const mangle::Slots& pat, const Gate& g, const juce::AudioBuffer<float>& in, int length,
+                                 double sampleRate, double bpm, double ppqPerBar, juce::AudioBuffer<float>& out)
+    {
         Mangler m;
         m.prepare (sampleRate, 512);
         out.setSize (2, juce::jmax (1, length), false, true, false);
         for (int ch = 0; ch < 2; ++ch)
             out.copyFrom (ch, 0, in, juce::jmin (ch, in.getNumChannels() - 1), 0, length);
-        Gate g;
-        g.on = true; g.steps = steps; g.amount = 1.0f; g.mix = 1.0f;
-        m.mixSm.setCurrentAndTargetValue (1.0f);
+        m.mixSm.setCurrentAndTargetValue (g.mix);
         FxClock c;
         c.bpm = bpm; c.ppqPerBar = ppqPerBar; c.playing = true;
         c.ppqPerSample = bpm / 60.0 / sampleRate;

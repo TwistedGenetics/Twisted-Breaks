@@ -380,7 +380,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1357, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch + AKAIZER and the old STUTTER ids)");
+        check (p.getParameters().processor.getParameters().size() == 1370, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch + AKAIZER and the old STUTTER ids)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3521,7 +3521,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1370,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -5571,6 +5571,187 @@ namespace
     //  A14 (0.27): LOOP CONT - latched loops that play on when Live stops.
     //  A15 (0.29): MANGLE - a step-sequenced bar mangler.
     //  A15: MANGLE from the Mikro (CHORDS) and Push (LAYOUT -> MANGLE).
+    //  A15 (0.30): MANGLE variations, TEXTURE, SPACE, presets.
+    void testA15MangleSound()
+    {
+        std::cout << "\n== A15 (0.30): MANGLE variations, TEXTURE, SPACE, presets ==" << std::endl;
+        using namespace tb::mangle;
+        const double sr = 48000.0, bpm = 120.0, ppqPerBar = 4.0;
+        const int bar = 96000, S = 8, step = bar / S;
+        const int P = 400000;
+        auto ramp = [&] (int bars)
+        {
+            juce::AudioBuffer<float> b (2, bars * bar);
+            for (int i = 0; i < bars * bar; ++i) { const float v = (float) (i % P) / (float) P; b.setSample (0, i, v); b.setSample (1, i, v); }
+            return b;
+        };
+        auto mangledAt = [&] (const juce::AudioBuffer<float>& b, int barIdx, int stepIdx)
+        {
+            const int i = barIdx * bar + stepIdx * step + step / 2;
+            return std::abs (b.getSample (0, i) - (float) (i % P) / (float) P) > 1.0e-4f;
+        };
+        Pattern rev; for (int k = 0; k < 8; ++k) rev.move[(size_t) k] = reverse;
+        {
+            Slots sl {};
+            sl[0] = rev;                     // A: mangled, B: empty (a clean bar), C: mangled, D: empty (not in the chain)
+            sl[2] = rev;
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.chain = true;
+            const auto in = ramp (7);
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (sl, g, in, 7 * bar, sr, bpm, ppqPerBar, out);
+            check (mangledAt (out, 0, 3) && ! mangledAt (out, 1, 3) && mangledAt (out, 2, 3) && mangledAt (out, 3, 3) && ! mangledAt (out, 4, 3) && mangledAt (out, 5, 3),
+                   "CHAIN plays A, B, C (up to the last filled slot), a bar each: B empty = a clean bar");
+        }
+        {
+            // The slot chosen mid-bar takes over at the next bar line.
+            tb::Mangler m; m.prepare (sr, 512);
+            Slots sl {}; sl[1] = rev;
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.slot = 0;
+            auto buf = ramp (3);
+            tb::FxClock c; c.bpm = bpm; c.ppqPerBar = ppqPerBar; c.playing = true; c.ppqPerSample = bpm / 60.0 / sr;
+            for (int pos = 0; pos < 3 * bar; pos += 512)
+            {
+                if (pos >= bar + 3 * step) g.slot = 1;
+                c.ppq = pos * c.ppqPerSample;
+                m.process (buf.getWritePointer (0, pos), buf.getWritePointer (1, pos), juce::jmin (512, 3 * bar - pos), c, sl, g);
+            }
+            check (! mangledAt (buf, 1, 5) && mangledAt (buf, 2, 1) && m.playingSlot() == 1, "a new variation starts on the next bar, not mid-bar");
+        }
+
+        // TEXTURE over a sine (every step THRU, MANGLE on): grains, at about the input's level.
+        juce::AudioBuffer<float> sine (2, bar * 3);
+        for (int i = 0; i < bar * 3; ++i)
+        {
+            const float v = 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 220.0 * i / sr);
+            sine.setSample (0, i, v); sine.setSample (1, i, v);
+        }
+        const double dryRms = sine.getRMSLevel (0, bar, bar * 2);
+        bool allBounded = true, allChanged = true;
+        juce::String levels;
+        for (int mode = 1; mode <= 4; ++mode)
+        {
+            Slots sl {};
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.texMode = mode; g.texAmount = 1.0f; g.texSizeMs = 60.0f; g.texDensity = 20.0f; g.texScatter = 0.5f;
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (sl, g, sine, bar * 3, sr, bpm, ppqPerBar, out);
+            const double rms = out.getRMSLevel (0, bar, bar * 2);
+            const float peak = out.getMagnitude (bar, bar * 2);
+            double diff = 0.0;
+            for (int i = bar; i < bar * 3; i += 7) diff = juce::jmax (diff, (double) std::abs (out.getSample (0, i) - sine.getSample (0, i)));
+            allBounded = allBounded && peak < 1.2f && rms > dryRms * 0.4 && rms < dryRms * 2.0;
+            allChanged = allChanged && diff > 0.05;
+            levels << juce::String (20.0 * std::log10 (rms / dryRms), 1) << " ";
+        }
+        check (allBounded && allChanged, "TEXTURE TIGHT / SCATTER / CLOUD / REVERSE turn the sound into grains at about its own level (" + levels.trim() + " dB)");
+
+        // SPACE: an impulse through ECHO and PING-PONG at 1/8 (12000 samples at 120 BPM).
+        {
+            juce::AudioBuffer<float> imp (2, bar * 2);
+            imp.clear();
+            imp.setSample (0, bar + 100, 1.0f); imp.setSample (1, bar + 100, 1.0f);
+            Slots sl {};
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.spaceMode = 1; g.spaceBeats = 0.5; g.spaceFb = 0.5f; g.spaceAmount = 1.0f;
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (sl, g, imp, bar * 2, sr, bpm, ppqPerBar, out);
+            const int e1 = bar + 100 + 12000, e2 = e1 + 12000;
+            check (std::abs (out.getSample (0, e1) - std::tanh (1.0f)) < 0.05f && std::abs (out.getSample (0, e2) - std::tanh (std::tanh (1.0f) * 0.5f)) < 0.05f
+                     && std::abs (out.getSample (0, e1 - 600)) < 1.0e-3f,
+                   "SPACE ECHO repeats on Live's 1/8, each repeat at FEEDBACK of the one before");
+            g.spaceMode = 2;
+            tb::Mangler::renderOffline (sl, g, imp, bar * 2, sr, bpm, ppqPerBar, out);
+            check (std::abs (out.getSample (0, e1)) > 0.3f && std::abs (out.getSample (1, e1)) < 1.0e-3f
+                     && std::abs (out.getSample (1, e2)) > 0.1f && std::abs (out.getSample (0, e2)) < 1.0e-3f,
+                   "PING-PONG: the first repeat on the left, the next on the right");
+            g.spaceMode = 3;
+            tb::Mangler::renderOffline (sl, g, imp, bar * 2, sr, bpm, ppqPerBar, out);
+            check (out.getRMSLevel (0, e1, 6000) > 1.0e-4 && out.getMagnitude (0, e1, 6000) < 0.6f, "DIFFUSE smears the repeats out (no single sharp echo)");
+        }
+        {
+            // Feedback at its top with loud noise for four bars: it can't run away.
+            juce::AudioBuffer<float> noise (2, bar * 4);
+            juce::Random rr (3);
+            for (int i = 0; i < bar * 4; ++i) { const float v = (rr.nextFloat() * 2.0f - 1.0f) * 0.9f; noise.setSample (0, i, v); noise.setSample (1, i, v); }
+            Slots sl {}; for (int k = 0; k < 8; ++k) sl[0].move[(size_t) k] = (uint8_t) (k % 2 ? repeat : reverse);
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.spaceMode = 3; g.spaceBeats = 0.125; g.spaceFb = 0.9f; g.spaceAmount = 1.0f;
+            g.texMode = 3; g.texAmount = 1.0f; g.texDensity = 60.0f; g.texSizeMs = 200.0f; g.texScatter = 1.0f;
+            juce::AudioBuffer<float> out;
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            tb::Mangler::renderOffline (sl, g, noise, bar * 4, sr, bpm, ppqPerBar, out);
+            const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+            const float peak = out.getMagnitude (0, bar * 4);
+            check (peak < 3.0f, "SPACE at full FEEDBACK with TEXTURE CLOUD on loud noise stays bounded (peak " + juce::String (peak, 2) + ")");
+            check (ms < 8000.0 * 0.25, "the heaviest MANGLE (CLOUD at 60 grains/s + DIFFUSE) runs well inside real time (8 s of audio in " + juce::String ((int) ms) + " ms)");
+        }
+        {
+            // SPACE rings on after the fill.
+            juce::AudioBuffer<float> imp (2, bar * 3);
+            imp.clear();
+            imp.setSample (0, bar * 2 - 2000, 1.0f); imp.setSample (1, bar * 2 - 2000, 1.0f);
+            Slots sl {};
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.fillEvery = 2; g.spaceMode = 1; g.spaceBeats = 0.5; g.spaceFb = 0.5f; g.spaceAmount = 1.0f;
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (sl, g, imp, bar * 3, sr, bpm, ppqPerBar, out);
+            check (std::abs (out.getSample (0, bar * 2 - 2000 + 12000)) > 0.3f, "SPACE's tail rings on after the fill bar");
+        }
+
+        // Presets, locks, slots in the set.
+        {
+            Rig r;
+            auto& ops = r.p.getMangleOps();
+            auto rawP = [&] (const char* id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+            const auto& list = tb::MangleOps::factoryPresets();
+            bool allApply = true;
+            for (const auto& pr : list)
+            {
+                ops.applyPreset (pr);
+                const int stepsNow = tb::params::mglStepCounts[juce::roundToInt (rawP (tb::params::mglSteps))];
+                bool any = pr.name == "Clean";
+                for (int k = 0; k < kSlots; ++k) any = any || ops.get (k).activeSteps (stepsNow) > 0;
+                allApply = allApply && any;
+            }
+            check (list.size() == 16 && allApply, "16 factory MANGLE presets in six groups, each loads a bar (or phrase)");
+            for (const auto& pr : list) if (pr.name == "Four-bar turnaround") ops.applyPreset (pr);
+            check (rawP (tb::params::mglChain) > 0.5f && ops.get (3).activeSteps (8) > 0 && ops.get (0).activeSteps (8) == 0,
+                   "a chain preset fills the slots and switches CHAIN on (three clean bars, then the turnaround)");
+            for (const auto& pr : list) if (pr.name == "Grain shimmer") ops.applyPreset (pr);
+            check (juce::roundToInt (rawP (tb::params::mglTexMode)) == 3, "a TEXTURE preset sets its grains");
+
+            const auto mine = ops.capturePreset ("Mine");
+            const auto back = tb::MangleOps::presetFromTree (juce::ValueTree::fromXml (*tb::MangleOps::presetToTree (mine).createXml()));
+            bool same = back.params.size() == mine.params.size() && back.name == "Mine";
+            for (int k = 0; k < kSlots; ++k) same = same && back.slots[(size_t) k] == mine.slots[(size_t) k];
+            check (same, ".tbmangle files keep the slots and the sound settings");
+
+            // LOCK TEXTURE: randomize leaves it; unlocked GENTLE switches it off.
+            auto setP = [&] (const char* id, float v) { if (auto* prm = r.p.getParameters().getParameter (id)) prm->setValueNotifyingHost (prm->convertTo0to1 (v)); };
+            setP (tb::params::mglStyle, 0.0f);
+            setP (tb::params::mglTexMode, 3.0f);
+            setP (tb::params::mglLockTex, 1.0f);
+            juce::AudioBuffer<float> none;
+            ops.applyChosen (false, none, 0, sr, bpm, ppqPerBar);
+            const bool kept = juce::roundToInt (rawP (tb::params::mglTexMode)) == 3;
+            setP (tb::params::mglLockTex, 0.0f);
+            ops.applyChosen (false, none, 0, sr, bpm, ppqPerBar);
+            check (kept && juce::roundToInt (rawP (tb::params::mglTexMode)) == 0, "LOCK keeps TEXTURE through RANDOMIZE; unlocked, GENTLE writes no grains");
+
+            // Slots edit independently and are saved with the set.
+            setP (tb::params::mglSlot, 2.0f);
+            Pattern c; c.move[3] = freeze;
+            ops.set (c);
+            check (ops.slot() == 2 && ops.get (2) == c && ops.get (0) != c, "editing works on the chosen variation (C)");
+            ops.copySlot (2, 1);
+            check (ops.get (1) == c, "a variation copies onto another");
+            juce::MemoryBlock mb;
+            r.p.getStateInformation (mb);
+            Rig r2;
+            r2.p.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (r2.p.getMangleOps().get (2) == c && r2.p.getMangleOps().get (1) == c, "all four variations are saved with the set");
+            check (tb::SnapshotManager::isExcluded (tb::params::mglHold) && tb::SnapshotManager::isExcluded (tb::params::mglFillNext)
+                     && ! tb::SnapshotManager::isExcluded (tb::params::mglSlot),
+                   "snapshots keep the MANGLE slot and settings, never HOLD / FILL NEXT");
+        }
+    }
+
     void testA15Controllers()
     {
         std::cout << "\n== A15: MANGLE on the Mikro and Push ==" << std::endl;
@@ -5767,11 +5948,13 @@ namespace
             juce::AudioBuffer<float> buf (2, bars * bar);
             for (int i = 0; i < bars * bar; ++i) { const float v = (float) (i % P) / (float) P; buf.setSample (0, i, v); buf.setSample (1, i, v); }
             tb::FxClock c; c.bpm = bpm; c.ppqPerBar = ppqPerBar; c.playing = true; c.ppqPerSample = bpm / 60.0 / sr;
+            tb::mangle::Slots slots {};
+            slots[0] = pat;
             for (int pos = 0; pos < bars * bar; pos += 512)
             {
                 if (each) each (pos, g);
                 c.ppq = pos * c.ppqPerSample;
-                m.process (buf.getWritePointer (0, pos), buf.getWritePointer (1, pos), juce::jmin (512, bars * bar - pos), c, pat, g);
+                m.process (buf.getWritePointer (0, pos), buf.getWritePointer (1, pos), juce::jmin (512, bars * bar - pos), c, slots, g);
             }
             return buf;
         };
@@ -5811,7 +5994,8 @@ namespace
             juce::AudioBuffer<float> y; y.makeCopyOf (x);
             tb::FxClock c;      // stopped
             tb::Mangler::Gate on; on.on = true; on.steps = S;
-            m.process (y.getWritePointer (0), y.getWritePointer (1), 4096, c, rev, on);
+            tb::mangle::Slots rs {}; rs[0] = rev;
+            m.process (y.getWritePointer (0), y.getWritePointer (1), 4096, c, rs, on);
             float diff = 0.0f; for (int i = 0; i < 4096; ++i) diff = juce::jmax (diff, std::abs (y.getSample (0, i) - x.getSample (0, i)));
             check (diff < 1.0e-6f, "with Live stopped MANGLE passes the sound through");
         }
@@ -5920,7 +6104,7 @@ namespace
             r.host.playing = false;
             r.settle();
         }
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "10 MANGLE parameters (1357 in total)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1370, "10 + 13 MANGLE parameters (1370 in total)");
     }
 
     void testA14LoopCont()
@@ -6631,7 +6815,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1357 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1370 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -6806,7 +6990,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1370, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -7014,7 +7198,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1370, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -7294,7 +7478,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1370, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -7787,6 +7971,10 @@ namespace
             p.getMangleOps().set (pat);
             setParam (p, tb::params::mglOn, 1.0f);
             setParam (p, tb::params::mglFillEvery, 2.0f);
+            setParam (p, tb::params::mglTexMode, 2.0f);
+            setParam (p, tb::params::mglSpaceMode, 2.0f);
+            setParam (p, tb::params::mglChain, 1.0f);
+            { tb::mangle::Pattern b; b.paint (6, 7, tb::mangle::scratch, true); p.getBridge().mangle.set (1, b); }
             std::function<void (juce::Component&)> findView = [&] (juce::Component& c)
             {
                 if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::mangle);
@@ -8006,6 +8194,7 @@ int main (int argc, char* argv[])
         testA14LoopCont();
         testA15Mangle();
         testA15Controllers();
+        testA15MangleSound();
         testA12Macros();
         testA12Akaizer();
         testEditorDrivesState();

@@ -47,6 +47,17 @@ TwistedBreaksProcessor::TwistedBreaksProcessor (bool detectControllers)
     mglFillLenParam   = apvts.getRawParameterValue (tb::params::mglFillLen);
     mglHoldParam      = apvts.getRawParameterValue (tb::params::mglHold);
     mglFillNextParam  = apvts.getRawParameterValue (tb::params::mglFillNext);
+    mglSlotParam        = apvts.getRawParameterValue (tb::params::mglSlot);
+    mglChainParam       = apvts.getRawParameterValue (tb::params::mglChain);
+    mglTexModeParam     = apvts.getRawParameterValue (tb::params::mglTexMode);
+    mglTexAmountParam   = apvts.getRawParameterValue (tb::params::mglTexAmount);
+    mglTexSizeParam     = apvts.getRawParameterValue (tb::params::mglTexSize);
+    mglTexDensityParam  = apvts.getRawParameterValue (tb::params::mglTexDensity);
+    mglTexScatterParam  = apvts.getRawParameterValue (tb::params::mglTexScatter);
+    mglSpaceModeParam   = apvts.getRawParameterValue (tb::params::mglSpaceMode);
+    mglSpaceTimeParam   = apvts.getRawParameterValue (tb::params::mglSpaceTime);
+    mglSpaceFbParam     = apvts.getRawParameterValue (tb::params::mglSpaceFb);
+    mglSpaceAmountParam = apvts.getRawParameterValue (tb::params::mglSpaceAmount);
     jassert (seqFillParam != nullptr);
     jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
     bankActiveParam = apvts.getRawParameterValue (tb::params::bankActive);
@@ -289,6 +300,17 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
     p.mglFillHalf  = juce::roundToInt (ld (mglFillLenParam)) == 1;
     p.mglHold      = ld (mglHoldParam) > 0.5f;
     p.mglFillNext  = ld (mglFillNextParam) > 0.5f;
+    p.mglSlot      = juce::jlimit (0, 3, juce::roundToInt (ld (mglSlotParam)));
+    p.mglChain     = ld (mglChainParam) > 0.5f;
+    p.mglTexMode   = juce::jlimit (0, 4, juce::roundToInt (ld (mglTexModeParam)));
+    p.mglTexAmount = ld (mglTexAmountParam) / 100.0f;
+    p.mglTexSize   = ld (mglTexSizeParam);
+    p.mglTexDensity = ld (mglTexDensityParam);
+    p.mglTexScatter = ld (mglTexScatterParam) / 100.0f;
+    p.mglSpaceMode = juce::jlimit (0, 3, juce::roundToInt (ld (mglSpaceModeParam)));
+    p.mglSpaceBeats = tb::params::mglSpaceBeats[juce::jlimit (0, tb::params::kMglSpaceTimes - 1, juce::roundToInt (ld (mglSpaceTimeParam)))];
+    p.mglSpaceFb   = ld (mglSpaceFbParam) / 100.0f;
+    p.mglSpaceAmount = ld (mglSpaceAmountParam) / 100.0f;
     p.bankActive     = juce::jlimit (0, 7, juce::roundToInt (ld (bankActiveParam)) - 1);
     p.bankAt         = juce::roundToInt (ld (bankAtParam));
 

@@ -150,6 +150,9 @@ namespace tb
             int   mglSteps = 8;
             int   mglFillEvery = 0;        // bars, 0 off
             float mglMix = 1.0f, mglAmount = 1.0f;
+            int   mglSlot = 0;  bool mglChain = false;                       // 0.30
+            int   mglTexMode = 0; float mglTexAmount = 0.5f, mglTexSize = 40.0f, mglTexDensity = 16.0f, mglTexScatter = 0.3f;
+            int   mglSpaceMode = 0; double mglSpaceBeats = 0.75; float mglSpaceFb = 0.45f, mglSpaceAmount = 0.35f;
         };
 
         static constexpr int kBankSlots = 8;
@@ -363,7 +366,7 @@ namespace tb
         MasterSection master;
         Mangler mangler;
         Mangler::Gate mglGate;
-        mangle::Pattern mglPattern;
+        mangle::Slots mglPattern {};
         uint32_t mglVersion = 0xffffffffu;
         int  mglTarget = 0;
         bool mglFillNextLast = false;

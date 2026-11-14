@@ -126,7 +126,8 @@ namespace tb
                                 lane (tap paints the move, again = THRU; hold one, tap
                                 another = join; DELETE + tap = THRU), the row below =
                                 the moves REPEAT..SHUFFLE, the bottom row = ON,
-                                RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS 4/8/16.
+                                RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS 4/8/16,
+                                SLOT A-D (cycles), CHAIN.
           SCENE COLUMN (top->)  MUTATE, FILL (hold), RESAMPLE, VIEW A/B, LAYOUT,
                                 MANGLE HOLD (hold; SHIFT: FILL NEXT).
                                 ACCENT = MUTATE and REPEAT = FILL too.

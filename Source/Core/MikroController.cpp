@@ -948,6 +948,17 @@ namespace tb
                 if (held[shift])
                 {
                     if (num < mangle::kNumMoves) { mangleBrush = num; flash ("MANGLE MOVE", mangle::kMoveNames[num], nowMs); }
+                    else if (num == 11)
+                    {
+                        const bool on = raw (params::mglChain) < 0.5f;
+                        setParamPlain (params::mglChain, on ? 1.0f : 0.0f);
+                        flash ("MANGLE CHAIN", on ? "ON" : "OFF", nowMs);
+                    }
+                    else if (num >= 12)
+                    {
+                        setParamPlain (params::mglSlot, (float) (num - 12));     // SHIFT + pad 13-16: variation A-D
+                        flash ("MANGLE SLOT", juce::String::charToString ((juce::juce_wchar) ('A' + num - 12)), nowMs);
+                    }
                     return;
                 }
                 if (num >= S) return;
@@ -1220,9 +1231,15 @@ namespace tb
                 case Mode::mangle:
                 {
                     // Each step in its move's colour (THRU dim white), the playhead bright white.
-                    const auto pat = bridge.mangle.get();
+                    const auto pat = processor.getMangleOps().get();
                     const int S = processor.getMangleOps().steps();
-                    if (held[shift]) { if (num < mangle::kNumMoves) { colour = mangleColour (num); level = num == mangleBrush ? 3 : 1; } break; }
+                    if (held[shift])
+                    {
+                        if (num < mangle::kNumMoves) { colour = mangleColour (num); level = num == mangleBrush ? 3 : 1; }
+                        else if (num == 11)          { colour = purple; level = raw (params::mglChain) > 0.5f ? 3 : 1; }
+                        else if (num >= 12)          { colour = blue; level = juce::roundToInt (raw (params::mglSlot)) == num - 12 ? 3 : 1; }
+                        break;
+                    }
                     if (num >= S) break;
                     const int mv = pat.move[(size_t) pat.runStart (num)];
                     const int ph = bridge.mangleStep.load (std::memory_order_relaxed);
@@ -1287,7 +1304,8 @@ namespace tb
         const auto mode = getMode();
         juce::String head = modeName (mode);
         if (mode == Mode::pads)  head << " " << (juce::roundToInt (sceneViewRaw->load()) == 0 ? "A" : "B");
-        if (mode == Mode::mangle) head << " " << mangle::kMoveShort[mangleBrush];
+        if (mode == Mode::mangle) head << " " << juce::String::charToString ((juce::juce_wchar) ('A' + juce::roundToInt (raw (params::mglSlot))))
+                                       << " " << mangle::kMoveShort[mangleBrush];
         if (mode == Mode::steps) head << (stepPage == 0 ? " 1-16" : " 17-32");
         if (mode == Mode::steps || mode == Mode::keyboard)
         {

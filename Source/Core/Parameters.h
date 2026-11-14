@@ -49,6 +49,7 @@ namespace tb::params
     inline constexpr int kV21 = 21; // parameters introduced in 0.23.x (stretch modes)
     inline constexpr int kV22 = 22; // parameters introduced in 0.25.x (AKAIZER)
     inline constexpr int kV23 = 23; // parameters introduced in 0.29.x (MANGLE)
+    inline constexpr int kV24 = 24; // parameters introduced in 0.30.x (MANGLE texture, space, slots)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -227,6 +228,25 @@ namespace tb::params
     inline constexpr const char* mglHold      = "mgl_hold";       // bool: plays from the next step while on
     inline constexpr const char* mglFillNext  = "mgl_fill_next";  // bool: rising edge = mangle the next bar
     inline constexpr const char* mglStyle     = "mgl_style";      // choice: Gentle / Medium / Wild (randomize)
+    // 0.30: variations, TEXTURE (grains over the moves), SPACE (synced repeats)
+    inline constexpr const char* mglSlot       = "mgl_slot";        // choice: A-D (switches on the next bar)
+    inline constexpr const char* mglChain      = "mgl_chain";       // bool: the filled slots in turn, a bar each
+    inline constexpr const char* mglTexMode    = "mgl_tex_mode";    // choice: Off, Tight, Scatter, Cloud, Reverse
+    inline constexpr const char* mglTexAmount  = "mgl_tex_amount";  // int %
+    inline constexpr const char* mglTexSize    = "mgl_tex_size";    // int ms (grain length)
+    inline constexpr const char* mglTexDensity = "mgl_tex_density"; // int grains a second
+    inline constexpr const char* mglTexScatter = "mgl_tex_scatter"; // int %
+    inline constexpr const char* mglSpaceMode  = "mgl_space_mode";  // choice: Off, Echo, Ping-Pong, Diffuse
+    inline constexpr const char* mglSpaceTime  = "mgl_space_time";  // choice: 1/32 .. 1/2 (dotted, triplet)
+    inline constexpr const char* mglSpaceFb    = "mgl_space_fb";    // int % (capped 90)
+    inline constexpr const char* mglSpaceAmount = "mgl_space_amount"; // int %
+    inline constexpr const char* mglLockTex    = "mgl_lock_tex";    // bool: RANDOMIZE leaves TEXTURE alone
+    inline constexpr const char* mglLockSpace  = "mgl_lock_space";  // bool: RANDOMIZE leaves SPACE alone
+    inline const char* const kMglTexModes[]   = { "Off", "Tight", "Scatter", "Cloud", "Reverse" };
+    inline const char* const kMglSpaceModes[] = { "Off", "Echo", "Ping-Pong", "Diffuse" };
+    inline const char* const kMglSpaceTimeNames[] = { "1/32", "1/16", "1/16 T", "1/16 D", "1/8", "1/8 T", "1/8 D", "1/4", "1/4 T", "1/4 D", "1/2" };
+    inline constexpr double  mglSpaceBeats[]  = { 0.125, 0.25, 1.0 / 6.0, 0.375, 0.5, 1.0 / 3.0, 0.75, 1.0, 2.0 / 3.0, 1.5, 2.0 };
+    inline constexpr int kMglSpaceTimes = 11;          // (kMglSpaceTimeNames)
     inline constexpr int mglStepCounts[] = { 4, 8, 16 };
     inline constexpr int mglFillBars[]   = { 0, 2, 4, 8, 16 };
 

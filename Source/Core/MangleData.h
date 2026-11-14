@@ -133,45 +133,62 @@ namespace tb
         };
     }
 
+    namespace mangle
+    {
+        inline constexpr int kSlots = 4;                       // 0.30: variations A-D
+        using Slots = std::array<Pattern, kSlots>;
+        inline bool isEmpty (const Pattern& p, int steps) noexcept { return p.activeSteps (steps) == 0; }
+    }
+
     class MangleData
     {
     public:
         using Pattern = mangle::Pattern;
         static constexpr int kSteps = Pattern::kSteps;
+        static constexpr int kSlots = mangle::kSlots;
 
-        MangleData() { set (Pattern{}); }
+        MangleData() { for (int k = 0; k < kSlots; ++k) set (k, Pattern{}); }
 
         // ---- Any thread -------------------------------------------------------------
-        Pattern get() const noexcept
+        Pattern get (int slot) const noexcept
         {
+            const int o = juce::jlimit (0, kSlots - 1, slot) * kSteps;
             Pattern p;
             for (int s = 0; s < kSteps; ++s)
             {
-                p.move[(size_t) s] = move[(size_t) s].load (std::memory_order_relaxed);
-                p.tie[(size_t) s]  = tie[(size_t) s].load (std::memory_order_relaxed);
-                p.arg[(size_t) s]  = arg[(size_t) s].load (std::memory_order_relaxed);
+                p.move[(size_t) s] = move[(size_t) (o + s)].load (std::memory_order_relaxed);
+                p.tie[(size_t) s]  = tie[(size_t) (o + s)].load (std::memory_order_relaxed);
+                p.arg[(size_t) s]  = arg[(size_t) (o + s)].load (std::memory_order_relaxed);
             }
-            p.trim = trim.load (std::memory_order_relaxed);
+            p.trim = trim[(size_t) juce::jlimit (0, kSlots - 1, slot)].load (std::memory_order_relaxed);
             return p;
+        }
+        mangle::Slots getAll() const noexcept
+        {
+            mangle::Slots a;
+            for (int k = 0; k < kSlots; ++k) a[(size_t) k] = get (k);
+            return a;
         }
 
         // ---- Message thread -------------------------------------------------------------
-        void set (const Pattern& p) noexcept
+        void set (int slot, const Pattern& p) noexcept
         {
+            slot = juce::jlimit (0, kSlots - 1, slot);
+            const int o = slot * kSteps;
             for (int s = 0; s < kSteps; ++s)
             {
-                move[(size_t) s].store (p.move[(size_t) s], std::memory_order_relaxed);
-                tie[(size_t) s].store (s == 0 ? 0 : p.tie[(size_t) s], std::memory_order_relaxed);
-                arg[(size_t) s].store (p.arg[(size_t) s], std::memory_order_relaxed);
+                move[(size_t) (o + s)].store (p.move[(size_t) s], std::memory_order_relaxed);
+                tie[(size_t) (o + s)].store (s == 0 ? 0 : p.tie[(size_t) s], std::memory_order_relaxed);
+                arg[(size_t) (o + s)].store (p.arg[(size_t) s], std::memory_order_relaxed);
             }
-            trim.store (p.trim, std::memory_order_relaxed);
+            trim[(size_t) slot].store (p.trim, std::memory_order_relaxed);
             version.fetch_add (1, std::memory_order_release);
         }
         uint32_t getVersion() const noexcept { return version.load (std::memory_order_acquire); }
 
     private:
-        std::array<std::atomic<uint8_t>, kSteps> move {}, tie {}, arg {};
-        std::atomic<float> trim { 1.0f };
+        std::array<std::atomic<uint8_t>, kSteps * kSlots> move {}, tie {}, arg {};
+        std::array<std::atomic<float>, kSlots> trim {};
         std::atomic<uint32_t> version { 0 };
     };
 }

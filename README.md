@@ -74,7 +74,8 @@ repo page and download the zip for your computer from the newest one:
 | 0.26 | STRETCH moves to the PLAY page in SYNC's place and works on loops too (Beats / Texture / Akai keep a locked loop's pitch); the tempo readout holds x2 / ÷2 / type / gaps / grain; out of the right-click menu | **done** |
 | 0.27 | MODE **CONT** (loop continuous): latched loops that keep playing when Live stops, at Live's last tempo, and ease back onto the bar when it starts | **done** |
 | 0.28 | **Windows**: a 64-bit VST3 built and tested on Windows with every release; the Mikro MK3 over USB on Windows too; loopMIDI ports for Remote / Notes | **done** |
-| 0.29 | **MANGLE** (after quiver mangler): a step-sequenced bar chopper on the master or a group — THRU / REPEAT / REVERSE / HALF / STOP / DOUBLE / SCRATCH / FREEZE / SHUFFLE per step, joined steps, RANDOMIZE / MUTATE that listen and reject clicking, silent or runaway bars, 3-deep revert, FILL EVERY turnarounds, HOLD, FILL NEXT, Mikro (CHORDS) and Push (LAYOUT) | **done** — 800/800 automated checks |
+| 0.29 | **MANGLE** (after quiver mangler): a step-sequenced bar chopper on the master or a group — THRU / REPEAT / REVERSE / HALF / STOP / DOUBLE / SCRATCH / FREEZE / SHUFFLE per step, joined steps, RANDOMIZE / MUTATE that listen and reject clicking, silent or runaway bars, 3-deep revert, FILL EVERY turnarounds, HOLD, FILL NEXT, Mikro (CHORDS) and Push (LAYOUT) | **done** |
+| 0.30 | MANGLE part 2: four variations A-D with CHAIN (a bar each), TEXTURE (TIGHT / SCATTER / CLOUD / REVERSE grains), SPACE (synced ECHO / PING-PONG / DIFFUSE), locks for RANDOMIZE, 16 factory presets in six groups and .tbmangle files | **done** — 818/818 automated checks |
 
 Sections that aren't built yet are visibly marked offline on the panel
 (dark lamps and taped-on tags).
@@ -254,6 +255,11 @@ Sections that aren't built yet are visibly marked offline on the panel
   vanish or run away and match the level; **< REVERT** goes back three.
   Zero latency. Mikro: CHORDS = MANGLE mode, PATTERN = HOLD. Push: LAYOUT
   cycles to a MANGLE layout, the 6th scene button = HOLD.
+  **0.30:** four variations **A-D** (switch on the next bar; **CHAIN** plays
+  them a bar each, up to the last filled one), **TEXTURE** (TIGHT, SCATTER,
+  CLOUD, REVERSE grains: amount, size, density, scatter), **SPACE** (ECHO,
+  PING-PONG, DIFFUSE at 1/32-1/2 with dotted and triplet, feedback capped),
+  both lockable against RANDOMIZE, and **PRESETS** (16 factory, .tbmangle).
 * **MUTATE** (0.10, the tab under STEP in the SEQUENCER view): one press
   (**GO**, or MIDI-map the `Mutate` parameter) makes a variation of the
   patterns that keeps the groove: hits on the beat never move, nothing goes

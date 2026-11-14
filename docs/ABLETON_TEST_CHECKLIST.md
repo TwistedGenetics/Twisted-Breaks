@@ -102,6 +102,17 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.30: MANGLE variations, TEXTURE, SPACE, presets
+- [ ] Slots A-D: edit B while A plays - B starts at the next bar line; right-click D > Copy B here; Clear
+- [ ] CHAIN with A and C filled: A, clean bar, C, A ... on Live's bars; only D filled: three clean bars, then D
+- [ ] TEXTURE TIGHT / SCATTER / CLOUD / REVERSE on a mangled bar: grains at about the same level; SIZE / DENSITY / SCATTER change it
+- [ ] SPACE ECHO 1/8 D, PING-PONG (left then right), DIFFUSE; FEEDBACK at 90 doesn't blow up; the tail rings on after a FILL EVERY bar
+- [ ] RANDOMIZE changes TEXTURE / SPACE too; light the TEXTURE / SPACE keys and they stay put
+- [ ] PRESETS: try each group; Four-bar turnaround = 3 clean bars + a fill (CHAIN on); Save as .tbmangle, change things, Load it back
+- [ ] Mikro: SHIFT + pads 13-16 pick the slot, SHIFT + pad 12 CHAIN; Push: bottom row pads 7 / 8 = SLOT / CHAIN
+- [ ] A snapshot with slot C recalls C (from the SONG chain too); HOLD isn't stored
+- [ ] CPU: CLOUD + DIFFUSE on the master with 16 pads playing
+
 ## 0.29: MANGLE
 - [ ] FX view: the MANGLE key (top right of the FX editor) opens the MANGLE page; FX goes back; the FX nav key stays lit
 - [ ] A break looping, MANGLE ON, 8 steps: paint REPEAT on step 8 - a stutter at the end of each bar, in time; click again - THRU

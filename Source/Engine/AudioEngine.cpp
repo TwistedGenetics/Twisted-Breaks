@@ -1854,7 +1854,7 @@ namespace tb
         flushAutoOffs (numSamples);
 
         // ---- A15 MANGLE: this block's bar pattern and gate.
-        if (const auto v = bridge.mangle.getVersion(); v != mglVersion) { mglVersion = v; mglPattern = bridge.mangle.get(); }
+        if (const auto v = bridge.mangle.getVersion(); v != mglVersion) { mglVersion = v; mglPattern = bridge.mangle.getAll(); }
         if (params.mglTarget != mglTarget) { mglTarget = juce::jlimit (0, kNumGroups, params.mglTarget); mangler.reset(); }
         mglGate.on        = params.mglOn;
         mglGate.hold      = params.mglHold;
@@ -1863,6 +1863,17 @@ namespace tb
         mglGate.steps     = params.mglSteps;
         mglGate.amount    = params.mglAmount;
         mglGate.mix       = params.mglMix;
+        mglGate.slot      = params.mglSlot;
+        mglGate.chain     = params.mglChain;
+        mglGate.texMode   = params.mglTexMode;
+        mglGate.texAmount = params.mglTexAmount;
+        mglGate.texSizeMs = params.mglTexSize;
+        mglGate.texDensity = params.mglTexDensity;
+        mglGate.texScatter = params.mglTexScatter;
+        mglGate.spaceMode = params.mglSpaceMode;
+        mglGate.spaceBeats = params.mglSpaceBeats;
+        mglGate.spaceFb   = params.mglSpaceFb;
+        mglGate.spaceAmount = params.mglSpaceAmount;
         if (params.mglFillNext && ! mglFillNextLast) ++mglGate.fillNextCount;
         mglFillNextLast = params.mglFillNext;
         padPeak.fill (0.0f);
@@ -2079,6 +2090,7 @@ namespace tb
                              numSamples, clock, mglPattern, mglGate);
         }
         bridge.mangleStep.store (mangler.currentStep(), std::memory_order_relaxed);
+        bridge.mangleSlot.store (mangler.playingSlot(), std::memory_order_relaxed);
         bridge.mangleActive.store (mangler.currentActive(), std::memory_order_relaxed);
 
         // ---- Master
