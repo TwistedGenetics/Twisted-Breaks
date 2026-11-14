@@ -360,6 +360,24 @@ namespace tb::params
         // ---- 0.22: song mode (A11) ----
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { songOn, kV20 }, "Song", false));
 
+        // ---- 0.29: MANGLE (A15) ----
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglOn, kV23 }, "Mangle", false));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglTarget, kV23 }, "Mangle Target",
+                                                            StringArray { "Master", "Group A", "Group B", "Group C", "Group D" }, 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglSteps, kV23 }, "Mangle Steps", StringArray { "4", "8", "16" }, 1));
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglMix, kV23 }, "Mangle Mix", 0, 100, 100,
+                                                         AudioParameterIntAttributes().withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { mglAmount, kV23 }, "Mangle Amount", 0, 100, 100,
+                                                         AudioParameterIntAttributes().withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglFillEvery, kV23 }, "Mangle Fill Every",
+                                                            StringArray { "Off", "2 Bars", "4 Bars", "8 Bars", "16 Bars" }, 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglFillLen, kV23 }, "Mangle Fill Length",
+                                                            StringArray { "Bar", "Half Bar" }, 0));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglHold, kV23 }, "Mangle Hold", false));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { mglFillNext, kV23 }, "Mangle Fill Next", false));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { mglStyle, kV23 }, "Mangle Style",
+                                                            StringArray { "Gentle", "Medium", "Wild" }, 1));
+
         return layout;
     }
 }

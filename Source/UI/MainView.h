@@ -13,6 +13,7 @@
 #include "UI/SnapshotPanel.h"
 #include "UI/PresetPanel.h"
 #include "UI/MacroEditorPanel.h"
+#include "UI/ManglePanel.h"
 #include "UI/ResamplePanel.h"
 #include "UI/SceneStrip.h"
 #include "UI/Controls.h"
@@ -93,9 +94,10 @@ namespace tb::ui
         void resized() override;
 
         /** What fills the screen area: the CRT, the group MIXER or the FX editor. */
-        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots, resample, presets, macroEdit };
+        enum class View { crt, mixer, fx, sequencer, sliceSeq, snapshots, resample, presets, macroEdit, mangle };
         void showView (View);
         MacroEditorPanel& getMacroEditor() noexcept { return macroEditor; }
+        ManglePanel& getManglePanel() noexcept { return manglePanel; }
         View getView() const noexcept { return view; }
 
         /** MIXER view on / off (the mixer takes the CRT's place). */
@@ -131,6 +133,8 @@ namespace tb::ui
         SceneStrip       sceneStrip;
         PresetPanel      presetPanel;
         MacroEditorPanel macroEditor;
+        ManglePanel manglePanel;
+        PushKey mangleKey { "MANGLE", "MANGLE: chop the bar step by step (repeat, reverse, half, stop, double, scratch, freeze, shuffle)", juce::Colour (0xffff3a1c) };
         KitBar           kitBar;
         bool             shownCtlBrowse = false;
         int              shownScene = 0;

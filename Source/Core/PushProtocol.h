@@ -118,7 +118,8 @@ namespace tb::push
 
     // ---- Colours -----------------------------------------------------------------------
     /** What a light should show; mapped to palette indices once Push's palette is known. */
-    enum Colour : int { off = 0, amber, amberDim, white, green, greenDim, red, redDim, blue, dark, kNumColours };
+    enum Colour : int { off = 0, amber, amberDim, white, green, greenDim, red, redDim, blue, dark,
+                        cyan, magenta, lime, ice, kNumColours };      // (cyan..ice: A15 MANGLE moves)
 
     inline juce::Colour rgbOf (int c)
     {
@@ -133,6 +134,10 @@ namespace tb::push
             case redDim:   return juce::Colour (0xff400804);
             case blue:     return juce::Colour (0xff2040ff);
             case dark:     return juce::Colour (0xff181818);
+            case cyan:     return juce::Colour (0xff20d8ff);
+            case magenta:  return juce::Colour (0xffff20d0);
+            case lime:     return juce::Colour (0xffc8ff20);
+            case ice:      return juce::Colour (0xffa0c8ff);
             default:       return juce::Colour (0xff000000);
         }
     }
@@ -151,6 +156,10 @@ namespace tb::push
             case redDim:   return 127;
             case blue:     return 125;
             case dark:     return 124;
+            case cyan:     return 125;
+            case magenta:  return 127;
+            case lime:     return 126;
+            case ice:      return 122;
             default:       return 0;
         }
     }

@@ -90,6 +90,12 @@ namespace tb
           KEYBOARD   the selected pad's slices 1-16 on pads 1-16.
           PERFORM    the 16 performance FX of the selected pad's group.
           SCENE      pads 1-8 recall snapshots 1-8 (SHIFT + pad stores).
+          MANGLE     (CHORDS, A15) pads 1-16 are the MANGLE steps: a pad paints
+                     the chosen move (again: THRU), hold one pad and hit another
+                     to join them; SHIFT + pad 1-9 picks the move; ERASE + pad
+                     clears it. Encoder = MIX, VARIATION = RANDOMIZE (SHIFT:
+                     MUTATE), EVENTS = REVERT. PATTERN (any mode) = MANGLE HOLD,
+                     SHIFT + PATTERN = FILL NEXT.
           Encoder    PLUG-IN = PAD page, SWING = SEQ page, VOLUME = MIX page
                      (PERFORM: the last effect's settings); turn = value,
                      push or SHIFT + turn = next parameter. The screen shows
@@ -112,7 +118,7 @@ namespace tb
         explicit MikroController (TwistedBreaksProcessor&);
         ~MikroController() override;
 
-        enum class Mode { pads, steps, keyboard, perform, scene };
+        enum class Mode { pads, steps, keyboard, perform, scene, mangle };     // A15: CHORDS = MANGLE
         enum class Page { pad, seq, mix, fx };
 
         void setEnabled (bool);
@@ -249,7 +255,11 @@ namespace tb
         juce::RangedAudioParameter* stripParam = nullptr;
         bool fillHeld = false;
         std::array<juce::String, 16> fxHeldId;         // momentary FX a pad switched on (its parameter, to release)
-        Mode shownMode = Mode::pads;                   // what the message thread last set up for
+        Mode shownMode = Mode::pads;
+        int  mangleBrush = 1;                          // A15: the move pads paint (REPEAT)
+        int  mangleHeldStep = -1;                      // a pad held in MANGLE: the next one joins to it
+        bool mangleJoined = false;
+        int  fillNextTicks = 0;                   // what the message thread last set up for
         juce::String flashTitle, flashValue;
         double flashUntilMs = -1.0;
 

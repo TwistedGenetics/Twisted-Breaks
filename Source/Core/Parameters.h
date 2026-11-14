@@ -48,6 +48,7 @@ namespace tb::params
     inline constexpr int kV20 = 20; // parameters introduced in 0.22.x (song mode)
     inline constexpr int kV21 = 21; // parameters introduced in 0.23.x (stretch modes)
     inline constexpr int kV22 = 22; // parameters introduced in 0.25.x (AKAIZER)
+    inline constexpr int kV23 = 23; // parameters introduced in 0.29.x (MANGLE)
 
     // ---- Scenes A / B (Phase 13) ------------------------------------------------
     inline constexpr const char* xfade      = "xfade";        // float 0 (A) .. 1 (B), centre = both full
@@ -214,6 +215,20 @@ namespace tb::params
     // ---- 0.22: song mode (A11 part 5) ---------------------------------------------------
     inline constexpr const char* songOn = "song_on";     // bool: the snapshot chain follows Live's bars
     enum Launch { launchNow = 0, launchSixteenth = 1, launchBeat = 2, launchBar = 3 };
+
+    // ---- 0.29: MANGLE (A15) -------------------------------------------------------------
+    inline constexpr const char* mglOn        = "mgl_on";         // bool: MANGLE plays (subject to FILL EVERY)
+    inline constexpr const char* mglTarget    = "mgl_target";     // choice: Master, Group A..D
+    inline constexpr const char* mglSteps     = "mgl_steps";      // choice: 4 / 8 / 16 steps a bar
+    inline constexpr const char* mglMix       = "mgl_mix";        // int 0..100 %
+    inline constexpr const char* mglAmount    = "mgl_amount";     // int 0..100 %: each step's chance per bar
+    inline constexpr const char* mglFillEvery = "mgl_fill_every"; // choice: Off, 2, 4, 8, 16 bars
+    inline constexpr const char* mglFillLen   = "mgl_fill_len";   // choice: Bar / Half Bar
+    inline constexpr const char* mglHold      = "mgl_hold";       // bool: plays from the next step while on
+    inline constexpr const char* mglFillNext  = "mgl_fill_next";  // bool: rising edge = mangle the next bar
+    inline constexpr const char* mglStyle     = "mgl_style";      // choice: Gentle / Medium / Wild (randomize)
+    inline constexpr int mglStepCounts[] = { 4, 8, 16 };
+    inline constexpr int mglFillBars[]   = { 0, 2, 4, 8, 16 };
 
     // ---- Group buses (Phase 5): "grp_a_level" ... "grp_d_bypass" --------------
     inline constexpr const char* grpLevel   = "level";     // dB

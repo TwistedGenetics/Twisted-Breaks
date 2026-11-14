@@ -582,3 +582,21 @@ Stages: 0.22.1 (1-2), 0.23 (3), 0.24 (4), 0.25 (5).
 * STOP / panic, changing the pad's mode, choke and SWAP groups stop it.
 * MIDI OUT records the hits as played, so a recorded clip starts and stops the
   loop on playback.
+
+## A15. MANGLE (0.29, after quiver mangler)
+
+> Can we implement some of the ideas from quiver mangler?
+
+* A step-sequenced buffer effect on the master or one group: each of 4 / 8 /
+  16 steps plays what just came in as THRU, REPEAT (2 / 4 / 8), REVERSE, HALF,
+  STOP, DOUBLE, SCRATCH, FREEZE or SHUFFLE (Twisted Breaks' own: another step
+  of the last bar). Joined steps make one longer move. Zero latency.
+* RANDOMIZE / MUTATE at GENTLE / MEDIUM / WILD, checked: 8 candidates over the
+  last two bars, clicking / silent / runaway ones dropped, level matched;
+  revert three deep.
+* Turnarounds: FILL EVERY 2-16 bars (bar or half bar), HOLD (from the next
+  step), FILL NEXT (one bar). MIX, AMOUNT.
+* Mikro: CHORDS = MANGLE pads, PATTERN = HOLD. Push: LAYOUT -> MANGLE, scene
+  button 6 = HOLD.
+* Left for 0.30: TEXTURE (grains), SPACE (synced echo), 4 slots + chain,
+  factory presets / .tbmangle files. Formant is left out (it's for voices).

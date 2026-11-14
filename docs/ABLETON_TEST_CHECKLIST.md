@@ -102,6 +102,21 @@ TwistedBreaks; a second with a Drum Rack for timing comparison.
 - [ ] ✅ Play them from the iRig; lights flash while a launch / stop / hand-off waits
 - [ ] ✅ Loop brace on: launched sequences follow the playhead back round the wrap
 
+## 0.29: MANGLE
+- [ ] FX view: the MANGLE key (top right of the FX editor) opens the MANGLE page; FX goes back; the FX nav key stays lit
+- [ ] A break looping, MANGLE ON, 8 steps: paint REPEAT on step 8 - a stutter at the end of each bar, in time; click again - THRU
+- [ ] Try each move on its own step (REVERSE, HALF, STOP, DOUBLE, SCRATCH, FREEZE, SHUFFLE): each sounds as described, no clicks between steps
+- [ ] Drag across steps 5-8 with STOP: one long tape brake over half a bar; right-click > Split
+- [ ] Wheel on a REPEAT step: x2 / x4 / x8; on a SHUFFLE step: its source step
+- [ ] FILL EVERY 4: only bar 4, 8, 12... are mangled; FILL LEN Half: only the second half
+- [ ] HOLD (and MIDI-map it to a pad): starts on the next step, stops on the next step; FILL NEXT: exactly the next bar
+- [ ] RANDOMIZE at GENTLE, MEDIUM, WILD while playing: "LISTENING...", then "n of 8 passed"; the level stays about the same; < REVERT goes back three
+- [ ] TARGET Group B: only group B is mangled, after its FX
+- [ ] Stop Live: the sound passes through; CPU stays low with MANGLE on
+- [ ] Mikro: CHORDS = MANGLE (steps lit in move colours, playhead white / red); SHIFT + pad picks the move; PATTERN = HOLD
+- [ ] Push: LAYOUT twice = MANGLE layout; paint, join, ON, RANDOMIZE; the 6th scene button = HOLD
+- [ ] Save, reopen: the bar and settings come back; in a kit preset too
+
 ## 0.28: Windows
 - [ ] Unzip TwistedBreaks-Windows.zip, copy TwistedBreaks.vst3 into C:\Program Files\Common Files\VST3, rescan: it appears under Twisted Genetics and opens
 - [ ] Load samples (drag from Explorer), play pads, save and reopen the set; open a set made on the Mac (samples relinked or from a kit preset)

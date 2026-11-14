@@ -27,6 +27,8 @@
 #include "Core/RemotePort.h"
 #include "Engine/PadVoice.h"
 #include "UI/StretchMenu.h"
+#include "Engine/Mangler.h"
+#include "Core/MangleOps.h"
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -378,7 +380,7 @@ namespace
                 if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm)) unique &= ids.insert (wid->getParameterID()).second;
             check (unique, "every parameter ID is unique (" + juce::String ((int) ids.size()) + ")");
         }
-        check (p.getParameters().processor.getParameters().size() == 1347, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch + AKAIZER and the old STUTTER ids)");
+        check (p.getParameters().processor.getParameters().size() == 1357, "1203 automatable parameters in total (3 master + 5 sequencer + 13 mutate + 11 macro + 6 resample + 3 scene + 4 snapshot / bank + 29 x 32 pads + 5 x 4 groups + 50 x 4 group FX + 9 TWIST + song + 4 x 32 stretch + AKAIZER and the old STUTTER ids)");
 
         FakeHost host;
         p.setPlayHead (&host);
@@ -3519,7 +3521,7 @@ namespace
     void testSeqPads()
     {
         std::cout << "\n== 0.14: sequence pads (SEQ ONE / SEQ LOOP, LAUNCH, SWAP between sequences) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347,
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357,
                "LAUNCH, SEQ LEN and SWAP FROM on every pad (1097 with Push 3 pressure)");
 
         SeqRig x;                                         // 120 BPM: 1/16 = 6000, beat = 24000, bar = 96000
@@ -5567,6 +5569,360 @@ namespace
 
     //  A13 (0.26): STRETCH in the pad settings, for loops too.
     //  A14 (0.27): LOOP CONT - latched loops that play on when Live stops.
+    //  A15 (0.29): MANGLE - a step-sequenced bar mangler.
+    //  A15: MANGLE from the Mikro (CHORDS) and Push (LAYOUT -> MANGLE).
+    void testA15Controllers()
+    {
+        std::cout << "\n== A15: MANGLE on the Mikro and Push ==" << std::endl;
+        using namespace tb::mangle;
+        {
+            using namespace tb::mikro;
+            Rig r;
+            auto& mm = r.p.getMikroMode();
+            auto hub = std::make_shared<tb::MikroHub> (false);
+            MikroRec mrec;
+            hub->setSinkForTesting (&mrec);
+            mm.useHubForTesting (hub);
+            double now = 1000.0;
+            MikroIn in;
+            auto adv = [&] (int n = 1) { for (int i = 0; i < n; ++i) { now += 25.0; mm.processPending (now); mm.tick (now); } };
+            auto send = [&] (const std::vector<uint8_t>& rep) { hub->dispatch (rep.data(), (int) rep.size()); };
+            auto hold = [&] (int b, bool on) { in.buttons[(size_t) b] = on; send (in.report()); adv(); };
+            auto press = [&] (int b) { hold (b, true); hold (b, false); };
+            auto padDown = [&] (int num) { send (MikroIn::pad (tb::MikroController::hidPadOf (num), 0x10, 3000)); adv(); };
+            auto padUp   = [&] (int num) { send (MikroIn::pad (tb::MikroController::hidPadOf (num), 0x30, 0)); adv(); };
+            auto tap = [&] (int num) { padDown (num); padUp (num); };
+            send (in.report());
+            adv();
+            auto& ops = r.p.getMangleOps();
+            press (chords);
+            check (mm.getMode() == tb::MikroController::Mode::mangle, "CHORDS switches the Mikro to MANGLE");
+            tb::ControllerHit h; int plays = 0; while (r.p.getBridge().mikroEvents.pop (h)) ++plays;
+            tap (2);
+            plays = 0; while (r.p.getBridge().mikroEvents.pop (h)) if (h.kind != tb::ControllerHit::sliceOff) ++plays;
+            check (ops.get().move[2] == repeat && plays == 0, "a pad paints the move on its step (pad 3 = step 3), without playing anything");
+            tap (2);
+            check (ops.get().move[2] == thru, "the same pad again: back to THRU");
+            hold (shift, true); tap (2); hold (shift, false);         // SHIFT + pad 3 = REVERSE
+            padDown (0); tap (3); padUp (0);
+            const auto p = ops.get();
+            check (p.move[0] == reverse && p.runLength (0, 8) == 4, "SHIFT + pad picks the move; hold a step and hit another to join them");
+            hold (erase, true); tap (1); hold (erase, false);
+            check (ops.get().move[1] == thru && ops.get().runStart (1) == 1, "ERASE + pad: that step back to THRU");
+            auto rawP = [&] (const char* id) { return r.p.getParameters().getRawParameterValue (id)->load(); };
+            hold (pattern, true);
+            const bool held = rawP (tb::params::mglHold) > 0.5f;
+            hold (pattern, false);
+            check (held && rawP (tb::params::mglHold) < 0.5f, "PATTERN is MANGLE HOLD while it's down");
+            hold (shift, true); press (pattern); hold (shift, false);
+            const bool fillOn = rawP (tb::params::mglFillNext) > 0.5f;
+            adv (6);
+            check (fillOn && rawP (tb::params::mglFillNext) < 0.5f, "SHIFT + PATTERN = FILL NEXT (a press the engine sees once)");
+            const float mix0 = rawP (tb::params::mglMix);
+            in.enc = 15; send (in.report()); adv();
+            in.enc = 14; send (in.report()); adv();
+            check (rawP (tb::params::mglMix) < mix0, "the encoder turns MANGLE MIX");
+            press (variation);
+            check (ops.isBusy(), "VARIATION = RANDOMIZE (it listens first)");
+        }
+        {
+            using namespace tb::push;
+            Rig r;
+            auto& push = r.p.getPush();
+            auto hub = std::make_shared<tb::PushHub> (false);
+            PushRec rec;
+            hub->setSinkForTesting (&rec);
+            push.useHubForTesting (hub);
+            double now = 1000.0;
+            auto step = [&] (int ticks = 1) { for (int i = 0; i < ticks; ++i) { now += 25.0; push.processPending (now); push.tick (now); } };
+            auto in = [&] (const juce::MidiMessage& m) { hub->dispatch (m); };
+            step (10);
+            in (pushSysex ({ 0x0A, 0x01 }));
+            step();
+            in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0)); step();
+            in (juce::MidiMessage::controllerEvent (1, layout, 127)); in (juce::MidiMessage::controllerEvent (1, layout, 0)); step();
+            check (push.getLayout() == tb::PushController::Layout::mangle && push.padAt (2, 0) < 0, "LAYOUT cycles lane, pads, MANGLE");
+            auto& ops = r.p.getMangleOps();
+            auto cell = [&] (int row, int col, bool on) { in (on ? juce::MidiMessage::noteOn (1, padNote (row, col), (juce::uint8) 100) : juce::MidiMessage::noteOff (1, padNote (row, col))); step(); };
+            cell (1, 4, true); cell (1, 4, false);          // move 5: DOUBLE
+            cell (3, 1, true); cell (3, 6, true); cell (3, 6, false); cell (3, 1, false);
+            const auto p = ops.get();
+            check (p.move[1] == dbl && p.runLength (1, 8) == 6, "Push: the move row picks DOUBLE; hold step 2 and tap step 7: one joined run");
+            cell (0, 0, true); cell (0, 0, false);
+            check (r.p.getParameters().getRawParameterValue (tb::params::mglOn)->load() > 0.5f, "the bottom row's first pad switches MANGLE on");
+            step();
+            check (rec.padLed (padNote (3, 1)) == push.paletteIndexFor (green), "steps light in their move's colour");
+            in (juce::MidiMessage::controllerEvent (1, tb::push::sceneTop - 5, 127)); step();
+            const bool held = r.p.getParameters().getRawParameterValue (tb::params::mglHold)->load() > 0.5f;
+            in (juce::MidiMessage::controllerEvent (1, tb::push::sceneTop - 5, 0)); step();
+            check (held && r.p.getParameters().getRawParameterValue (tb::params::mglHold)->load() < 0.5f, "the 6th scene button is MANGLE HOLD");
+        }
+    }
+
+    void testA15Mangle()
+    {
+        std::cout << "\n== A15: MANGLE ==" << std::endl;
+        using namespace tb::mangle;
+        const double sr = 48000.0, bpm = 120.0, ppqPerBar = 4.0;
+        const int bar = 96000, S = 8, step = bar / S;          // 12000 samples a step
+        const int P = 400000;                                    // the ramp tells which input sample is playing
+
+        // Input: a ramp, so an output value says which input sample it came from.
+        const int total = bar * 3;
+        juce::AudioBuffer<float> in (2, total);
+        for (int i = 0; i < total; ++i) { const float v = (float) (i % P) / (float) P; in.setSample (0, i, v); in.setSample (1, i, v); }
+        auto render = [&] (const Pattern& pat)
+        {
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (pat, S, in, total, sr, bpm, ppqPerBar, out);
+            return out;
+        };
+        auto srcAt = [&] (const juce::AudioBuffer<float>& out, int i) { return (double) out.getSample (0, i) * P; };
+        const int s4 = bar + 4 * step;      // bar 2, step 5 starts here
+
+        struct Case { int move; int arg; double t; double expect; const char* name; };
+        const Case cases[] = {
+            { repeat,  0, 0.75 * step, s4 + 0.25 * step,                      "REPEAT (2): the second half replays the run's first slice" },
+            { repeat,  2, 0.30 * step, s4 + std::fmod (0.30 * step, step / 8.0), "REPEAT (8): eighth-step slices" },
+            { reverse, 0, 0.30 * step, s4 - 1 - 0.30 * step,                  "REVERSE plays the run before it backwards" },
+            { half,    0, 0.60 * step, s4 + 0.30 * step,                      "HALF plays at half speed from the run start" },
+            { stop,    0, 0.50 * step, s4 + 0.5 * step - 0.25 * step / 2.0,   "STOP slows down like a tape brake" },
+            { dbl,     0, 0.30 * step, s4 - step + 0.60 * step,               "DOUBLE plays the run before it twice as fast" },
+            { shuffle, 1, 0.30 * step, (double) bar - bar + 1 * step + 0.30 * step + bar - bar, "SHUFFLE (step 2) plays the last bar's step 2 here" },
+        };
+        for (const auto& c : cases)
+        {
+            Pattern pat;
+            pat.move[4] = (uint8_t) c.move;
+            pat.arg[4] = (uint8_t) c.arg;
+            const auto out = render (pat);
+            const double got = srcAt (out, s4 + (int) c.t);
+            const double want = c.move == shuffle ? (double) (s4 - bar) - 4 * step + 1 * step + c.t + 0.0 : c.expect;
+            check (std::abs (got - want) < 3.0, juce::String (c.name) + " (source " + juce::String (got, 1) + ", wanted " + juce::String (want, 1) + ")");
+        }
+        {
+            Pattern pat; pat.move[4] = scratch;
+            const auto out = render (pat);
+            double lo = 1e18, hi = -1e18;
+            for (int i = s4 + 400; i < s4 + step; i += 50) { lo = juce::jmin (lo, srcAt (out, i)); hi = juce::jmax (hi, srcAt (out, i)); }
+            int turns = 0; double prev = srcAt (out, s4 + 400), dir = 0.0;
+            for (int i = s4 + 450; i < s4 + step - 50; i += 50)
+            {
+                const double d = srcAt (out, i) - prev; prev = srcAt (out, i);
+                if (std::abs (d) > 1.0) { const double nd = d > 0 ? 1.0 : -1.0; if (dir != 0.0 && nd != dir) ++turns; dir = nd; }
+            }
+            check (lo >= s4 - step - 2 && hi <= s4 + 2 && turns >= 3, "SCRATCH goes back and forth over audio already heard (" + juce::String (turns) + " turns)");
+        }
+        {
+            Pattern pat; pat.move[4] = freeze;
+            const auto out = render (pat);
+            double lo = 1e18, hi = -1e18;
+            for (int i = s4 + step / 2; i < s4 + step - 300; i += 7) { lo = juce::jmin (lo, srcAt (out, i)); hi = juce::jmax (hi, srcAt (out, i)); }
+            check (lo >= s4 - 2 && hi <= s4 + 0.091 * sr + 2, "FREEZE holds the run's first moment (a short loop at its start)");
+        }
+        {
+            // Joined steps 3-4 (index 2..3): one REVERSE run of two steps.
+            Pattern pat; pat.paint (2, 3, reverse, true);
+            const auto out = render (pat);
+            const int r0 = bar + 2 * step;
+            const double got = srcAt (out, r0 + step + 3000);
+            check (pat.runLength (2, S) == 2 && std::abs (got - (r0 - 1 - (step + 3000))) < 3.0,
+                   "joined steps play one longer move (REVERSE over two steps reads two steps back)");
+            pat.split (3);
+            check (pat.runLength (2, S) == 1 && pat.move[3] == reverse, "splitting a joined run keeps the move on each step");
+        }
+        {
+            Pattern pat; pat.move[4] = reverse;
+            const auto out = render (pat);
+            bool same = true;
+            for (int i = bar; i < s4 - 10; i += 97) same = same && std::abs (out.getSample (0, i) - in.getSample (0, i)) < 1.0e-6f;
+            for (int i = s4 + step + 300; i < bar * 2 - 10; i += 97) same = same && std::abs (out.getSample (0, i) - in.getSample (0, i)) < 1.0e-6f;
+            check (same, "THRU steps play the input untouched");
+        }
+
+        // Crossfades: a sine through every move, no clicks.
+        juce::AudioBuffer<float> sine (2, total);
+        for (int i = 0; i < total; ++i)
+        {
+            const float v = 0.8f * (float) std::sin (juce::MathConstants<double>::twoPi * 220.0 * i / sr);
+            sine.setSample (0, i, v); sine.setSample (1, i, v);
+        }
+        {
+            Pattern pat;
+            const uint8_t moves[] = { reverse, repeat, half, stop, dbl, scratch, freeze, shuffle };
+            for (int k = 0; k < 8; ++k) { pat.move[(size_t) k] = moves[k]; pat.arg[(size_t) k] = (uint8_t) (k % 3); }
+            juce::AudioBuffer<float> out;
+            tb::Mangler::renderOffline (pat, S, sine, total, sr, bpm, ppqPerBar, out);
+            float d2 = 0.0f;
+            for (int i = bar + 2; i < total; ++i)
+                d2 = juce::jmax (d2, std::abs (out.getSample (0, i) - 2.0f * out.getSample (0, i - 1) + out.getSample (0, i - 2)));
+            check (d2 < 0.06f, "every move and every change between them is click-free (largest jump " + juce::String (d2, 4) + ")");
+        }
+
+        // Gate: FILL EVERY, HOLD, FILL NEXT, AMOUNT, stopped.
+        auto live = [&] (tb::Mangler::Gate g, const Pattern& pat, int bars, std::function<void (int, tb::Mangler::Gate&)> each = nullptr)
+        {
+            tb::Mangler m;
+            m.prepare (sr, 512);
+            juce::AudioBuffer<float> buf (2, bars * bar);
+            for (int i = 0; i < bars * bar; ++i) { const float v = (float) (i % P) / (float) P; buf.setSample (0, i, v); buf.setSample (1, i, v); }
+            tb::FxClock c; c.bpm = bpm; c.ppqPerBar = ppqPerBar; c.playing = true; c.ppqPerSample = bpm / 60.0 / sr;
+            for (int pos = 0; pos < bars * bar; pos += 512)
+            {
+                if (each) each (pos, g);
+                c.ppq = pos * c.ppqPerSample;
+                m.process (buf.getWritePointer (0, pos), buf.getWritePointer (1, pos), juce::jmin (512, bars * bar - pos), c, pat, g);
+            }
+            return buf;
+        };
+        auto mangledAt = [&] (const juce::AudioBuffer<float>& b, int barIdx, int stepIdx)
+        {
+            const int i = barIdx * bar + stepIdx * step + step / 2;
+            return std::abs (b.getSample (0, i) - (float) (i % P) / (float) P) > 1.0e-4f;
+        };
+        Pattern rev; for (int k = 0; k < 8; ++k) rev.move[(size_t) k] = reverse;
+        {
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.fillEvery = 4;
+            const auto b = live (g, rev, 8);
+            check (! mangledAt (b, 0, 3) && ! mangledAt (b, 2, 6) && mangledAt (b, 3, 1) && mangledAt (b, 7, 5) && ! mangledAt (b, 4, 2),
+                   "FILL EVERY 4: only the last bar of each 4 is mangled");
+            g.fillHalf = true;
+            const auto h = live (g, rev, 4);
+            check (! mangledAt (h, 3, 2) && mangledAt (h, 3, 5), "FILL LENGTH half bar: only its second half");
+        }
+        {
+            tb::Mangler::Gate g; g.steps = S;
+            const int holdAt = bar + 2 * step + step / 3;     // mid-step 3 of bar 2
+            const auto b = live (g, rev, 3, [&] (int pos, tb::Mangler::Gate& gg) { gg.hold = pos >= holdAt && pos < bar * 2 + 3 * step; });
+            check (! mangledAt (b, 1, 2) && mangledAt (b, 1, 3) && mangledAt (b, 2, 2) && ! mangledAt (b, 2, 4),
+                   "HOLD starts at the next step and lets go at the next step");
+        }
+        {
+            tb::Mangler::Gate g; g.steps = S;
+            const auto b = live (g, rev, 4, [&] (int pos, tb::Mangler::Gate& gg) { if (pos >= bar + step * 5 && gg.fillNextCount == 0) gg.fillNextCount = 1; });
+            check (! mangledAt (b, 1, 6) && mangledAt (b, 2, 0) && mangledAt (b, 2, 7) && ! mangledAt (b, 3, 1), "FILL NEXT mangles exactly the next bar");
+        }
+        {
+            tb::Mangler::Gate g; g.on = true; g.steps = S; g.amount = 0.0f;
+            const auto b = live (g, rev, 2);
+            check (! mangledAt (b, 1, 3), "AMOUNT 0: no step fires");
+            tb::Mangler m; m.prepare (sr, 512);
+            juce::AudioBuffer<float> x (2, 4096); x.makeCopyOf (in); x.setSize (2, 4096, true);
+            juce::AudioBuffer<float> y; y.makeCopyOf (x);
+            tb::FxClock c;      // stopped
+            tb::Mangler::Gate on; on.on = true; on.steps = S;
+            m.process (y.getWritePointer (0), y.getWritePointer (1), 4096, c, rev, on);
+            float diff = 0.0f; for (int i = 0; i < 4096; ++i) diff = juce::jmax (diff, std::abs (y.getSample (0, i) - x.getSample (0, i)));
+            check (diff < 1.0e-6f, "with Live stopped MANGLE passes the sound through");
+        }
+
+        // Randomize: checked candidates, matched level, history.
+        juce::AudioBuffer<float> brk (2, bar * 2);
+        {
+            juce::Random r (7);
+            for (int i = 0; i < bar * 2; ++i)
+            {
+                const int ph = i % (step / 2);
+                const float env = std::exp (-(float) ph / 1800.0f);
+                const float v = env * (0.6f * (float) std::sin (juce::MathConstants<double>::twoPi * 90.0 * ph / sr) + 0.25f * (r.nextFloat() * 2.0f - 1.0f));
+                brk.setSample (0, i, v); brk.setSample (1, i, v);
+            }
+        }
+        {
+            juce::Random r (42);
+            int passed = 0, kept = 0;
+            for (int st = 0; st < 3; ++st)
+                for (int k = 0; k < 4; ++k)
+                {
+                    const auto p = tb::MangleOps::choose ({}, S, st, false, brk, bar * 2, sr, bpm, ppqPerBar, r, kept);
+                    const auto c = tb::MangleOps::evaluate (p, S, brk, bar * 2, sr, bpm, ppqPerBar);
+                    if (kept > 0 && c.ok() && p.activeSteps (S) > 0) ++passed;
+                    if (st == 0 && k == 0)
+                    {
+                        // Matched level: render with the trim, compare with the dry sound.
+                        juce::AudioBuffer<float> twice (2, bar * 4), out;
+                        for (int ch = 0; ch < 2; ++ch) { twice.copyFrom (ch, 0, brk, ch, 0, bar * 2); twice.copyFrom (ch, bar * 2, brk, ch, 0, bar * 2); }
+                        tb::Mangler::renderOffline (p, S, twice, bar * 4, sr, bpm, ppqPerBar, out);
+                        const double dry = brk.getRMSLevel (0, 0, bar * 2), wet = out.getRMSLevel (0, bar * 2, bar * 2);
+                        const double db = 20.0 * std::log10 (wet / dry);
+                        check (std::abs (db) < 1.0 || p.trim <= 0.501f || p.trim >= 1.999f,
+                               "randomize matches the kept bar's level to the dry sound (" + juce::String (db, 2) + " dB, trim " + juce::String (p.trim, 2) + ")");
+                    }
+                }
+            check (passed == 12, "RANDOMIZE keeps only bars that pass the checks, at GENTLE, MEDIUM and WILD (" + juce::String (passed) + " / 12)");
+            const auto g = tb::MangleOps::generate ({}, S, tb::MangleOps::gentle, false, r);
+            bool gentleMoves = true;
+            for (int k = 0; k < S; ++k) gentleMoves = gentleMoves && (g.move[(size_t) k] == thru || g.move[(size_t) k] == repeat || g.move[(size_t) k] == reverse);
+            const auto w = tb::MangleOps::generate ({}, 16, tb::MangleOps::wild, false, r);
+            check (gentleMoves && g.activeSteps (S) <= 3 && w.activeSteps (16) >= 9, "GENTLE writes a few REPEAT / REVERSE steps; WILD changes most of the bar");
+            const auto m = tb::MangleOps::generate (w, 16, tb::MangleOps::gentle, true, r);
+            int changed = 0; for (int k = 0; k < 16; ++k) changed += (m.move[(size_t) k] != w.move[(size_t) k] || m.arg[(size_t) k] != w.arg[(size_t) k] || m.tie[(size_t) k] != w.tie[(size_t) k]) ? 1 : 0;
+            check (changed >= 1 && changed <= 4, "MUTATE changes a little of the bar (" + juce::String (changed) + " steps)");
+        }
+        {
+            // A bar that plays only silence is thrown out.
+            juce::AudioBuffer<float> half (2, bar * 2);
+            half.clear();
+            for (int i = 0; i < bar * 2; ++i) if ((i % bar) >= bar / 2) { const float v = 0.5f * (float) std::sin (i * 0.05); half.setSample (0, i, v); half.setSample (1, i, v); }
+            Pattern p; p.paint (0, 7, repeat, true); p.arg[0] = 0;      // the whole bar replays its silent first half
+            const auto c = tb::MangleOps::evaluate (p, S, half, bar * 2, sr, bpm, ppqPerBar);
+            check (c.vanish && ! c.ok(), "a candidate that goes silent is rejected");
+        }
+        {
+            Rig r;
+            auto& ops = r.p.getMangleOps();
+            for (int k = 0; k < 4; ++k) ops.applyChosen (false, brk, bar * 2, sr, bpm, ppqPerBar);
+            const auto now = ops.get();
+            check (ops.historySize() == 3, "the revert arrow keeps the last three bars");
+            const bool back = ops.revert() && ops.get() != now && ops.revert() && ops.revert() && ! ops.revert();
+            check (back, "... and steps back through them");
+
+            Pattern p; p.paint (1, 2, half, true); p.move[6] = shuffle; p.arg[6] = 3; p.move[5] = repeat; p.arg[5] = 2; p.trim = 0.8f;
+            ops.set (p);
+            juce::MemoryBlock mb;
+            r.p.getStateInformation (mb);
+            ops.set ({});
+            r.p.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (ops.get() == p, "the MANGLE bar is saved with the set");
+            {
+                const auto root = testDir().getChildFile ("mangle_presets");
+                root.deleteRecursively();
+                r.p.getPresets().setRootForTesting (root);
+                tb::PresetManager::Meta m; m.name = "Mangle Kit";
+                const auto kit = r.p.getPresets().newFileFor (tb::PresetManager::Type::kit, m.name);
+                r.p.getPresets().saveKit (kit, m);
+                Rig r3;
+                r3.p.getPresets().setRootForTesting (root);
+                r3.p.getPresets().load (kit);
+                pumpPresets (r3);
+                check (r3.p.getMangleOps().get() == p, "...and in kit presets");
+                root.deleteRecursively();
+            }
+
+            // Through the plugin: on the master, no allocation, FILL NEXT from its parameter.
+            juce::AudioBuffer<float> blip (1, bar);
+            for (int i = 0; i < bar; ++i) blip.setSample (0, i, 0.5f * (float) std::sin (i * 0.031));
+            r.load (0, writeAudio ("mgl_tone", blip, 48000.0, Fmt::wavFloat));
+            setPadParam (r.p, 0, tb::params::padMode, (float) tb::params::modeLoop);
+            Pattern all; for (int k = 0; k < 8; ++k) all.move[(size_t) k] = reverse;
+            ops.set (all);
+            auto setP = [&] (const char* id, float v) { if (auto* prm = r.p.getParameters().getParameter (id)) prm->setValueNotifyingHost (prm->convertTo0to1 (v)); };
+            setP (tb::params::mglOn, 1.0f);
+            r.host.bpm = 120.0; r.host.playing = true; r.host.ppq = 0.0;
+            juce::AudioBuffer<float> buf (2, kBlock);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, r.p.getEngine().getPadNote (0), (juce::uint8) 127), 0);
+            const auto allocs = gAudioAllocs.load();
+            bool sawActive = false;
+            for (int b = 0; b < (int) (2.5 * bar / kBlock); ++b) { runBlock (r.p, r.host, buf, midi); sawActive = sawActive || r.p.getBridge().mangleActive.load(); }
+            check (gAudioAllocs.load() == allocs && sawActive && r.p.getBridge().mangleStep.load() >= 0,
+                   "MANGLE runs inside the plugin on the master, with no allocation on the audio thread");
+            r.host.playing = false;
+            r.settle();
+        }
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "10 MANGLE parameters (1357 in total)");
+    }
+
     void testA14LoopCont()
     {
         std::cout << "\n== A14: LOOP CONT ==" << std::endl;
@@ -6275,7 +6631,7 @@ namespace
         {
             TwistedBreaksProcessor p;
             auto* b1 = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters().getParameter (tb::params::padId (16, tb::params::padGain)));
-            check (p.getParameters().processor.getParameters().size() == 1347 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
+            check (p.getParameters().processor.getParameters().size() == 1357 && b1 != nullptr && b1->getName (64) == "Pad B01 Gain"
                      && b1->getVersionHint() == tb::params::kV15,
                    "32 pads: scene B's 16 have their own parameters (\"Pad B01 Gain\" ...), new in 0.13 (969 in total)");
         }
@@ -6450,7 +6806,7 @@ namespace
     {
         std::cout << "\n== Phase 12: vintage CHARACTER ==" << std::endl;
         using V = tb::PadVoice;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "16 CHARACTER + 6 RESAMPLE parameters (969 in total with scene B)");
 
         // The read path on its own: a 48 kHz ramp.
         std::vector<float> ramp (4800);
@@ -6658,7 +7014,7 @@ namespace
     {
         std::cout << "\n== Phase 11: performance macros ==" << std::endl;
         namespace mc = tb::macro;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "11 macro parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "11 macro parameters (969 in total with the later phases)");
 
         Rig r;
         juce::AudioBuffer<float> buf (2, kBlock);
@@ -6938,7 +7294,7 @@ namespace
     void testMutate()
     {
         std::cout << "\n== Phase 10: MUTATE (original, undo, reset, timing, auto) ==" << std::endl;
-        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1347, "13 MUTATE parameters (969 in total with the later phases)");
+        check (TwistedBreaksProcessor().getParameters().processor.getParameters().size() == 1357, "13 MUTATE parameters (969 in total with the later phases)");
 
         SeqRig x;
         auto& mut = x.r.p.getMutator();
@@ -7421,6 +7777,23 @@ namespace
             };
             findView (*ed);
         }
+        if (out.getFileName().contains ("mangle"))
+        {
+            tb::mangle::Pattern pat;
+            pat.move[1] = tb::mangle::repeat; pat.arg[1] = 1;
+            pat.paint (3, 4, tb::mangle::reverse, true);
+            pat.move[5] = tb::mangle::shuffle; pat.arg[5] = 2;
+            pat.paint (6, 7, tb::mangle::stop, true);
+            p.getMangleOps().set (pat);
+            setParam (p, tb::params::mglOn, 1.0f);
+            setParam (p, tb::params::mglFillEvery, 2.0f);
+            std::function<void (juce::Component&)> findView = [&] (juce::Component& c)
+            {
+                if (auto* mv = dynamic_cast<tb::ui::MainView*> (&c)) mv->showView (tb::ui::MainView::View::mangle);
+                for (auto* child : c.getChildren()) findView (*child);
+            };
+            findView (*ed);
+        }
         if (out.getFileName().contains ("presets"))
         {
             auto& pm = p.getPresets();
@@ -7631,6 +8004,8 @@ int main (int argc, char* argv[])
         testA12Stretch();
         testA13StretchSelector();
         testA14LoopCont();
+        testA15Mangle();
+        testA15Controllers();
         testA12Macros();
         testA12Akaizer();
         testEditorDrivesState();

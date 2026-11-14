@@ -10,6 +10,23 @@ namespace tb
 
     namespace
     {
+        /** A15: MANGLE moves on the pads, as on the plug-in's grid. */
+        int mangleColour (int move) noexcept
+        {
+            switch (move)
+            {
+                case mangle::repeat:  return orange;
+                case mangle::reverse: return cyan;
+                case mangle::half:    return blue;
+                case mangle::stop:    return red;
+                case mangle::dbl:     return green;
+                case mangle::scratch: return magenta;
+                case mangle::freeze:  return white;
+                case mangle::shuffle: return lime;
+                default:              return white;
+            }
+        }
+
         // Modifier keys (a pad pressed with one of these doesn't play).
         uint32_t modBit (int b) noexcept
         {
@@ -315,6 +332,7 @@ namespace tb
             case Mode::keyboard: return "SLICES";
             case Mode::perform:  return "PERFORM";
             case Mode::scene:    return "SNAPSHOTS";
+            case Mode::mangle:   return "MANGLE";
         }
         return "";
     }
@@ -408,6 +426,7 @@ namespace tb
                         case step:     modeAtomic = (int) Mode::steps; break;
                         case perform:  modeAtomic = (int) Mode::perform; break;
                         case scene:    modeAtomic = (int) Mode::scene; break;
+                        case chords:   modeAtomic = (int) Mode::mangle; break;      // A15
                         case fixedVel: fixedVelOn = ! fixedVelOn.load(); break;
                         case noteRepeat: if ((usbMods & 1u) != 0) rollRate = (rollRate.load() + 1) % 3; break;
                         default: break;
@@ -631,6 +650,7 @@ namespace tb
 
     juce::String MikroController::paramLabel() const
     {
+        if (getMode() == Mode::mangle) return processor.getMangleOps().isBusy() ? "MANGLE: LISTENING" : "MANGLE MIX";
         if (getMode() == Mode::steps && ! heldSteps.empty())
             return "STEP " + juce::String (heldSteps.front().step + 1) + " " + kStepFields[kFieldOrder[stepField]];
         const auto v = pageParams();
@@ -641,6 +661,7 @@ namespace tb
 
     juce::String MikroController::paramValue() const
     {
+        if (getMode() == Mode::mangle) return juce::String (juce::roundToInt (raw (params::mglMix))) + "%";
         if (getMode() == Mode::steps && ! heldSteps.empty())
         {
             const auto st = bridge.seq.get (selectedPad.load(), heldSteps.front().step);
@@ -696,6 +717,12 @@ namespace tb
             const int units = browseAcc / 2;
             browseAcc -= units * 2;
             if (units != 0) processor.getPresets().moveCursor (units);
+            return;
+        }
+        if (getMode() == Mode::mangle)
+        {
+            const float v = juce::jlimit (0.0f, 100.0f, raw (params::mglMix) + (float) ticks * 2.0f);
+            setParamPlain (params::mglMix, v);
             return;
         }
         if (getMode() == Mode::steps && ! heldSteps.empty())
@@ -788,6 +815,7 @@ namespace tb
         if (! down)
         {
             if (b == tap) setFill (false);
+            if (b == pattern) setParamPlain (params::mglHold, 0.0f);
             if (b == duplicate) dupSource = -1;
             if (b == encoderTouch && nowMs - lastTurnMs > 0.0) endGesture();
             return;
@@ -818,12 +846,23 @@ namespace tb
             case fixedVel:                      // (toggled on the USB thread)
                 flash ("FIXED VEL", fixedVelOn.load() ? "ON" : "OFF", nowMs);
                 break;
+            case pattern:                       // A15: MANGLE HOLD (SHIFT: FILL NEXT)
+                if (sh) { setParamPlain (params::mglFillNext, 1.0f); fillNextTicks = 4; flash ("MANGLE", "FILL NEXT BAR", nowMs); }
+                else    { setParamPlain (params::mglHold, 1.0f); flash ("MANGLE", "HOLD", nowMs); }
+                break;
             case variation:
+                if (getMode() == Mode::mangle)
+                {
+                    if (sh) processor.getMangleOps().mutate(); else processor.getMangleOps().randomize();
+                    flash ("MANGLE", sh ? "MUTATE" : "RANDOMIZE", nowMs);
+                    break;
+                }
                 if (sh) { if (processor.getMutator().canUndo()) processor.getMutator().undo(); flash ("MUTATE", "UNDO", nowMs); }
                 else    { processor.getMutator().mutate(); flash ("MUTATE", "GO", nowMs); }
                 break;
             case tap:       setFill (true); flash ("FILL", "HELD", nowMs); break;
             case events:                        // A11: TWIST the selected pad (SHIFT: undo it)
+                if (getMode() == Mode::mangle) { flash ("MANGLE", processor.getMangleOps().revert() ? "REVERT" : "NOTHING TO REVERT", nowMs); break; }
                 if (sh) { const auto n = processor.getPadOps().undoName(); flash ("UNDO", processor.getPadOps().undo() ? n : juce::String ("NOTHING"), nowMs); }
                 else    { processor.getPadOps().twist (selectedPad.load()); flash ("TWIST", padLabel (selectedPad.load()), nowMs); }
                 break;
@@ -887,6 +926,44 @@ namespace tb
 
         switch (mode)
         {
+            case Mode::mangle:
+            {
+                auto& ops = processor.getMangleOps();
+                const int S = ops.steps();
+                if (! down)
+                {
+                    if (num == mangleHeldStep)
+                    {
+                        // A tap (nothing joined): paint it, or back to THRU if it already has this move.
+                        if (! mangleJoined)
+                        {
+                            const auto p = ops.get();
+                            if (num < S && p.move[(size_t) p.runStart (num)] == mangleBrush && p.runLength (p.runStart (num), S) == 1) ops.clearStep (num);
+                            else if (num < S) ops.paint (num, num, mangleBrush, false);
+                        }
+                        mangleHeldStep = -1;
+                    }
+                    return;
+                }
+                if (held[shift])
+                {
+                    if (num < mangle::kNumMoves) { mangleBrush = num; flash ("MANGLE MOVE", mangle::kMoveNames[num], nowMs); }
+                    return;
+                }
+                if (num >= S) return;
+                if (held[erase]) { ops.clearStep (num); flash ("MANGLE", "STEP " + juce::String (num + 1) + " THRU", nowMs); return; }
+                if (mangleHeldStep >= 0 && mangleHeldStep != num)
+                {
+                    ops.paint (mangleHeldStep, num, mangleBrush, true);
+                    mangleJoined = true;
+                    flash (mangle::kMoveNames[mangleBrush], "STEPS " + juce::String (juce::jmin (mangleHeldStep, num) + 1) + "-"
+                                                             + juce::String (juce::jmax (mangleHeldStep, num) + 1), nowMs);
+                    return;
+                }
+                mangleHeldStep = num;
+                mangleJoined = false;
+                return;
+            }
             case Mode::pads:
             {
                 if (! down) return;
@@ -1042,7 +1119,8 @@ namespace tb
         // ---- Buttons: dim = available, bright = on / held.
         auto btn = [this] (int b, bool on) { lights.setButton (b, on ? levelBright : levelDim); };
         btn (padMode, mode == Mode::pads);   btn (keyboard, mode == Mode::keyboard); btn (step, mode == Mode::steps);
-        btn (perform, mode == Mode::perform); btn (scene, mode == Mode::scene);
+        btn (perform, mode == Mode::perform); btn (scene, mode == Mode::scene); btn (chords, mode == Mode::mangle);
+        btn (pattern, raw (params::mglHold) > 0.5f || bridge.mangleActive.load (std::memory_order_relaxed));
         btn (plugin, page == Page::pad && mode != Mode::perform);
         btn (swing, page == Page::seq && mode != Mode::perform);
         btn (volume, page == Page::mix && mode != Mode::perform);
@@ -1139,6 +1217,21 @@ namespace tb
                     level = armed ? (blinkOn ? 3 : 0) : (on ? 3 : 1);
                     break;
                 }
+                case Mode::mangle:
+                {
+                    // Each step in its move's colour (THRU dim white), the playhead bright white.
+                    const auto pat = bridge.mangle.get();
+                    const int S = processor.getMangleOps().steps();
+                    if (held[shift]) { if (num < mangle::kNumMoves) { colour = mangleColour (num); level = num == mangleBrush ? 3 : 1; } break; }
+                    if (num >= S) break;
+                    const int mv = pat.move[(size_t) pat.runStart (num)];
+                    const int ph = bridge.mangleStep.load (std::memory_order_relaxed);
+                    if (num == mangleHeldStep) { colour = white; level = blinkOn ? 3 : 0; }
+                    else if (num == ph)         { colour = bridge.mangleActive.load() ? red : white; level = 3; }
+                    else if (mv != mangle::thru) { colour = mangleColour (mv); level = 2; }
+                    else                        { colour = white; level = 1; }
+                    break;
+                }
                 case Mode::scene:
                 {
                     if (num >= SnapshotManager::kSlots) break;
@@ -1194,6 +1287,7 @@ namespace tb
         const auto mode = getMode();
         juce::String head = modeName (mode);
         if (mode == Mode::pads)  head << " " << (juce::roundToInt (sceneViewRaw->load()) == 0 ? "A" : "B");
+        if (mode == Mode::mangle) head << " " << mangle::kMoveShort[mangleBrush];
         if (mode == Mode::steps) head << (stepPage == 0 ? " 1-16" : " 17-32");
         if (mode == Mode::steps || mode == Mode::keyboard)
         {
@@ -1218,6 +1312,7 @@ namespace tb
     void MikroController::tick (double nowMs)
     {
         if (! enabled || hub == nullptr) return;
+        if (fillNextTicks > 0 && --fillNextTicks == 0) setParamPlain (params::mglFillNext, 0.0f);
         if (hub->getConnectionCount() != connectionSeen)
         {
             connectionSeen = hub->getConnectionCount();

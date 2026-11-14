@@ -38,6 +38,7 @@ namespace tb
                 v.prepare (sampleRate);
 
         master.prepare (sampleRate, maxBlockSize);
+        mangler.prepare (sampleRate, maxBlockSize);
         for (auto& g : groups)
             g.prepare (sampleRate, juce::jmax (512, maxBlockSize));
 
@@ -69,6 +70,7 @@ namespace tb
         padPeak.fill (0.0f);
         padFlash.fill (false);
         master.reset();
+        mangler.reset();
         for (auto& g : groups) g.reset();
         groupPeak.fill (0.0f);
         scopeCounter = 0;
@@ -1825,8 +1827,12 @@ namespace tb
             }
             const int tapGroup = rsTapActive ? rsSource.load (std::memory_order_relaxed) - 1 : -1;
             for (int g = 0; g < kNumGroups; ++g)
+            {
+                Mangler* mg = mglTarget == g + 1 ? &mangler : nullptr;
                 groupPeak[(size_t) g] = juce::jmax (groupPeak[(size_t) g],
-                                                    groups[(size_t) g].mixInto (buffer, start, n, clock, g == tapGroup ? &rsTap : nullptr));
+                                                    groups[(size_t) g].mixInto (buffer, start, n, clock, g == tapGroup ? &rsTap : nullptr,
+                                                                                mg, &mglPattern, &mglGate));
+            }
 
             start += n;
             num   -= n;
@@ -1846,6 +1852,19 @@ namespace tb
         engineSamples += lastBlockLen;
         lastBlockLen = numSamples;
         flushAutoOffs (numSamples);
+
+        // ---- A15 MANGLE: this block's bar pattern and gate.
+        if (const auto v = bridge.mangle.getVersion(); v != mglVersion) { mglVersion = v; mglPattern = bridge.mangle.get(); }
+        if (params.mglTarget != mglTarget) { mglTarget = juce::jlimit (0, kNumGroups, params.mglTarget); mangler.reset(); }
+        mglGate.on        = params.mglOn;
+        mglGate.hold      = params.mglHold;
+        mglGate.fillEvery = params.mglFillEvery;
+        mglGate.fillHalf  = params.mglFillHalf;
+        mglGate.steps     = params.mglSteps;
+        mglGate.amount    = params.mglAmount;
+        mglGate.mix       = params.mglMix;
+        if (params.mglFillNext && ! mglFillNextLast) ++mglGate.fillNextCount;
+        mglFillNextLast = params.mglFillNext;
         padPeak.fill (0.0f);
         padFlash.fill (false);
         groupPeak.fill (0.0f);
@@ -2046,6 +2065,21 @@ namespace tb
 
         transportNow = nullptr;
         currentParams = nullptr;
+
+        // ---- A15 MANGLE on the master (a group target ran inside its bus)
+        if (mglTarget == 0)
+        {
+            FxClock clock;
+            clock.ppq          = transport.ppqAtBlockStart;
+            clock.ppqPerSample = transport.ppqPerSample;
+            clock.bpm          = transport.bpm;
+            clock.ppqPerBar    = transport.ppqPerBar();
+            clock.playing      = transport.isPlaying && transport.ppqPerSample > 0.0;
+            mangler.process (buffer.getWritePointer (0), buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+                             numSamples, clock, mglPattern, mglGate);
+        }
+        bridge.mangleStep.store (mangler.currentStep(), std::memory_order_relaxed);
+        bridge.mangleActive.store (mangler.currentActive(), std::memory_order_relaxed);
 
         // ---- Master
         master.setGainDb (params.masterGainDb);

@@ -11,6 +11,7 @@
 #include "Engine/SampleBuffer.h"
 #include "Engine/SliceTable.h"
 #include "Engine/MasterSection.h"
+#include "Engine/Mangler.h"
 #include "Engine/GroupBus.h"
 #include "Core/FxDefs.h"
 #include "Core/SequencerData.h"
@@ -142,6 +143,13 @@ namespace tb
             float    macroAmount = 0.6f;  // 0..1
             int      macroGroup  = 4;     // 0..3, 4 = all
             bool     macroLatch  = false;
+
+            // A15 MANGLE
+            bool  mglOn = false, mglHold = false, mglFillHalf = false, mglFillNext = false;
+            int   mglTarget = 0;           // 0 master, 1..4 group A..D
+            int   mglSteps = 8;
+            int   mglFillEvery = 0;        // bars, 0 off
+            float mglMix = 1.0f, mglAmount = 1.0f;
         };
 
         static constexpr int kBankSlots = 8;
@@ -353,6 +361,15 @@ namespace tb
 
         EngineBridge& bridge;
         MasterSection master;
+        Mangler mangler;
+        Mangler::Gate mglGate;
+        mangle::Pattern mglPattern;
+        uint32_t mglVersion = 0xffffffffu;
+        int  mglTarget = 0;
+        bool mglFillNextLast = false;
+    public:
+        Mangler& getMangler() noexcept { return mangler; }
+    private:
 
         SpscQueue<PadCommand, 128> padCommands;
         std::array<SliceTable, kNumPads> padSlices {};

@@ -29,6 +29,23 @@ namespace tb
         constexpr int kSceneResample = push::sceneTop - 2;    // 41
         constexpr int kSceneView     = push::sceneTop - 3;    // 40
         constexpr int kSceneLayout   = push::sceneTop - 4;    // 39
+        constexpr int kSceneMangle   = push::sceneTop - 5;    // 38 (A15: MANGLE HOLD)
+
+        int mangleColourOf (int move) noexcept
+        {
+            switch (move)
+            {
+                case mangle::repeat:  return push::amber;
+                case mangle::reverse: return push::cyan;
+                case mangle::half:    return push::blue;
+                case mangle::stop:    return push::red;
+                case mangle::dbl:     return push::green;
+                case mangle::scratch: return push::magenta;
+                case mangle::freeze:  return push::ice;
+                case mangle::shuffle: return push::lime;
+                default:              return push::dark;
+            }
+        }
 
         // White-LED keys this mode uses (lit dim = available, full = held / on).
         constexpr int kWhiteKeys[] = { push::left, push::right, push::up, push::down, push::pageLeft, push::pageRight,
@@ -266,7 +283,7 @@ namespace tb
     void PushController::fromValueTree (const juce::ValueTree& t)
     {
         if (! t.isValid()) return;
-        layoutAtomic = juce::jlimit (0, 1, (int) t.getProperty ("layout", 0));
+        layoutAtomic = juce::jlimit (0, 2, (int) t.getProperty ("layout", 0));
         // 0.25.2: no "enabled" any more - the controller is found on its own (old sets' flag ignored).
     }
 
@@ -809,9 +826,81 @@ namespace tb
             else selectPad (pad);
             return;
         }
+        if (layoutAtomic.load() == 2) { handleMangleCell (row, col, on); return; }
         const int step = (3 - row) * 8 + col;
         if (on) pressStep (step, velocity);
         else    releaseStep (step);
+    }
+
+    // A15: the MANGLE layout in the bottom four rows (row 0 is Push's bottom row).
+    void PushController::handleMangleCell (int row, int col, bool on)
+    {
+        auto& ops = processor.getMangleOps();
+        const int S = ops.steps();
+        if (row == 2 || row == 3)
+        {
+            const int st = (3 - row) * 8 + col;                 // steps 1-8 under the pads, 9-16 below them
+            if (! on)
+            {
+                if (st == mangleHeldStep)
+                {
+                    if (! mangleJoined && st < S)
+                    {
+                        const auto p = ops.get();
+                        if (held[push::deleteButton]) ops.clearStep (st);
+                        else if (p.move[(size_t) p.runStart (st)] == mangleBrush && p.runLength (p.runStart (st), S) == 1) ops.clearStep (st);
+                        else ops.paint (st, st, mangleBrush, false);
+                    }
+                    mangleHeldStep = -1;
+                }
+                return;
+            }
+            if (st >= S) return;
+            if (mangleHeldStep >= 0 && mangleHeldStep != st) { ops.paint (mangleHeldStep, st, mangleBrush, true); mangleJoined = true; return; }
+            mangleHeldStep = st;
+            mangleJoined = false;
+            return;
+        }
+        if (! on) return;
+        if (row == 1) { mangleBrush = 1 + col; return; }      // REPEAT .. SHUFFLE
+        // row 0: ON, RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS
+        switch (col)
+        {
+            case 0: setParamPlain (params::mglOn, raw (params::mglOn) > 0.5f ? 0.0f : 1.0f); break;
+            case 1: ops.randomize(); break;
+            case 2: ops.mutate(); break;
+            case 3: ops.revert(); break;
+            case 4: setParamPlain (params::mglFillNext, 1.0f); fillNextTicks = 4; break;
+            case 5: setParamPlain (params::mglSteps, (float) ((juce::roundToInt (raw (params::mglSteps)) + 1) % 3)); break;
+            default: break;
+        }
+    }
+
+    int PushController::mangleCellColour (int row, int col, bool blinkOn) const
+    {
+        auto& ops = processor.getMangleOps();
+        const int S = ops.steps();
+        if (row == 2 || row == 3)
+        {
+            const int st = (3 - row) * 8 + col;
+            if (st >= S) return push::off;
+            const auto p = bridge.mangle.get();
+            const int ph = bridge.mangleStep.load (std::memory_order_relaxed);
+            if (st == mangleHeldStep) return blinkOn ? push::white : push::off;
+            if (st == ph) return bridge.mangleActive.load (std::memory_order_relaxed) ? push::red : push::white;
+            return mangleColourOf (p.move[(size_t) p.runStart (st)]);
+        }
+        if (row == 1) return 1 + col == mangleBrush ? push::white : mangleColourOf (1 + col);
+        switch (col)
+        {
+            case 0: return raw (params::mglOn) > 0.5f ? push::red : push::redDim;
+            case 1: return ops.isBusy() ? (blinkOn ? push::green : push::off) : push::green;
+            case 2: return push::greenDim;
+            case 3: return ops.historySize() > 0 ? push::amber : push::amberDim;
+            case 4: return fillNextTicks > 0 ? push::white : push::red;
+            case 5: return push::blue;
+            default: return push::off;
+        }
     }
 
     void PushController::setPage (Page p)
@@ -883,6 +972,7 @@ namespace tb
             if (cc == push::repeat || cc == kSceneFill) setFill (held[push::repeat] || held[kSceneFill]);
             if (push::isLowerRow (cc) && was) toggleFx (cc - push::lowerRow1, false);
             if (cc == push::duplicate) dupSource = -1;
+            if (cc == kSceneMangle) setParamPlain (params::mglHold, 0.0f);
             return;
         }
 
@@ -930,7 +1020,8 @@ namespace tb
             case push::layout:
             case kSceneLayout:
                 heldSteps.clear();
-                layoutAtomic = 1 - layoutAtomic.load();
+                mangleHeldStep = -1;
+                layoutAtomic = (layoutAtomic.load() + 1) % 3;
                 if (onSettingsChanged) onSettingsChanged();
                 break;
             case push::fixedLength: cycleLength (shift); break;
@@ -947,6 +1038,10 @@ namespace tb
                 break;
             }
             case push::undo:        if (shift) processor.getPadOps().redo(); else processor.getPadOps().undo(); break;   // A11
+            case kSceneMangle:                                                   // A15: MANGLE HOLD (Shift: FILL NEXT)
+                if (shift) { setParamPlain (params::mglFillNext, 1.0f); fillNextTicks = 4; }
+                else       setParamPlain (params::mglHold, 1.0f);
+                break;
             default: break;
         }
     }
@@ -1108,6 +1203,7 @@ namespace tb
     {
         using namespace push;
         if (! enabled || hub == nullptr) return;
+        if (fillNextTicks > 0 && --fillNextTicks == 0) setParamPlain (params::mglFillNext, 0.0f);
 
         if (hub->getConnectionCount() != connectionSeen)
         {
@@ -1159,7 +1255,9 @@ namespace tb
             for (int col = 0; col < 8; ++col)
             {
                 const int pad = padAt (row, col);
-                const int c = pad >= 0 ? padColour (pad, blinkOn) : stepColour ((3 - row) * 8 + col, len, playhead);
+                const int c = pad >= 0 ? padColour (pad, blinkOn)
+                            : layoutAtomic.load() == 2 ? mangleCellColour (row, col, blinkOn)
+                            : stepColour ((3 - row) * 8 + col, len, playhead);
                 sendPad (padNote (row, col), idx (c), false);
             }
 
@@ -1190,8 +1288,9 @@ namespace tb
         }
         sendButton (kSceneResample, idx (rc), false);
         sendButton (kSceneView, idx (juce::roundToInt (sceneViewRaw->load()) == 0 ? amber : blue), false);
-        sendButton (kSceneLayout, idx (layoutAtomic.load() == 0 ? amberDim : amber), false);
-        for (int cc = sceneBottom; cc < kSceneLayout; ++cc) sendButton (cc, 0, false);
+        sendButton (kSceneLayout, idx (layoutAtomic.load() == 0 ? amberDim : layoutAtomic.load() == 1 ? amber : red), false);
+        sendButton (kSceneMangle, idx (raw (params::mglHold) > 0.5f || bridge.mangleActive.load() ? red : redDim), false);
+        for (int cc = sceneBottom; cc < kSceneMangle; ++cc) sendButton (cc, 0, false);
 
         // ---- Mute / solo show the selected pad; white keys dim, full while held.
         sendButton (push::mute, idx (padRaw[(size_t) s].mute->load() > 0.5f || held[push::mute] ? red : redDim), false);

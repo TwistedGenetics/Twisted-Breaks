@@ -1,4 +1,5 @@
 #include "Engine/GroupBus.h"
+#include "Engine/Mangler.h"
 #include "Core/Parameters.h"
 
 namespace tb
@@ -51,13 +52,13 @@ namespace tb
     }
 
     float GroupBus::mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock& clock,
-                             juce::AudioBuffer<float>* tap) noexcept
+                             juce::AudioBuffer<float>* tap, Mangler* mangler, const mangle::Pattern* pattern, const void* gate) noexcept
     {
         numSamples = juce::jmin (numSamples, spanLength);
 
         // Nothing routed here this span and no effect on or ringing: just keep
-        // the level glides and the FX clock / histories moving.
-        if (! used && (fxBypass || chain.isIdle()))
+        // the level glides and the FX clock / histories moving (MANGLE always runs: it replays the past).
+        if (! used && (fxBypass || chain.isIdle()) && mangler == nullptr)
         {
             gainL.skip (numSamples);
             gainR.skip (numSamples);
@@ -69,6 +70,9 @@ namespace tb
         if (fxBypass) chain.recordOnly (input.getReadPointer (0), input.getReadPointer (1), numSamples, clock);
         else          chain.process (input.getWritePointer (0), input.getWritePointer (1), numSamples, clock);
         used = true;      // the input now holds effect output: clear it next span
+        if (mangler != nullptr && pattern != nullptr && gate != nullptr)
+            mangler->process (input.getWritePointer (0), input.getWritePointer (1), numSamples, clock, *pattern,
+                              *static_cast<const Mangler::Gate*> (gate));
 
         const float* inL = input.getReadPointer (0);
         const float* inR = input.getReadPointer (1);

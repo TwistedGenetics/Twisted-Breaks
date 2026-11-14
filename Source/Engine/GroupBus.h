@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "Engine/FXChain.h"
+#include "Core/MangleData.h"
 
 namespace tb
 {
@@ -44,8 +45,10 @@ namespace tb
 
         /** FX, then level / pan, adding into `dest` at `destStart`. Returns the post-fader peak. */
         /** `tap` (optional): the group's output is also added there (RESAMPLE). */
+        /** `mangler` (optional, A15): MANGLE targets this group and runs after its FX. */
         float mixInto (juce::AudioBuffer<float>& dest, int destStart, int numSamples, const FxClock&,
-                       juce::AudioBuffer<float>* tap = nullptr) noexcept;
+                       juce::AudioBuffer<float>* tap = nullptr, class Mangler* mangler = nullptr,
+                       const mangle::Pattern* pattern = nullptr, const void* gate = nullptr) noexcept;
 
         /** PANIC: silence the effects (tails, repeats) too. */
         void panicFx() noexcept { chain.reset(); }

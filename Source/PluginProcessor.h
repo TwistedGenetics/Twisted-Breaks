@@ -15,6 +15,7 @@
 #include "Core/MikroTester.h"
 #include "Core/MikroController.h"
 #include "Core/PadOps.h"
+#include "Core/MangleOps.h"
 #include "Core/PresetManager.h"
 #include "Core/Exporter.h"
 #include "Core/SongMode.h"
@@ -87,6 +88,7 @@ public:
     tb::MikroTester&     getMikro() noexcept     { return *mikro; }
     tb::MikroController& getMikroMode() noexcept { return *mikroMode; }
     tb::PadOps&          getPadOps() noexcept    { return *padOps; }
+    tb::MangleOps&       getMangleOps() noexcept { return *mangleOps; }
     tb::PresetManager&   getPresets() noexcept   { return *presets; }
     tb::Exporter&        getExporter() noexcept  { return *exporter; }
     tb::SongMode&        getSong() noexcept      { return *song; }
@@ -183,6 +185,7 @@ private:
     int outCollectedCount = 0;
     void collectOut (int offset) noexcept;
     std::unique_ptr<tb::PadOps>          padOps;     // A11: copy / paste / undo
+    std::unique_ptr<tb::MangleOps>       mangleOps;  // A15: MANGLE bar editing / randomize
     std::unique_ptr<tb::PresetManager>   presets;    // A11: kits, pads, sequences
     std::unique_ptr<tb::SongMode>        song;       // A11: snapshot chain
     std::unique_ptr<tb::Exporter>        exporter;   // A11: WAV / MIDI export
@@ -214,6 +217,9 @@ private:
     std::atomic<float>* sceneViewParam = nullptr;
     std::atomic<float>* macroGroupParam  = nullptr;
     std::atomic<float>* macroLatchParam  = nullptr;
+    std::atomic<float>* mglOnParam = nullptr, *mglTargetParam = nullptr, *mglStepsParam = nullptr, *mglMixParam = nullptr,
+                       *mglAmountParam = nullptr, *mglFillEveryParam = nullptr, *mglFillLenParam = nullptr,
+                       *mglHoldParam = nullptr, *mglFillNextParam = nullptr;
     std::atomic<float>* bankActiveParam = nullptr;
     std::atomic<float>* bankAtParam = nullptr;
 

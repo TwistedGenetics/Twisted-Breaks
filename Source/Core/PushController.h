@@ -121,7 +121,14 @@ namespace tb
                                 next pad, up / down = scene A / B, FIXED LENGTH =
                                 LEN 8 / 16 / 32 (SHIFT: the pad's own length),
                                 UNDO = undo MUTATE, LAYOUT = lane / pads.
-          SCENE COLUMN (top->)  MUTATE, FILL (hold), RESAMPLE, VIEW A/B, LAYOUT.
+                                MANGLE layout (A15, LAYOUT again): the two rows under
+                                the pads = the 16 MANGLE steps, 1-8 then 9-16, like the
+                                lane (tap paints the move, again = THRU; hold one, tap
+                                another = join; DELETE + tap = THRU), the row below =
+                                the moves REPEAT..SHUFFLE, the bottom row = ON,
+                                RANDOMIZE, MUTATE, REVERT, FILL NEXT, STEPS 4/8/16.
+          SCENE COLUMN (top->)  MUTATE, FILL (hold), RESAMPLE, VIEW A/B, LAYOUT,
+                                MANGLE HOLD (hold; SHIFT: FILL NEXT).
                                 ACCENT = MUTATE and REPEAT = FILL too.
 
         Threads: the MIDI thread plays pads straight into the engine (its own
@@ -157,9 +164,9 @@ namespace tb
 
         // ---- What the plugin window shows --------------------------------------------------
         enum class Page { pad, fx, seq, mix };
-        enum class Layout { lane, pads };
+        enum class Layout { lane, pads, mangle };      // A15: MANGLE (LAYOUT cycles lane, pads, mangle)
         Page   getPage() const noexcept { return page; }
-        Layout getLayout() const noexcept { return layoutAtomic.load() == 0 ? Layout::lane : Layout::pads; }
+        Layout getLayout() const noexcept { const int l = layoutAtomic.load(); return l == 0 ? Layout::lane : l == 1 ? Layout::pads : Layout::mangle; }
         static const char* pageName (Page) noexcept;
         juce::String encoderLabel (int index) const;     // 0..7
         juce::String encoderValue (int index) const;
@@ -257,7 +264,13 @@ namespace tb
         std::atomic<bool> userMode { false }, sawModeSysex { false };
         std::atomic<bool> needRedraw { false }, needRelease { false };
         std::atomic<uint32_t> midiMods { 0 };              // modifier keys held (MIDI thread's view)
-        std::atomic<int> layoutAtomic { 0 };               // 0 lane, 1 pads
+        std::atomic<int> layoutAtomic { 0 };               // 0 lane, 1 pads, 2 mangle (A15)
+        int mangleBrush = 1;                               // A15: the move the steps paint (REPEAT)
+        int mangleHeldStep = -1;
+        bool mangleJoined = false;
+        int fillNextTicks = 0;
+        void handleMangleCell (int row, int col, bool on);
+        int  mangleCellColour (int row, int col, bool blinkOn) const;
         std::atomic<int> lastInput { -1 };                 // packed status / data1 / data2
         std::atomic<int> sysexDev { 0x01 }, sysexModel { 0x01 };
         std::array<std::atomic<int>, 128> paletteRgb {};    // 0xRRGGBB, -1 unknown

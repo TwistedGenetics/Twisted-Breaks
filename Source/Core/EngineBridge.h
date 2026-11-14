@@ -7,6 +7,7 @@
 #include "Core/SequencerData.h"
 #include "Core/SliceSeqData.h"
 #include "Core/MacroRecipes.h"
+#include "Core/MangleData.h"
 
 namespace tb
 {
@@ -94,6 +95,9 @@ namespace tb
     {
         // ---- UI -> audio -----------------------------------------------------
         MacroRecipes macros;               // A12: the macros' recipes (editable)
+        MangleData mangle;                 // A15: the MANGLE bar (editable)
+        std::atomic<int>  mangleStep { -1 };       // audio -> UI: the step playing (-1 stopped)
+        std::atomic<bool> mangleActive { false };  // audio -> UI: steps are being mangled now
         SpscQueue<PadUiEvent, 256> padEvents;
         /** A7: pads played from a controller's own port (Push 3 User mode). Producer: that port's MIDI thread. */
         SpscQueue<PadUiEvent, 256> controllerPadEvents;

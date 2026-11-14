@@ -261,6 +261,7 @@ namespace tb::ui
           sceneStrip (p),
           presetPanel (p),
           macroEditor (p),
+          manglePanel (p),
           kitBar (p),
           meter (p.getBridge()),
           fxGrid (p),
@@ -280,6 +281,10 @@ namespace tb::ui
         addChildComponent (resamplePanel);
         addChildComponent (presetPanel);
         addChildComponent (macroEditor);
+        addChildComponent (manglePanel);
+        addChildComponent (mangleKey);
+        mangleKey.onClick = [this] { showView (View::mangle); };
+        manglePanel.onBack = [this] { showView (View::fx); };
         addAndMakeVisible (kitBar);
         kitBar.onOpen = [this] { showView (view == View::presets ? View::crt : View::presets); };
         addAndMakeVisible (sceneStrip);
@@ -428,6 +433,8 @@ namespace tb::ui
         resamplePanel.setBounds (layout::scope);
         presetPanel.setBounds (layout::seqView);
         macroEditor.setBounds (layout::seqView);
+        manglePanel.setBounds (layout::seqView);
+        mangleKey.setBounds (1062, 300, 104, 26);
         kitBar.setBounds (layout::kitBar);
         sceneStrip.setBounds (layout::sceneStrip);
         padEditor.setBounds (layout::padEditor);
@@ -493,6 +500,7 @@ namespace tb::ui
             case View::resample:  resamplePanel.refresh(); break;
             case View::presets:   presetPanel.refresh(); break;
             case View::macroEdit: macroEditor.refresh(); break;
+            case View::mangle:    manglePanel.refresh(); break;
             case View::crt:   waveform.refresh(); break;
         }
         kitBar.refresh();
@@ -671,8 +679,11 @@ namespace tb::ui
         mixer.setVisible (v == View::mixer);
         fxEditor.setVisible (v == View::fx);
         sequencer.setVisible (v == View::sequencer);
-        transportDisplay.setVisible (v != View::sequencer && v != View::presets && v != View::snapshots && v != View::macroEdit);
+        transportDisplay.setVisible (v != View::sequencer && v != View::presets && v != View::snapshots && v != View::macroEdit && v != View::mangle);
         macroEditor.setVisible (v == View::macroEdit);   // the sequencer shows BPM / position itself
+        manglePanel.setVisible (v == View::mangle);
+        mangleKey.setVisible (v == View::fx);
+        if (v == View::fx) mangleKey.toFront (false);
         presetPanel.setVisible (v == View::presets);
         if (v == View::presets) processor.getPresets().ensureFactoryContent();
         sliceSeq.setVisible (v == View::sliceSeq);
@@ -688,7 +699,7 @@ namespace tb::ui
         navKeys[0]->setToggleState (crt && ! slice,     dontSendNotification);
         navKeys[1]->setToggleState (crt && slice,       dontSendNotification);
         navKeys[2]->setToggleState (view == View::sequencer, dontSendNotification);
-        navKeys[3]->setToggleState (view == View::fx || view == View::macroEdit, dontSendNotification);
+        navKeys[3]->setToggleState (view == View::fx || view == View::macroEdit || view == View::mangle, dontSendNotification);
         navKeys[4]->setToggleState (view == View::mixer, dontSendNotification);
         navKeys[5]->setToggleState (view == View::snapshots, dontSendNotification);
         navKeys[6]->setToggleState (view == View::resample, dontSendNotification);

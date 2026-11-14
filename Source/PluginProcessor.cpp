@@ -38,6 +38,15 @@ TwistedBreaksProcessor::TwistedBreaksProcessor (bool detectControllers)
     sceneViewParam   = apvts.getRawParameterValue (tb::params::sceneView);
     macroGroupParam  = apvts.getRawParameterValue (tb::params::macroGroup);
     macroLatchParam  = apvts.getRawParameterValue (tb::params::macroLatch);
+    mglOnParam        = apvts.getRawParameterValue (tb::params::mglOn);
+    mglTargetParam    = apvts.getRawParameterValue (tb::params::mglTarget);
+    mglStepsParam     = apvts.getRawParameterValue (tb::params::mglSteps);
+    mglMixParam       = apvts.getRawParameterValue (tb::params::mglMix);
+    mglAmountParam    = apvts.getRawParameterValue (tb::params::mglAmount);
+    mglFillEveryParam = apvts.getRawParameterValue (tb::params::mglFillEvery);
+    mglFillLenParam   = apvts.getRawParameterValue (tb::params::mglFillLen);
+    mglHoldParam      = apvts.getRawParameterValue (tb::params::mglHold);
+    mglFillNextParam  = apvts.getRawParameterValue (tb::params::mglFillNext);
     jassert (seqFillParam != nullptr);
     jassert (seqRunParam && seqLengthParam && seqResParam && seqQuantParam);
     bankActiveParam = apvts.getRawParameterValue (tb::params::bankActive);
@@ -119,6 +128,7 @@ TwistedBreaksProcessor::TwistedBreaksProcessor (bool detectControllers)
     mutator   = std::make_unique<tb::Mutator> (*this);
     resampler = std::make_unique<tb::Resampler> (*this);
     padOps    = std::make_unique<tb::PadOps> (*this);
+    mangleOps = std::make_unique<tb::MangleOps> (*this);
     presets   = std::make_unique<tb::PresetManager> (*this);
     song      = std::make_unique<tb::SongMode> (*this);
     exporter  = std::make_unique<tb::Exporter> (*this);
@@ -270,6 +280,15 @@ void TwistedBreaksProcessor::fillParams (tb::AudioEngine::BlockParams& p, Load&&
     p.macroAmount = ld (macroAmountParam) / 100.0f;
     p.macroGroup  = juce::roundToInt (ld (macroGroupParam));
     p.macroLatch  = ld (macroLatchParam) > 0.5f;
+    p.mglOn        = ld (mglOnParam) > 0.5f;
+    p.mglTarget    = juce::jlimit (0, 4, juce::roundToInt (ld (mglTargetParam)));
+    p.mglSteps     = tb::params::mglStepCounts[juce::jlimit (0, 2, juce::roundToInt (ld (mglStepsParam)))];
+    p.mglMix       = ld (mglMixParam) / 100.0f;
+    p.mglAmount    = ld (mglAmountParam) / 100.0f;
+    p.mglFillEvery = tb::params::mglFillBars[juce::jlimit (0, 4, juce::roundToInt (ld (mglFillEveryParam)))];
+    p.mglFillHalf  = juce::roundToInt (ld (mglFillLenParam)) == 1;
+    p.mglHold      = ld (mglHoldParam) > 0.5f;
+    p.mglFillNext  = ld (mglFillNextParam) > 0.5f;
     p.bankActive     = juce::jlimit (0, 7, juce::roundToInt (ld (bankActiveParam)) - 1);
     p.bankAt         = juce::roundToInt (ld (bankAtParam));
 
@@ -553,6 +572,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (tb::BreakBank::bankId), nullptr);
     state.removeChild (state.getChildWithName (tb::SongMode::songId), nullptr);
     state.removeChild (state.getChildWithName (tb::MacroRecipes::macrosId), nullptr);
+    state.removeChild (state.getChildWithName (tb::MangleOps::mangleId), nullptr);
 
     juce::ValueTree meta (kMetaId);
     meta.setProperty (kVersionId, kStateVersion, nullptr);
@@ -588,6 +608,7 @@ void TwistedBreaksProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (bank->toValueTree(), nullptr);
     if (song != nullptr) state.appendChild (song->toValueTree(), nullptr);
     state.appendChild (bridge.macros.toValueTree(), nullptr);
+    if (mangleOps != nullptr) state.appendChild (mangleOps->toValueTree(), nullptr);
 
     juce::ValueTree fxState ("FX");
     fxState.setProperty ("lockedMask", (juce::int64) engine.getFxLockedMask(), nullptr);
@@ -616,6 +637,7 @@ void TwistedBreaksProcessor::setStateInformation (const void* data, int sizeInBy
 
     samples.restoreFromValueTree (state.getChildWithName (tb::SampleManager::padsId));
     bridge.macros.fromValueTree (state.getChildWithName (tb::MacroRecipes::macrosId));
+    if (mangleOps != nullptr) mangleOps->fromValueTree (state.getChildWithName (tb::MangleOps::mangleId));
     if (padOps != nullptr) padOps->reset();             // a new project: no undo back into the old one
     {
         const auto m = state.getChildWithName (kMetaId);
